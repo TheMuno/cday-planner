@@ -103,6 +103,9 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 
   const explorerPrice = Number(bestExplorer[1].pass_price) || 0;
 
+  console.log(`Explorer_found: explorer_${bestExplorer[1].attraction_count} valued at $${explorerPrice}`);
+  console.log(`All-inclusive_found: all-inclusive_${exactAllInc[1].trip_days} valued at $${allIncPrice}`);
+
   const B = explorerPrice - (allIncPrice * adults);
   return B > 0 ? B : 0;
 }
