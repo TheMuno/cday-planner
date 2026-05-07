@@ -24,9 +24,13 @@ async function fetchSheetData() {
 }
 
 function preCalculatePassStats(Attractions, Passes) {
-  // --- A & Y from localStorage ---
   const A = Number(localStorage['ak-number-of-days'] || 0);
   const Y = Number(localStorage['ak-y-total-attractions'] || 0);
+  const adults = Number(localStorage['ak-number-of-adults'] || 1);
+
+  // Always populate A and Y immediately
+  document.querySelectorAll('[data-ak="number-of-days"]').forEach(el => el.textContent = A);
+  document.querySelectorAll('[data-ak="tickets-num"]').forEach(el => el.textContent = Y);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
   let userAddedAttractions = JSON.parse(localStorage['ak-user-added-items'] || '[]');
@@ -36,8 +40,7 @@ function preCalculatePassStats(Attractions, Passes) {
 
   const normalize = (str) => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
   const seenNames = new Map();
-
-  let X = 0; // attractions on a pass
+  let X = 0;
 
   for (const [id, passInfo] of Object.entries(Attractions)) {
     const { place_id, on_pass, attraction_name, passes } = passInfo;
@@ -50,25 +53,18 @@ function preCalculatePassStats(Attractions, Passes) {
     seenNames.set(normalizedName, true);
 
     if (on_pass?.trim().toLowerCase() === 'true') {
-      const isOnGoCity  = passes?.toLowerCase().includes('go city');
+      const isOnGoCity   = passes?.toLowerCase().includes('go city');
       const isOnCityPass = passes?.toLowerCase().includes('citypass');
       if (isOnGoCity || isOnCityPass) X++;
     }
   }
 
-  // --- B: Explorer price - (A-Day All Inclusive price * adults) ---
-  const adults = Number(localStorage['ak-number-of-adults'] || 1);
   const B = calcB(Passes, A, X, adults);
 
-  // --- Populate DOM ---
-  const $onPassCounter   = document.querySelector('[data-ak="on-pass-tickets"]');      // [X]
-  const $totalAttractions = document.querySelectorAll('[data-ak="tickets-num"]');       // [Y]
-  const $daysCounter     = document.querySelectorAll('[data-ak="number-of-days"]');     // [A]
-  const $savings         = document.querySelector('[data-ak="allinc-vs-best-savings"]'); // [B]
+  const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
+  const $savings       = document.querySelector('[data-ak="allinc-vs-best-savings"]');
 
   if ($onPassCounter) $onPassCounter.textContent = X;
-  $totalAttractions.forEach(el => el.textContent = Y || seenNames.size);
-  $daysCounter.forEach(el => el.textContent = A);
   if ($savings && B !== null) $savings.textContent = `$${B}`;
 }
 
