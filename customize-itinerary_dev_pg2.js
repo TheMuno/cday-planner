@@ -81,12 +81,15 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 
   const passData = Object.entries(Passes);
 
-  // [A]-Day All Inclusive — exact match on trip_days
+  // [A]-Day All Inclusive — exact match on trip_days, default to 1-Day if A is 0 or unset
+  const effectiveDays = tripDays || 1;
+
   const allIncPasses = passData
     .filter(([id, p]) => p.pass_id?.includes('gocity_allinc'))
     .sort((a, b) => Number(a[1].trip_days) - Number(b[1].trip_days));
 
-  const exactAllInc = allIncPasses.find(([id, p]) => Number(p.trip_days) === tripDays);
+  const exactAllInc = allIncPasses.find(([id, p]) => Number(p.trip_days) === effectiveDays)
+    || allIncPasses.find(([id, p]) => Number(p.trip_days) === 1); // hard fallback to 1-Day
   if (!exactAllInc) return null;
 
   const allIncPrice = Number(exactAllInc[1].pass_price) || 0;
