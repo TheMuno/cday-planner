@@ -111,3 +111,32 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 }
 
 initPage2();
+
+// Page Title
+
+const $tripTitleInfo = document.querySelector('.ak-trip-info');
+const $tripTitle = $tripTitleInfo.querySelector('[data-ak="trip-title"]');
+
+function populateTripInfoHeader() {
+  const tripName = localStorage['ak-user-name'];
+  const travelDates = localStorage['ak-travel-days'];
+
+  if (tripName) {
+    $tripTitle.querySelector('[data-ak="trip-user-name"]').textContent = `${tripName.split(/\s+/)[0]}'s`;
+  }
+
+  if (travelDates) {
+    const { flatpickrDate } = JSON.parse(travelDates);
+    const [startDate, endDate] = flatpickrDate.split(/\s+to\s+/);
+    const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
+    const s = fmt(new Date(startDate));
+    const e = fmt(new Date(endDate));
+    document.querySelector('[data-ak="title-travel-dates"]').textContent = s === e ? s : `${s} - ${e}`;
+  }
+
+  $tripTitleInfo.classList.remove('hidden');
+}
+
+populateTripInfoHeader();
+
