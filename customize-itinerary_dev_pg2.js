@@ -64,7 +64,7 @@ function preCalculatePassStats(Attractions, Passes) {
 
   const B = calcB(Passes, A, X, adults);
   const $savings = document.querySelector('[data-ak="allinc-vs-best-savings"]');
-  if ($savings && B !== null) $savings.textContent = `$${B}`;
+  if ($savings && B !== null) $savings.textContent = B;
 }
 
 /**
