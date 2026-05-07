@@ -59,12 +59,11 @@ function preCalculatePassStats(Attractions, Passes) {
     }
   }
 
-  const B = calcB(Passes, A, X, adults);
-
   const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
-  const $savings       = document.querySelector('[data-ak="allinc-vs-best-savings"]');
-
   if ($onPassCounter) $onPassCounter.textContent = X;
+
+  const B = calcB(Passes, A, X, adults);
+  const $savings = document.querySelector('[data-ak="allinc-vs-best-savings"]');
   if ($savings && B !== null) $savings.textContent = `$${B}`;
 }
 
@@ -73,7 +72,7 @@ function preCalculatePassStats(Attractions, Passes) {
  * Returns null if either pass cannot be found.
  */
 function calcB(Passes, tripDays, attractionsOnPass, adults) {
-  if (!Passes || !tripDays) return null;
+  if (!Passes) return null;
 
   const passData = Object.entries(Passes);
 
@@ -103,6 +102,9 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
   if (!bestExplorer) return null;
 
   const explorerPrice = Number(bestExplorer[1].pass_price) || 0;
+
+  console.log(`Explorer_found: explorer_${bestExplorer[1].attraction_count} valued at $${explorerPrice}`);
+  console.log(`All-inclusive_found: all-inclusive_${exactAllInc[1].trip_days} valued at $${allIncPrice}`);
 
   const B = explorerPrice - (allIncPrice * adults);
   return B > 0 ? B : 0;
