@@ -113,7 +113,7 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 
 const pg1Keys = ['ak-number-of-days', 'ak-place-ids'];
 if (pg1Keys.some(k => !localStorage[k])) {
-  window.location.href = page1Url;
+  // window.location.href = page1Url;
 }
 
 initPage2();
