@@ -284,8 +284,11 @@ window.addEventListener('load', async () => {
 
     setupUserInfo(savedAttractions, undefined, travelDates, hotel, arrivalAirport, departureAirport);
     localStorage['ak-update-merge-local'] = true;
-  } else {
+  } 
+  else {
     setupUserInfo(undefined, undefined, localStorage['ak-travel-days'], localStorage['ak-hotel'], localStorage['ak-arrival-airport'], localStorage['ak-departure-airport']);
+    
+    console.log('$tripTitleInfo', $tripTitleInfo)
     showTripInfoHeader();
   }
 
