@@ -42,7 +42,7 @@ const firebaseConfig = {
 };
 
 // ── 2. WHERE TO SEND THE USER AFTER LOGIN ───────────────────
-const REDIRECT_AFTER_LOGIN = "/"; // change to your post-login page
+const REDIRECT_AFTER_LOGIN = localStorage.getItem('ak-login-redirect') || '/';
 
 // ── 3. INIT ─────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
