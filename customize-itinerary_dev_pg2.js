@@ -6,7 +6,7 @@
  *   A  = localStorage['ak-number-of-days']
  *   Y  = localStorage['ak-y-total-attractions']
  *   X  = derived — count of user's selected attractions that are on a pass
- *   B  = ([A]-Day All Inclusive price) - (GoCity Explorer price * adults)
+ *   B  = (([A]-Day All Inclusive price) - (GoCity Explorer price)) * adults
  *        adults defaults to 1
  */
 
@@ -68,7 +68,7 @@ function preCalculatePassStats(Attractions, Passes) {
 }
 
 /**
- * B = ([A]-Day All Inclusive price) - (GoCity Explorer price for X attractions * adults)
+ * B = (([A]-Day All Inclusive price) - (GoCity Explorer price for X attractions)) * adults
  * Returns null if either pass cannot be found.
  */
 function calcB(Passes, tripDays, attractionsOnPass, adults) {
@@ -106,7 +106,7 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
   console.log(`Explorer_found: explorer_${bestExplorer[1].attraction_count} valued at $${explorerPrice}`);
   console.log(`All-inclusive_found: all-inclusive_${exactAllInc[1].trip_days} valued at $${allIncPrice}`);
 
-  const B = allIncPrice - (explorerPrice * adults);
+  const B = (allIncPrice - explorerPrice) * adults;
   return B > 0 ? B : 0;
 }
 
