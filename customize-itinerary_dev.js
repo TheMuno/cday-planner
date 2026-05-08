@@ -1,7 +1,8 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc,
     updateDoc, deleteField,
-    arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-firestore.js";
+    arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
@@ -13,8 +14,9 @@ const firebaseConfig = {
     measurementId: "G-Z7F4NJ4PHW"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
 
 let map;
 let infoWindow;
@@ -77,9 +79,12 @@ async function initMap(center) {
 
 window.addEventListener('load', async () => {
 
-  await Clerk.load();
+  await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
-  if (Clerk.user) localStorage.removeItem('ak-addedAttractions-count');
+  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged
+  if (auth.currentUser) localStorage['ak-userMail'] = auth.currentUser.email;
+
+  if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   const attractionMarkers = [];
@@ -170,7 +175,7 @@ window.addEventListener('load', async () => {
     const $preLoginBtns = document.querySelectorAll('[data-ak-pre-login]');
     const $postLoginBtns = document.querySelectorAll('[data-ak-post-login]');
 
-    if (Clerk.user) {
+    if (auth.currentUser) {
       $postLoginBtns.forEach(btn => btn.removeAttribute('data-ak-hidden'));
 
       // $printItineraryBtn.removeAttribute('data-ak-hidden');
@@ -181,23 +186,20 @@ window.addEventListener('load', async () => {
       // });
     } 
     else {
-      $preLoginBtns.forEach(btn => {
-        console.log(btn)
-        processLogin(btn)
-      });
+      $preLoginBtns.forEach(btn => processLogin(btn));
     }
 
     function processLogin($btn) {
       $btn.classList.remove('hidden');
       $btn.removeAttribute('data-ak-hidden');
       $btn.addEventListener('click', () => {
-        if (!Clerk.user) Clerk.openSignUp({ redirectUrl: currentPage });
+        if (!auth.currentUser) window.location.href = '/firebase-claude-auth-login';
       });
     }
   }
 
 
-  if (Clerk.user) {
+  if (auth.currentUser) {
     const userMail = localStorage['ak-userMail'];
     const data = await retrieveDBData(userMail);
 
@@ -206,7 +208,7 @@ window.addEventListener('load', async () => {
       createUserInFirebase(userMail);
 
       const savedAttractions = localStorage['ak-attractions-saved'];
-      const tripName = Clerk?.user?.externalAccounts?.[0]?.firstName || '';
+      const tripName = auth.currentUser?.displayName?.split(' ')[0] || auth.currentUser?.email?.split('@')[0] || '';
       const travelDates = localStorage['ak-travel-days'];
       const hotel = localStorage['ak-hotel'];
       const arrivalAirport = localStorage['ak-arrival-airport'];
@@ -260,7 +262,7 @@ window.addEventListener('load', async () => {
         if (localStorage['ak-update-merge-local']) localStorage['ak-update-merge-db'] = true;
 
         const { tripName, travelDates, hotel, arrivalAirport, departureAirport, savedAttractions } = data;
-        const userName = Clerk?.user?.externalAccounts?.[0]?.firstName;
+        const userName = auth.currentUser?.displayName?.split(' ')[0] || auth.currentUser?.email?.split('@')[0] || '';
         const userTripName = tripName || userName;
 
         const { userTravelDates, userHotel, userArrivalAirport, userDepartureAirport, userAttractions } =
@@ -339,7 +341,7 @@ window.addEventListener('load', async () => {
   }
 
   const $secondaryEmailWrap = document.querySelector('[data-ak="add-secondary-email-section"]');
-  if (Clerk.user && !localStorage['ak-referrer-mail']) {
+  if (auth.currentUser && !localStorage['ak-referrer-mail']) {
     $secondaryEmailWrap?.removeAttribute('data-ak-hidden');
   }
 
@@ -446,7 +448,7 @@ window.addEventListener('load', async () => {
         localStorage.removeItem(key);
       }
 
-      localStorage['ak-user-name'] = Clerk?.user?.externalAccounts?.[0]?.firstName || '';
+      localStorage['ak-user-name'] = auth.currentUser?.displayName?.split(' ')[0] || auth.currentUser?.email?.split('@')[0] || '';
       window.location.href = '/free-trip-planner';
     }
 
@@ -873,7 +875,7 @@ window.addEventListener('load', async () => {
         return;
       }
 
-      if (!Clerk.user) {
+      if (!auth.currentUser) {
         if (addedAttractions >= attractionslimit) {
           alert('Max Limit Reached. Login To Add More');
           resetUserInputField();
@@ -1484,7 +1486,7 @@ function handleSliderRemoveLocation(e) {
   $attraction.remove();
   setUnsavedChangesFlag();
 
-  if (!Clerk.user) updateAttractionsCount('-');
+  if (!auth.currentUser) updateAttractionsCount('-');
 
   if ($attraction.placeId) {
     const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
