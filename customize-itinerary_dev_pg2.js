@@ -10,6 +10,7 @@
  *        adults defaults to 1
  */
 
+const page1Url    = '/customize-itinerary';
 const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
 
 async function initPage2() {
@@ -108,6 +109,11 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 
   const B = (allIncPrice - explorerPrice) * adults;
   return B > 0 ? B : 0;
+}
+
+const pg1Keys = ['ak-number-of-days', 'ak-place-ids'];
+if (pg1Keys.some(k => !localStorage[k])) {
+  window.location.href = page1Url;
 }
 
 initPage2();
