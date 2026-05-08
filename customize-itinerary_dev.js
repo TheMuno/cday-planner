@@ -286,9 +286,13 @@ window.addEventListener('load', async () => {
     localStorage['ak-update-merge-local'] = true;
   } 
   else {
-    setupUserInfo(undefined, undefined, localStorage['ak-travel-days'], localStorage['ak-hotel'], localStorage['ak-arrival-airport'], localStorage['ak-departure-airport']);
+    setupUserInfo(undefined, 
+                  undefined, 
+                  localStorage['ak-travel-days'], 
+                  localStorage['ak-hotel'], 
+                  localStorage['ak-arrival-airport'], 
+                  localStorage['ak-departure-airport']);
     
-    console.log('$tripTitleInfo', $tripTitleInfo)
     showTripInfoHeader();
   }
 
