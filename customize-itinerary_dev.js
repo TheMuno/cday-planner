@@ -167,26 +167,24 @@ window.addEventListener('load', async () => {
   }
 
   function hideShowLoginNSavebtn() {
-    const $loginBtn = document.querySelector('[data-ak="clerk-login"]');
-    const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
-    // const $loginToPrintItineraryBtn = document.querySelector('[data-ak="login-to-get-text-file"]');
-    // const $printItineraryBtn = document.querySelector('[data-ak="generate-text-file"]');
-    const $loginToCalculatePassesBtn = document.querySelector('[data-ak="login-to-calc-pass"]');
-    const $calculatePassesBtn = document.querySelector('[data-ak="calculate-passes"]');
+    const $preLoginBtns = document.querySelectorAll('[data-ak-pre-login]');
+    const $postLoginBtns = document.querySelectorAll('[data-ak-post-login]');
 
     if (Clerk.user) {
-      $saveBtn.closest('.ak-save-wrap').classList.remove('hidden');
+      $postLoginBtns.forEach(btn => btn.removeAttribute('data-ak-hidden'));
+
       // $printItineraryBtn.removeAttribute('data-ak-hidden');
       // $printItineraryBtn.addEventListener('click', () => {
       //   const userMail = localStorage['ak-userMail'];
       //   const userId = userMail ? encodeURIComponent(userMail) : '';
       //   window.location.href = `/itinerary-list?id=${userId}`;
       // });
-      $calculatePassesBtn.removeAttribute('data-ak-hidden');
-    } else {
-      processLogin($loginBtn);
-      // processLogin($loginToPrintItineraryBtn);
-      processLogin($loginToCalculatePassesBtn);
+    } 
+    else {
+      $preLoginBtns.forEach(btn => {
+        console.log(btn)
+        processLogin(btn)
+      });
     }
 
     function processLogin($btn) {
