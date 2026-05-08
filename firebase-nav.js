@@ -46,7 +46,7 @@ const PROVIDER_LABELS  = {
 };
 
 let currentUser = null;
-const LOGIN_PAGE_URL = '/firebase-claude-auth-login';
+const LOGIN_PAGE_URL = '/log-in';
 
 // ── FAST-PATH: render from cache before Firebase resolves ────
 // Avoids a flash of logged-out nav on page load

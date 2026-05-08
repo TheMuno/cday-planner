@@ -30,7 +30,7 @@ const firebaseConfig = {
 };
 
 // ── WHERE TO SEND USER AFTER RESET ──────────────────────────
-const REDIRECT_AFTER_RESET = "/firebase-claude-auth-login";
+const REDIRECT_AFTER_RESET = "/log-in";
 
 // ── INIT ────────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);

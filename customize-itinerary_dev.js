@@ -193,7 +193,7 @@ window.addEventListener('load', async () => {
       $btn.classList.remove('hidden');
       $btn.removeAttribute('data-ak-hidden');
       $btn.addEventListener('click', () => {
-        if (!auth.currentUser) window.location.href = '/firebase-claude-auth-login';
+        if (!auth.currentUser) window.location.href = '/log-in';
       });
     }
   }
