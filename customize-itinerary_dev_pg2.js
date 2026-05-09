@@ -156,7 +156,7 @@ const notLoggedIn = !localStorage['ak-userMail'];
 if (missingPg1Data || notLoggedIn) {
   const reason = notLoggedIn ? 'User not logged in' : 'No attractions added';
   showRedirectLoader(reason);
-  setTimeout(() => { window.location.href = page1Url; }, 2000);
+  setTimeout(() => { window.location.href = page1Url; }, 1500);
 }
 
 initPage2();
