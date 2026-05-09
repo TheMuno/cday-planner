@@ -115,8 +115,43 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
   return B > 0 ? B : 0;
 }
 
+function showRedirectLoader(message) {
+  if (!document.getElementById('pg2-spinner-style')) {
+    const style = document.createElement('style');
+    style.id = 'pg2-spinner-style';
+    style.textContent = "@keyframes pg2-spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(style);
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'pg2-loader-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0',
+    background: 'rgba(255,255,255,0.5)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    gap: '12px', zIndex: '9999',
+  });
+  const label = document.createElement('p');
+  label.textContent = message;
+  Object.assign(label.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(label);
+  const spinner = document.createElement('div');
+  Object.assign(spinner.style, {
+    width: '40px', height: '40px',
+    border: '4px solid #e5e7eb', borderTopColor: '#111',
+    borderRadius: '50%', animation: 'pg2-spin 0.7s linear infinite',
+  });
+  overlay.appendChild(spinner);
+  document.body.appendChild(overlay);
+}
+
 const pg1Keys = ['ak-number-of-days', 'ak-place-ids'];
-if (pg1Keys.some(k => !localStorage[k]) || !localStorage['ak-userMail']) {
+const missingPg1Data = pg1Keys.some(k => !localStorage[k]);
+const notLoggedIn = !localStorage['ak-userMail'];
+
+if (missingPg1Data || notLoggedIn) {
+  const reason = notLoggedIn ? 'User not logged in' : 'No attractions added';
+  showRedirectLoader(reason);
   window.location.href = page1Url;
 }
 
