@@ -131,6 +131,10 @@ function showRedirectLoader(message) {
     alignItems: 'center', justifyContent: 'center',
     gap: '12px', zIndex: '9999',
   });
+  const redirecting = document.createElement('p');
+  redirecting.textContent = 'Redirecting...';
+  Object.assign(redirecting.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(redirecting);
   const label = document.createElement('p');
   label.textContent = message;
   Object.assign(label.style, { margin: '0', fontSize: '14px', color: '#111' });
@@ -152,7 +156,7 @@ const notLoggedIn = !localStorage['ak-userMail'];
 if (missingPg1Data || notLoggedIn) {
   const reason = notLoggedIn ? 'User not logged in' : 'No attractions added';
   showRedirectLoader(reason);
-  window.location.href = page1Url;
+  setTimeout(() => { window.location.href = page1Url; }, 3000);
 }
 
 initPage2();
