@@ -1,6 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-functions.js";
 
+const page1Url = '/customize-itinerary';
+
 // --- Firebase config ---
 const firebaseConfig = {
   apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
@@ -192,7 +194,7 @@ async function renderData() {
 // --- Auto-run ---
 if (!localStorage['ak-userMail']) {
   showRedirectLoader('User not logged in');
-  setTimeout(() => { window.location.href = '/log-in'; }, 1500);
+  setTimeout(() => { window.location.href = page1Url; }, 1500);
 } else {
   renderData();
 }
