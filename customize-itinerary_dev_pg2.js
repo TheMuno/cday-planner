@@ -471,3 +471,11 @@ function setupPassCalculator() {
   });
 }
 
+const $gotoItineraryList = document.querySelector('[data-ak="open-itinerary-list"]');
+$gotoItineraryList.addEventListener('click', e => {
+  e.preventDefault(); 
+  const userMail = localStorage['ak-userMail'];
+  $gotoItineraryList.href = `${$gotoItineraryList.href}?id=${userMail}`;
+  window.location.href = $gotoItineraryList.href;
+});
+
