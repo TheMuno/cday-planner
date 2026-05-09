@@ -980,7 +980,7 @@ window.addEventListener('load', async () => {
 
 
   const ITINERARY_PAGE_2_URL = '/customize-itinerary-page-2';
-  document.querySelector('[data-ak="continue-to-step2"]').addEventListener('click', e => {
+  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', e => {
     e.preventDefault();
 
     const slides = [...document.querySelectorAll('.w-slider .w-slide')];
