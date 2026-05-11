@@ -235,13 +235,17 @@ async function handleAuthError(err) {
     return;
   }
 
+  if (err.code === "auth/popup-closed-by-user") {
+    console.log("Sign-in popup closed by user.");
+    return;
+  }
+
   const messages = {
     "auth/user-not-found":       "No account found with that email.",
     "auth/wrong-password":       "Incorrect password.",
     "auth/invalid-email":        "Please enter a valid email address.",
     "auth/email-already-in-use": "An account with this email already exists.",
     "auth/weak-password":        "Password must be at least 6 characters.",
-    "auth/popup-closed-by-user": "Sign-in popup was closed before completing.",
   };
   showError(messages[err.code] || "Something went wrong. Please try again.");
 }
