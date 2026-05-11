@@ -77,6 +77,7 @@ onAuthStateChanged(auth, async (user) => {
       } catch (_) {}
     }
     currentUserEmail = email;
+    if (email) localStorage.setItem("ak-userMail", email);
 
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
       uid:         user.uid,
