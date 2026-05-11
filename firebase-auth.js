@@ -410,6 +410,18 @@ if (facebookBtn) {
       }
 
       await saveUserProvider(result.user, email);
+
+      // Patch the nav's localStorage cache so the email is available immediately after redirect
+      try {
+        const cached = localStorage.getItem("ak-user");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.email = email;
+          localStorage.setItem("ak-user", JSON.stringify(parsed));
+        }
+      } catch (_) {}
+      localStorage.setItem("ak-userMail", email);
+
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
       isSigningIn = false;
