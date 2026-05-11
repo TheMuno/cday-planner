@@ -259,17 +259,22 @@ async function saveUserProvider(user) {
   }, { merge: true });
 }
 
-// After a successful sign-in, link the pending credential if one was saved
+// After a successful sign-in, link the pending credential if one was saved.
+// Returns the linked provider name (e.g. "Google") if linking succeeded, otherwise null.
 async function linkPendingCredential(user) {
-  if (!pendingCredential) return;
+  if (!pendingCredential) return null;
+  const providerNames = { "google.com": "Google", "facebook.com": "Facebook" };
+  const linkedName = providerNames[pendingCredential.providerId] || null;
   try {
     await linkWithCredential(user, pendingCredential);
+    return linkedName;
   } catch (_) {
     // Already linked or incompatible — safe to ignore
   } finally {
     pendingCredential = null;
     clearPendingCred();
   }
+  return null;
 }
 
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
@@ -350,8 +355,12 @@ if (submitBtn) {
       else {
         result = await signInWithEmailAndPassword(auth, email, password);
       }
-      await linkPendingCredential(result.user);
+      const linkedProvider = await linkPendingCredential(result.user);
       await saveUserProvider(result.user);
+      if (linkedProvider) {
+        showSuccess(`Your ${linkedProvider} account has been linked! Going forward, you can sign in with either ${linkedProvider} or your email and password.`);
+        await new Promise(r => setTimeout(r, 4000));
+      }
       window.location.replace(REDIRECT_AFTER_LOGIN);
     }
     catch (err) {
