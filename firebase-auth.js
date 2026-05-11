@@ -233,7 +233,7 @@ function collectMissingEmail() {
     const btn = document.createElement("button");
     btn.textContent = "Continue";
     Object.assign(btn.style, {
-      width: "100%", padding: "10px", background: "#111", color: "#fff",
+      width: "100%", padding: "10px", background: "#FF4500", color: "#fff",
       border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
     });
 

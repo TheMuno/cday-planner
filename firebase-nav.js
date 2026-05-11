@@ -18,6 +18,7 @@ import {
   onAuthStateChanged,
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── CONFIG ───────────────────────────────────────────────────
 const firebaseConfig = {
@@ -33,6 +34,7 @@ const firebaseConfig = {
 // Safe init — won't conflict if firebase-auth.js also loads on the login page
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
 // ── ELEMENT REFS ─────────────────────────────────────────────
 const $navLoginBtn = document.querySelector('[data-ak="login"]');
@@ -45,7 +47,8 @@ const PROVIDER_LABELS  = {
   'password':     'Email & Password',
 };
 
-let currentUser = null;
+let currentUser      = null;
+let currentUserEmail = null;
 const LOGIN_PAGE_URL = '/log-in';
 
 // ── FAST-PATH: render from cache before Firebase resolves ────
@@ -62,20 +65,31 @@ if (cached) {
 }
 
 // ── AUTH STATE ───────────────────────────────────────────────
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
+
+    let email = user.email;
+    if (!email) {
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) email = snap.data().email || null;
+      } catch (_) {}
+    }
+    currentUserEmail = email;
+
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({
-      uid:        user.uid,
-      email:      user.email,
+      uid:         user.uid,
+      email:       email,
       displayName: user.displayName,
-      photoURL:   user.photoURL,
-      providerId: user.providerData[0]?.providerId || 'password',
+      photoURL:    user.photoURL,
+      providerId:  user.providerData[0]?.providerId || 'password',
     }));
     if ($navLoginBtn) $navLoginBtn.classList.add('visibility-hidden');
-    renderAvatar(user.photoURL, user.displayName || user.email);
+    renderAvatar(user.photoURL, user.displayName || email);
   } else {
-    currentUser = null;
+    currentUser      = null;
+    currentUserEmail = null;
     localStorage.removeItem(USER_STORAGE_KEY);
     if ($navLoginBtn) $navLoginBtn.classList.remove('visibility-hidden');
     if ($userAvatar) $userAvatar.innerHTML = '';
@@ -86,7 +100,7 @@ onAuthStateChanged(auth, (user) => {
 function renderAvatar(photoURL, nameOrEmail) {
   if (!$userAvatar) return;
   const src = photoURL
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail || 'U')}&background=ff7f34&color=fff`;
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail || 'U')}&background=FF4500&color=fff`;
 
   let img = $userAvatar.querySelector('img');
   if (!img) {
@@ -104,18 +118,19 @@ function renderAvatar(photoURL, nameOrEmail) {
 function showUserModal() {
   if (!currentUser) return;
   const user      = currentUser;
+  const email     = currentUserEmail;
   const provider  = PROVIDER_LABELS[user.providerData[0]?.providerId] || 'Email & Password';
   const avatarSrc = user.photoURL
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || user.email || 'U')}&background=ff7f34&color=fff`;
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email || 'U')}&background=FF4500&color=fff`;
 
   Swal.fire({
     html: `
       <div style="font-family:'Neuemontreal',sans-serif;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 0;">
         <img src="${avatarSrc}" alt="avatar" style="width:72px;height:72px;border-radius:50%;object-fit:cover;" />
         ${user.displayName ? `<div style="font-size:1.1rem;font-weight:600;">${user.displayName}</div>` : ''}
-        ${user.email ? `<div style="font-size:0.9rem;color:#666;">${user.email}</div>` : ''}
+        ${email ? `<div style="font-size:0.9rem;color:#666;">${email}</div>` : ''}
         <div style="font-size:0.8rem;background:#f3f3f3;padding:4px 12px;border-radius:999px;">${provider}</div>
-        <button id="swal-logout-btn" style="margin-top:8px;padding:8px 24px;border:none;border-radius:999px;background:#ff7f34;color:#fff;font-family:'Neuemontreal',sans-serif;font-size:0.9rem;cursor:pointer;">Log out</button>
+        <button id="swal-logout-btn" style="margin-top:8px;padding:8px 24px;border:none;border-radius:999px;background:#FF4500;color:#fff;font-family:'Neuemontreal',sans-serif;font-size:0.9rem;cursor:pointer;">Log out</button>
       </div>
     `,
     showConfirmButton: false,
@@ -169,7 +184,7 @@ function showToast(message, icon = 'info') {
     title: message,
     showConfirmButton: false,
     timer: 3000,
-    background: '#ff7f34',
+    background: '#FF4500',
     color: '#fff',
     didOpen: (toast) => { toast.style.fontFamily = 'Neuemontreal, sans-serif'; },
   });
