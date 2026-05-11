@@ -13,7 +13,7 @@
 // ============================================================
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   getAuth,
   signInWithPopup,
@@ -193,6 +193,82 @@ function hideLoader() {
   document.getElementById("auth-loader-overlay")?.remove();
 }
 
+// Returns a Promise that resolves with the entered email, or null if the user cancels.
+function collectMissingEmail() {
+  return new Promise((resolve) => {
+    document.getElementById("auth-email-collect-popup")?.remove();
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "auth-email-collect-popup";
+    Object.assign(backdrop.style, {
+      position: "fixed", inset: "0",
+      background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: "9998",
+    });
+
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#fff", borderRadius: "8px",
+      padding: "24px", maxWidth: "360px", width: "90%",
+      boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+    });
+
+    const msg = document.createElement("p");
+    msg.textContent = "Facebook didn't share your email. Please enter it to continue.";
+    Object.assign(msg.style, { margin: "0 0 14px", fontSize: "14px", color: "#111" });
+
+    const input = document.createElement("input");
+    input.type = "email";
+    input.placeholder = "your@email.com";
+    Object.assign(input.style, {
+      width: "100%", padding: "8px 12px", boxSizing: "border-box",
+      border: "1px solid #d1d5db", borderRadius: "6px",
+      fontSize: "14px", marginBottom: "8px",
+    });
+
+    const errMsg = document.createElement("p");
+    Object.assign(errMsg.style, { margin: "0 0 10px", fontSize: "12px", color: "#dc2626", display: "none" });
+
+    const btn = document.createElement("button");
+    btn.textContent = "Continue";
+    Object.assign(btn.style, {
+      width: "100%", padding: "10px", background: "#111", color: "#fff",
+      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+    });
+
+    const cancelLink = document.createElement("a");
+    cancelLink.textContent = "Cancel";
+    Object.assign(cancelLink.style, {
+      display: "block", textAlign: "center", marginTop: "10px",
+      fontSize: "13px", color: "#6b7280", cursor: "pointer",
+    });
+
+    btn.addEventListener("click", () => {
+      const email = input.value.trim();
+      if (!isValidEmail(email)) {
+        errMsg.textContent = "Please enter a valid email address.";
+        errMsg.style.display = "block";
+        return;
+      }
+      backdrop.remove();
+      resolve(email);
+    });
+
+    cancelLink.addEventListener("click", () => { backdrop.remove(); resolve(null); });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
+
+    card.appendChild(msg);
+    card.appendChild(input);
+    card.appendChild(errMsg);
+    card.appendChild(btn);
+    card.appendChild(cancelLink);
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+    input.focus();
+  });
+}
+
 function setMode(signUp) {
   isSignUpMode = signUp;
   if (submitBtn)           submitBtn.value              = signUp ? "Sign Up" : "Login";
@@ -243,6 +319,7 @@ async function handleAuthError(err) {
   const messages = {
     "auth/user-not-found":       "No account found with that email.",
     "auth/wrong-password":       "Incorrect password.",
+    "auth/invalid-credential":   "Incorrect email or password.",
     "auth/invalid-email":        "Please enter a valid email address.",
     "auth/email-already-in-use": "An account with this email already exists.",
     "auth/weak-password":        "Password must be at least 6 characters.",
@@ -250,10 +327,10 @@ async function handleAuthError(err) {
   showError(messages[err.code] || "Something went wrong. Please try again.");
 }
 
-async function saveUserProvider(user) {
+async function saveUserProvider(user, emailOverride) {
   const provider = user.providerData[0]?.providerId || "password";
   await setDoc(doc(db, "users", user.uid), {
-    email:    user.email,
+    email:    emailOverride || user.email,
     provider,
     displayName: user.displayName || null,
   }, { merge: true });
@@ -302,10 +379,37 @@ if (facebookBtn) {
     clearError();
     isSigningIn = true;
     try {
-      const result = await signInWithPopup(auth, new FacebookAuthProvider());
+      const fbProvider = new FacebookAuthProvider();
+      fbProvider.addScope("email");
+      const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
-      await saveUserProvider(result.user);
+
+      let email = result.user.email;
+
+      if (!email) {
+        // Returning user may already have an email saved in Firestore
+        try {
+          const snap = await getDoc(doc(db, "users", result.user.uid));
+          if (snap.exists()) email = snap.data().email || null;
+        } catch (_) {}
+      }
+
+      if (!email) {
+        // Facebook didn't provide an email — ask the user for it
+        hideLoader();
+        email = await collectMissingEmail();
+        if (!email) {
+          // User cancelled — sign them out and let them try again
+          await signOut(auth);
+          isSigningIn = false;
+          showError("An email address is required to sign in with Facebook. Please try again.");
+          return;
+        }
+        showLoader();
+      }
+
+      await saveUserProvider(result.user, email);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
       isSigningIn = false;
