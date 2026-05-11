@@ -100,7 +100,7 @@ onAuthStateChanged(auth, async (user) => {
 function renderAvatar(photoURL, nameOrEmail) {
   if (!$userAvatar) return;
   const src = photoURL
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail || 'U')}&background=FF4500&color=fff`;
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail || 'U')}&background=ff7f34&color=fff`;
 
   let img = $userAvatar.querySelector('img');
   if (!img) {
@@ -121,7 +121,7 @@ function showUserModal() {
   const email     = currentUserEmail;
   const provider  = PROVIDER_LABELS[user.providerData[0]?.providerId] || 'Email & Password';
   const avatarSrc = user.photoURL
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email || 'U')}&background=FF4500&color=fff`;
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email || 'U')}&background=ff7f34&color=fff`;
 
   Swal.fire({
     html: `
@@ -130,7 +130,7 @@ function showUserModal() {
         ${user.displayName ? `<div style="font-size:1.1rem;font-weight:600;">${user.displayName}</div>` : ''}
         ${email ? `<div style="font-size:0.9rem;color:#666;">${email}</div>` : ''}
         <div style="font-size:0.8rem;background:#f3f3f3;padding:4px 12px;border-radius:999px;">${provider}</div>
-        <button id="swal-logout-btn" style="margin-top:8px;padding:8px 24px;border:none;border-radius:999px;background:#FF4500;color:#fff;font-family:'Neuemontreal',sans-serif;font-size:0.9rem;cursor:pointer;">Log out</button>
+        <button id="swal-logout-btn" style="margin-top:8px;padding:8px 24px;border:none;border-radius:999px;background:#ff7f34;color:#fff;font-family:'Neuemontreal',sans-serif;font-size:0.9rem;cursor:pointer;">Log out</button>
       </div>
     `,
     showConfirmButton: false,
@@ -184,7 +184,7 @@ function showToast(message, icon = 'info') {
     title: message,
     showConfirmButton: false,
     timer: 3000,
-    background: '#FF4500',
+    background: '#ff7f34',
     color: '#fff',
     didOpen: (toast) => { toast.style.fontFamily = 'Neuemontreal, sans-serif'; },
   });
