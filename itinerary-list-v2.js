@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
-const $downloadBtn = document.querySelector('[data-ak="download-btn"]');
+const $downloadBtn = document.querySelector('[data-ak="download-btn-v2"]');
 
 let itineraryText = "";
 
