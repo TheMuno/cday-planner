@@ -856,9 +856,8 @@ window.addEventListener('load', async () => {
       locationBias: { radius: 5000.0, center: mapCenter },
     });
 
-    document.querySelector('.ak-autocomplete').appendChild(placeAutocomplete);
-
     placeAutocomplete.placeholder = 'Add an activity...';
+    document.querySelector('.ak-autocomplete').appendChild(placeAutocomplete);
 
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
