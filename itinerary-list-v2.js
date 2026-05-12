@@ -157,7 +157,8 @@ async function renderData() {
             departureAirport,
             savedAttractions } = userObj;
 
-    preliminaryStr += `${tripName}'s Trip To N.Y.C.\n`;
+    const displayName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    preliminaryStr += `${displayName}'s Trip To N.Y.C.\n`;
     localStorage['ak-tripName'] = tripName;
     const titleDatesStr = processTitleDates(travelDates);
     preliminaryStr += `${titleDatesStr ? titleDatesStr + '\n\n' : ''}`;

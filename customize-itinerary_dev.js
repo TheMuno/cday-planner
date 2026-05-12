@@ -1084,6 +1084,7 @@ function processSavedAttractions(savedAttractions) {
 function setupTripNameNTravelDates(tripName, travelDates) {
   if (tripName) {
     tripName = tripName.split(/\s+/)[0];
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
     $tripTitle.querySelector('[data-ak="trip-user-name"]').textContent = `${tripName}'s`;
     localStorage['ak-user-name'] = tripName;
   }
