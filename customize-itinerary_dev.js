@@ -862,10 +862,13 @@ window.addEventListener('load', async () => {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress'] });
 
       const placeObj = place.toJSON();
       const { displayName } = placeObj;
+      const neighborhood = placeObj.addressComponents?.find(c => c.types.includes('neighborhood'))?.longText
+        || placeObj.addressComponents?.find(c => c.types.includes('sublocality_level_1'))?.longText
+        || '';
 
       const $timeslot = document.querySelector('[data-ak-timeslot].active') || document.querySelector('[data-ak-timeslot="morning"]');
       const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
@@ -911,7 +914,7 @@ window.addEventListener('load', async () => {
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
 
-      const saveObj = { location: { lat, lng }, displayName, editorialSummary, type, placeId: id };
+      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id };
       processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj });
       setUnsavedChangesFlag();
     });
