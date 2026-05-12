@@ -858,7 +858,7 @@ window.addEventListener('load', async () => {
 
     document.querySelector('.ak-autocomplete').appendChild(placeAutocomplete);
 
-    const searchAttractionsPlaceholderTxt = 'Add an activity...';
+    placeAutocomplete.placeholder = 'Add an activity...';
 
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
