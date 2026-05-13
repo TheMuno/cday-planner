@@ -81,9 +81,9 @@ function showError(msg) {
 }
 
 const sectionMap = {
-  morning: "Attractions",
-  afternoon: "Restaurants",
-  evening: "Local Experiences"
+  attractions: "Attractions",
+  restaurants: "Restaurants",
+  notes: "Local Experiences"
 };
 
 function renderTxtStyle(data, preliminaryStr='') {
@@ -96,7 +96,7 @@ function renderTxtStyle(data, preliminaryStr='') {
     let dayOutput = `Day${slideNum}\n\n`;
     let hasContent = false;
 
-    for (const key of ["morning", "afternoon", "evening"]) {
+    for (const key of ["attractions", "restaurants", "notes"]) {
       if (sections[key] && sections[key].length > 0) {
         hasContent = true;
         dayOutput += `${sectionMap[key]}\n\n`;

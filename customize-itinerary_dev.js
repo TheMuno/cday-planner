@@ -43,6 +43,7 @@ const $sliderArrows = document.querySelectorAll('.w-slider-arrow-left, .w-slider
 const currentPage = window.location.pathname || '/customize-itinerary';
 const nonCountDays = 2;
 const attractionslimit = 5;
+const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', evening: 'notes' };
 
 let addedAttractions = 0;
 const markerObj = {};
@@ -323,12 +324,12 @@ window.addEventListener('load', async () => {
     for (const [slide, attractions] of Object.entries(savedAttractions)) {
       if (slide !== 'slide1' && slide !== 'slide2') continue;
 
-      const { morning: savedMorningArr, afternoon: savedAfternoonArr, evening: savedEveningArr } = attractions;
-      const { morning: localMorningArr, afternoon: localAfternoonArr, evening: localEveningArr } = localSavedAttractions[slide];
+      const { attractions: savedAttractionsArr, restaurants: savedRestaurantsArr, notes: savedNotesArr } = attractions;
+      const { attractions: localAttractionsArr, restaurants: localRestaurantsArr, notes: localNotesArr } = localSavedAttractions[slide];
 
-      savedAttractions[slide].morning = combineArrays(savedMorningArr, localMorningArr);
-      savedAttractions[slide].afternoon = combineArrays(savedAfternoonArr, localAfternoonArr);
-      savedAttractions[slide].evening = combineArrays(savedEveningArr, localEveningArr);
+      savedAttractions[slide].attractions = combineArrays(savedAttractionsArr, localAttractionsArr);
+      savedAttractions[slide].restaurants = combineArrays(savedRestaurantsArr, localRestaurantsArr);
+      savedAttractions[slide].notes = combineArrays(savedNotesArr, localNotesArr);
     }
 
     localStorage['ak-attractions-saved'] = JSON.stringify(savedAttractions);
@@ -406,14 +407,15 @@ window.addEventListener('load', async () => {
       console.log('No matching attraction to move!');
     }
 
-    const currentTimeslot = $dropZone.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim();
+    const currentTimeslot = timeslotKeyMap[$dropZone.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim()];
     const savedAttractions = localStorage['ak-attractions-saved'] ? JSON.parse(localStorage['ak-attractions-saved']) : {};
-    const savedtimeslotAttractions = savedAttractions[`slide${slideIndex}`][fromTimeslot];
+    const mappedFromTimeslot = timeslotKeyMap[fromTimeslot] || fromTimeslot;
+    const savedtimeslotAttractions = savedAttractions[`slide${slideIndex}`][mappedFromTimeslot];
 
     if (savedtimeslotAttractions) {
       const savedAttr = savedtimeslotAttractions.find(attr => data.includes(attr.displayName.toLowerCase().trim()));
       if (savedAttr) {
-        const draggedAttr = savedAttractions[`slide${slideIndex}`][fromTimeslot].splice(savedtimeslotAttractions.indexOf(savedAttr), 1)[0];
+        const draggedAttr = savedAttractions[`slide${slideIndex}`][mappedFromTimeslot].splice(savedtimeslotAttractions.indexOf(savedAttr), 1)[0];
         savedAttractions[`slide${slideIndex}`][currentTimeslot] = savedAttractions[`slide${slideIndex}`][currentTimeslot] || [];
         savedAttractions[`slide${slideIndex}`][currentTimeslot].push(draggedAttr);
         localStorage['ak-attractions-saved'] = JSON.stringify(savedAttractions);
@@ -1378,6 +1380,9 @@ async function saveAttractionsDB() {
     savedAttractions: getCurrentUserAttractions(),
   };
 
+  saveObj.adultNum = localStorage['ak-adult-num'] ?? null;
+  saveObj.childrenNum = localStorage['ak-children-num'] ?? null;
+
   if (userSnap.exists()) {
     saveObj.ModifiedAt = serverTimestamp();
     await updateDoc(userRef, saveObj);
@@ -1400,13 +1405,18 @@ function getCurrentUserAttractions() {
     const slideObj = savedAttractions[`slide${n + 1}`];
 
     slide.querySelectorAll('[data-ak-timeslots] [data-ak-timeslot-content]').forEach(timeslotContent => {
-      const timeslot = timeslotContent.querySelector('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap');
+      const timeslot = timeslotKeyMap[timeslotContent.querySelector('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap')];
       slideObj[timeslot] = [];
 
       timeslotContent.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)').forEach(attraction => {
         const { location, displayName, editorialSummary, placeId } = attraction.saveObj;
         slideObj[timeslot].push({ location, displayName, editorialSummary, placeId });
       });
+
+      if (timeslot === 'notes') {
+        const $notes = timeslotContent.querySelector('textarea');
+        slideObj.dayNotes = $notes ? $notes.value : '';
+      }
     });
   });
 
@@ -1472,7 +1482,7 @@ function handleSliderRemoveLocation(e) {
   if (savedAttractions && Object.keys(savedAttractions).length) {
     const attrName = $attraction.querySelector('[data-ak="location-title"]').textContent.toLowerCase().trim();
     const savedAttractionsParsed = JSON.parse(savedAttractions);
-    const timeslot = $removeBtn.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim();
+    const timeslot = timeslotKeyMap[$removeBtn.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim()];
     const timeslotArr = savedAttractionsParsed[`slide${slideIndex}`][timeslot];
     const attrMatch = timeslotArr?.find(attr => attrName.includes(attr.displayName.toLowerCase().trim()));
     if (attrMatch) timeslotArr.splice(timeslotArr.indexOf(attrMatch), 1);
@@ -1506,15 +1516,22 @@ function getCurrentSlideInfo() {
 }
 
 function restoreSavedAttractions(savedAttractions) {
-  for (const [slide, attractions] of Object.entries(savedAttractions)) {
+  for (const [slide, slots] of Object.entries(savedAttractions)) {
     const slideNum = Number(slide.match(/\d+/)[0]);
     const $currentSlide = [...$attractionsSliderMask.querySelectorAll('.w-slide')][slideNum - 1];
     if (!$currentSlide) continue;
 
-    const { morning, afternoon, evening } = attractions;
-    if (morning?.length) processSectionAttractions(morning, $currentSlide.querySelector('[data-ak-timeslot-wrap="morning"]'), slideNum);
-    if (afternoon?.length) processSectionAttractions(afternoon, $currentSlide.querySelector('[data-ak-timeslot-wrap="afternoon"]'), slideNum);
-    if (evening?.length) processSectionAttractions(evening, $currentSlide.querySelector('[data-ak-timeslot-wrap="evening"]'), slideNum);
+    const { attractions, restaurants, notes, dayNotes } = slots;
+    if (attractions?.length) processSectionAttractions(attractions, $currentSlide.querySelector('[data-ak-timeslot-wrap="morning"]'), slideNum);
+    if (restaurants?.length) processSectionAttractions(restaurants, $currentSlide.querySelector('[data-ak-timeslot-wrap="afternoon"]'), slideNum);
+    if (notes?.length) processSectionAttractions(notes, $currentSlide.querySelector('[data-ak-timeslot-wrap="evening"]'), slideNum);
+
+    if (dayNotes != null) {
+      const $textarea = $currentSlide.querySelector('[data-ak-timeslot-wrap="evening"]')
+        ?.closest('[data-ak-timeslot-content]')
+        ?.querySelector('textarea');
+      if ($textarea) $textarea.value = dayNotes;
+    }
   }
 
   $attractionsSliderMask.querySelector('.w-slide .active')?.classList.remove('active');
