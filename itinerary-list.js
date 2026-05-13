@@ -19,6 +19,9 @@ const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
 const $downloadBtn = document.querySelector('[data-ak="download-btn"]');
+const $printPDFBtn = document.querySelector('[data-ak="download-btn-v2"]');
+const $itineraryBtnsWrap = document.querySelector('[data-ak="itinerary-btns-wrap"]');
+
 
 let itineraryText = "";
 
@@ -45,7 +48,8 @@ async function getDataById(userId) {
 function showLoading(msg = "Loading itinerary...") {
   $itineraryWrap.classList.add("loading");
   $itineraryWrap.classList.remove("error");
-  $downloadBtn.classList.add("disable");
+  // $downloadBtn.classList.add("disable");
+  $itineraryBtnsWrap.classList.add("disable");
 
   // Clear content first
   $itineraryWrap.textContent = "";
@@ -67,6 +71,7 @@ function showError(msg) {
   $itineraryWrap.classList.add("error");
   $itineraryWrap.classList.remove("loading");
   $downloadBtn.classList.add("disable");
+  $itineraryBtnsWrap.classList.add("disable");
 
   // Retry button
   const retryBtn = document.createElement("button");
@@ -122,6 +127,7 @@ function renderTxtStyle(data, preliminaryStr='') {
   $itineraryWrap.textContent = itineraryText || "Itinerary is empty.";
   $itineraryWrap.classList.remove("error", "loading");
   $downloadBtn.classList.remove("disable");
+  $itineraryBtnsWrap.classList.remove("disable");
 }
 
 // --- Main ---
