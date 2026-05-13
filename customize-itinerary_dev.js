@@ -1275,7 +1275,7 @@ function capitalize(str) {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['displayName', 'location', 'editorialSummary'] });
+    await place.fetchFields({ fields: ['displayName', 'location', 'editorialSummary', 'formattedAddress'] });
 
     map.panTo(place.viewport || place.location);
 
