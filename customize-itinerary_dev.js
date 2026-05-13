@@ -1409,8 +1409,7 @@ function getCurrentUserAttractions() {
       slideObj[timeslot] = [];
 
       timeslotContent.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)').forEach(attraction => {
-        const { location, displayName, editorialSummary, placeId } = attraction.saveObj;
-        slideObj[timeslot].push({ location, displayName, editorialSummary, placeId });
+        slideObj[timeslot].push(attraction.saveObj);
       });
 
       if (timeslot === 'notes') {
