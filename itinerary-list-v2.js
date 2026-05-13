@@ -85,6 +85,7 @@ const sectionMap = {
   restaurants: "Restaurants",
   notes: "Local Experiences"
 };
+const oldKeyMap = { attractions: 'morning', restaurants: 'afternoon', notes: 'evening' };
 
 function renderTxtStyle(data, preliminaryStr='') {
   let output = "";
@@ -97,10 +98,11 @@ function renderTxtStyle(data, preliminaryStr='') {
     let hasContent = false;
 
     for (const key of ["attractions", "restaurants", "notes"]) {
-      if (sections[key] && sections[key].length > 0) {
+      const items = sections[key] || sections[oldKeyMap[key]];
+      if (items && items.length > 0) {
         hasContent = true;
         dayOutput += `${sectionMap[key]}\n\n`;
-        sections[key].forEach(item => {
+        items.forEach(item => {
           if (item.displayName) {
             dayOutput += `${item.displayName}\n`;
           }

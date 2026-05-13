@@ -1521,7 +1521,7 @@ function restoreSavedAttractions(savedAttractions) {
     const $currentSlide = [...$attractionsSliderMask.querySelectorAll('.w-slide')][slideNum - 1];
     if (!$currentSlide) continue;
 
-    const { attractions, restaurants, notes, dayNotes } = slots;
+    const { attractions = slots.morning, restaurants = slots.afternoon, notes = slots.evening, dayNotes } = slots;
     if (attractions?.length) processSectionAttractions(attractions, $currentSlide.querySelector('[data-ak-timeslot-wrap="morning"]'), slideNum);
     if (restaurants?.length) processSectionAttractions(restaurants, $currentSlide.querySelector('[data-ak-timeslot-wrap="afternoon"]'), slideNum);
     if (notes?.length) processSectionAttractions(notes, $currentSlide.querySelector('[data-ak-timeslot-wrap="evening"]'), slideNum);

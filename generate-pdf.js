@@ -88,13 +88,14 @@ const SECTIONS = [
   { key: 'restaurants', label: 'RESTAURANTS',        symbol: '&#9135;' },
   { key: 'notes',       label: 'LOCAL EXPERIENCES',  symbol: '&#9670;' },
 ];
+const oldKeyMap = { attractions: 'morning', restaurants: 'afternoon', notes: 'evening' };
 
 function renderDay(slide, dayNum) {
   let totalCount = 0;
   let sectionsHTML = '';
 
   for (const { key, label, symbol } of SECTIONS) {
-    const items = slide[key];
+    const items = slide[key] || slide[oldKeyMap[key]];
     if (!items || !items.length) continue;
     totalCount += items.length;
     sectionsHTML += `
