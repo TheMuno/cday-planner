@@ -1536,9 +1536,10 @@ function restoreSavedAttractions(savedAttractions) {
   $attractionsSliderMask.querySelector('.w-slide .active')?.classList.remove('active');
 
   function processSectionAttractions(attractions, $sectionWrap, slideNum) {
-    attractions.forEach(({ displayName, editorialSummary, location, type, placeId }) => {
+    attractions.forEach((attraction) => {
+      const { displayName, editorialSummary, location, type } = attraction;
       const marker = createMarker(displayName, location, editorialSummary, type);
-      addAttractionToList(displayName, $sectionWrap, marker, { displayName, editorialSummary, location, placeId });
+      addAttractionToList(displayName, $sectionWrap, marker, attraction);
       markerObj[`slide${slideNum}`] = markerObj[`slide${slideNum}`] || [];
       markerObj[`slide${slideNum}`].push(marker);
     });
