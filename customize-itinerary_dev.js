@@ -981,8 +981,10 @@ window.addEventListener('load', async () => {
 
 
   const ITINERARY_PAGE_2_URL = '/customize-itinerary-page-2';
-  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', e => {
+  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
     e.preventDefault();
+    const $btn = e.currentTarget;
+    if ($btn.classList.contains('ak-saving')) return;
 
     const slides = [...document.querySelectorAll('.w-slider .w-slide')];
 
@@ -995,6 +997,33 @@ window.addEventListener('load', async () => {
       return count + slide.querySelectorAll('[data-ak-timeslot-wrap="morning"] [data-ak="attraction-location"]:not(.hidden)').length;
     }, 0);
     localStorage['ak-y-total-attractions'] = totalAttractions;
+
+    if (!document.getElementById('ak-step2-spinner-style')) {
+      const style = document.createElement('style');
+      style.id = 'ak-step2-spinner-style';
+      style.textContent = `
+        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+        .ak-step2-spinner {
+          display: inline-block; width: 14px; height: 14px;
+          border: 2px solid currentColor; border-top-color: transparent;
+          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+          opacity: 0.8; flex-shrink: 0;
+        }
+        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const originalHTML = $btn.innerHTML;
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
+    $btn.classList.add('ak-saving');
+
+    try {
+      await saveAttractionsDB();
+    } finally {
+      $btn.innerHTML = originalHTML;
+      $btn.classList.remove('ak-saving');
+    }
 
     window.location.href = ITINERARY_PAGE_2_URL;
   });
