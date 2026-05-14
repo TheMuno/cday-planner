@@ -868,9 +868,7 @@ window.addEventListener('load', async () => {
 
       const placeObj = place.toJSON();
       const { displayName } = placeObj;
-      const neighborhood = placeObj.addressComponents?.find(c => c.types.includes('neighborhood'))?.longText
-        || placeObj.addressComponents?.find(c => c.types.includes('sublocality_level_1'))?.longText
-        || '';
+      const neighborhood = extractNeighborhood(placeObj.addressComponents || []);
 
       const $timeslot = document.querySelector('[data-ak-timeslot].active') || document.querySelector('[data-ak-timeslot="morning"]');
       const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
@@ -1549,6 +1547,11 @@ function restoreSavedAttractions(savedAttractions) {
       $timeslotSec.querySelector('[data-ak-timeslot-title]').click();
     }
   }
+}
+
+function extractNeighborhood(addressComponents) {
+  const find = (...types) => addressComponents.find(c => types.some(t => c.types.includes(t)))?.longText;
+  return find('neighborhood') || find('sublocality', 'sublocality_level_1') || find('locality') || '';
 }
 
 function setUnsavedChangesFlag() {
