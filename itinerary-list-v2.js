@@ -43,12 +43,12 @@ async function getDataById(userId) {
 
 // --- Helpers ---
 function showLoading(msg = "Loading itinerary...") {
-  $itineraryWrap.classList.add("loading");
-  $itineraryWrap.classList.remove("error");
+  $itineraryWrap?.classList.add("loading");
+  $itineraryWrap?.classList.remove("error");
   $downloadBtn.classList.add("disable");
 
   // Clear content first
-  $itineraryWrap.textContent = "";
+  $itineraryWrap?.textContent = "";
 
   // Spinner element
   const spinner = document.createElement("div");
@@ -57,15 +57,15 @@ function showLoading(msg = "Loading itinerary...") {
   const text = document.createElement("span");
   text.textContent = msg;
 
-  $itineraryWrap.appendChild(spinner);
-  $itineraryWrap.appendChild(text);
+  $itineraryWrap?.appendChild(spinner);
+  $itineraryWrap?.appendChild(text);
 }
 
 function showError(msg) {
   console.error("❌", msg);
-  $itineraryWrap.textContent = msg;
-  $itineraryWrap.classList.add("error");
-  $itineraryWrap.classList.remove("loading");
+  $itineraryWrap?.textContent = msg;
+  $itineraryWrap?.classList.add("error");
+  $itineraryWrap?.classList.remove("loading");
   $downloadBtn.classList.add("disable");
 
   // Retry button
@@ -76,8 +76,8 @@ function showError(msg) {
     retryBtn.remove();
     renderData();
   };
-  $itineraryWrap.appendChild(document.createElement("br"));
-  $itineraryWrap.appendChild(retryBtn);
+  $itineraryWrap?.appendChild(document.createElement("br"));
+  $itineraryWrap?.appendChild(retryBtn);
 }
 
 const sectionMap = {
@@ -119,8 +119,8 @@ function renderTxtStyle(data, preliminaryStr='') {
   }
 
   itineraryText = output.trim();
-  $itineraryWrap.textContent = itineraryText || "Itinerary is empty.";
-  $itineraryWrap.classList.remove("error", "loading");
+  $itineraryWrap?.textContent = itineraryText || "Itinerary is empty.";
+  $itineraryWrap?.classList.remove("error", "loading");
   $downloadBtn.classList.remove("disable");
 }
 
