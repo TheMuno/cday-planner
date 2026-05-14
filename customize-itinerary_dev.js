@@ -394,7 +394,7 @@ window.addEventListener('load', async () => {
     const { $currentSlide, slideIndex } = getCurrentSlideInfo();
     const $activeTimeslot = $currentSlide.querySelector('[data-ak-timeslots].active');
     const $morningTimeslot = $currentSlide.querySelector('[data-ak-timeslot="morning"]');
-    const $timeslot = $activeTimeslot || $morningTimeslot;
+    const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || $morningTimeslot;
 
     const matchingAttraction = [...document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)')].find(attraction => {
       const text = attraction.querySelector('[data-ak="location-title"]').textContent.toLowerCase().trim();
@@ -870,7 +870,8 @@ window.addEventListener('load', async () => {
       const { displayName } = placeObj;
       const neighborhood = extractNeighborhood(placeObj.addressComponents || []);
 
-      const $timeslot = document.querySelector('[data-ak-timeslot].active') || document.querySelector('[data-ak-timeslot="morning"]');
+      const $activeTimeslot = document.querySelector('[data-ak-timeslot].active');
+      const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || document.querySelector('[data-ak-timeslot="morning"]');
       const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
       if (attractionExists($timeslotWrap, displayName)) {
         alert('Sorry, Already Added!');
@@ -922,7 +923,7 @@ window.addEventListener('load', async () => {
     function processAttractionSave($currentSlide, addNSaveObj) {
       const $activeTimeslot = $currentSlide.querySelector('[data-ak-timeslots].active');
       const $morningTimeslot = $currentSlide.querySelector('[data-ak-timeslot="morning"]');
-      const $timeslot = $activeTimeslot || $morningTimeslot;
+      const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || $morningTimeslot;
 
       if ($timeslot.querySelector('[data-ak-timeslot-content]').style.height === '0px') {
         $timeslot.querySelector('[data-ak-timeslot-title]').click();
