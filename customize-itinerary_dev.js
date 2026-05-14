@@ -867,8 +867,8 @@ window.addEventListener('load', async () => {
       await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress'] });
 
       const placeObj = place.toJSON();
-      const { displayName } = placeObj;
-      const neighborhood = extractNeighborhood(placeObj.addressComponents || []);
+      const { displayName, id, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+      const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
 
       const $activeTimeslot = document.querySelector('[data-ak-timeslot].active');
       const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || document.querySelector('[data-ak-timeslot="morning"]');
@@ -901,8 +901,6 @@ window.addEventListener('load', async () => {
       } else {
         map.panTo(place.location);
       }
-
-      const { id, location: { lat, lng }, editorialSummary, types: type } = placeObj;
 
       const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
       if (!placeIds.includes(id)) {
@@ -1550,9 +1548,26 @@ function restoreSavedAttractions(savedAttractions) {
   }
 }
 
-function extractNeighborhood(addressComponents) {
+async function extractNeighborhood(addressComponents, lat, lng) {
   const find = (...types) => addressComponents.find(c => types.some(t => c.types.includes(t)))?.longText;
-  return find('neighborhood') || find('sublocality', 'sublocality_level_1') || find('locality') || '';
+  const findLast = (...types) => addressComponents.findLast(c => types.some(t => c.types.includes(t)))?.longText;
+
+  const fromComponents = findLast('neighborhood');
+  if (fromComponents) return fromComponents;
+
+  // Reverse geocode fallback for precise neighborhood
+  try {
+    const geocoder = new google.maps.Geocoder();
+    const { results } = await geocoder.geocode({ location: { lat, lng } });
+    for (const result of results) {
+      if (result.types.includes('neighborhood')) {
+        const comp = result.address_components.find(c => c.types.includes('neighborhood'));
+        if (comp) return comp.long_name;
+      }
+    }
+  } catch (_) {}
+
+  return find('sublocality', 'sublocality_level_1') || find('locality') || '';
 }
 
 function setUnsavedChangesFlag() {
