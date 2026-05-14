@@ -116,6 +116,11 @@ function renderTxtStyle(data, preliminaryStr='') {
       }
     }
 
+    if (sections.dayNotes) {
+      hasContent = true;
+      dayOutput += `Notes\n\n${sections.dayNotes}\n\n`;
+    }
+
     if (hasContent) {
       output += dayOutput + `\n`;
     }
