@@ -63,7 +63,7 @@ function showLoading(msg = "Loading itinerary...") {
 
 function showError(msg) {
   console.error("❌", msg);
-  $itineraryWrap?.textContent = msg;
+  if ($itineraryWrap) $itineraryWrap.textContent = msg;
   $itineraryWrap?.classList.add("error");
   $itineraryWrap?.classList.remove("loading");
   $downloadBtn.classList.add("disable");
@@ -119,7 +119,7 @@ function renderTxtStyle(data, preliminaryStr='') {
   }
 
   itineraryText = output.trim();
-  $itineraryWrap?.textContent = itineraryText || "Itinerary is empty.";
+  if ($itineraryWrap) $itineraryWrap.textContent = itineraryText || "Itinerary is empty.";
   $itineraryWrap?.classList.remove("error", "loading");
   $downloadBtn.classList.remove("disable");
 }
