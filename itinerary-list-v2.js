@@ -48,7 +48,7 @@ function showLoading(msg = "Loading itinerary...") {
   $downloadBtn.classList.add("disable");
 
   // Clear content first
-  $itineraryWrap?.textContent = "";
+  if ($itineraryWrap) $itineraryWrap.textContent = "";
 
   // Spinner element
   const spinner = document.createElement("div");
