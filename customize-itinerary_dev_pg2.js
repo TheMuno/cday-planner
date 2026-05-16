@@ -3,7 +3,7 @@
  * Populates [X], [Y], [A], [B] before the user hits Calculate.
  *
  * Sources:
- *   A  = localStorage['ak-number-of-days']
+ *   A  = resolved allInclusive pass trip_days (capped at 10; falls back to nearest lower pass if exact match missing)
  *   Y  = localStorage['ak-y-total-attractions']
  *   X  = derived — count of user's selected attractions that are on a pass
  *   B  = (([A]-Day All Inclusive price) - (GoCity Explorer price)) * adults
@@ -29,9 +29,12 @@ async function fetchSheetData() {
 }
 
 function preCalculatePassStats(Attractions, Passes) {
-  const A = Number(localStorage['ak-number-of-days'] || 0);
+  const rawDays = Number(localStorage['ak-number-of-days'] || 0);
   const Y = Number(localStorage['ak-y-total-attractions'] || 0);
   const adults = Number(localStorage['ak-number-of-adults'] || 1);
+
+  const resolvedAllInc = Passes ? resolveAllIncPass(Passes, rawDays) : null;
+  const A = resolvedAllInc ? Number(resolvedAllInc[1].trip_days) : rawDays;
 
   // Always populate A and Y immediately
   document.querySelectorAll('[data-ak="number-of-days"]').forEach(el => el.textContent = A);
@@ -72,6 +75,18 @@ function preCalculatePassStats(Attractions, Passes) {
   if ($savings && B !== null) $savings.textContent = B;
 }
 
+function resolveAllIncPass(Passes, tripDays) {
+  const effectiveDays = tripDays || 1;
+  const allIncPasses = Object.entries(Passes)
+    .filter(([id, p]) => p.pass_id?.includes('gocity_allinc'))
+    .sort((a, b) => Number(a[1].trip_days) - Number(b[1].trip_days));
+
+  const cappedDays = Math.min(effectiveDays, 10);
+  return allIncPasses.find(([id, p]) => Number(p.trip_days) === cappedDays)
+    || [...allIncPasses].reverse().find(([id, p]) => Number(p.trip_days) < cappedDays)
+    || null;
+}
+
 /**
  * B = (([A]-Day All Inclusive price) - (GoCity Explorer price for X attractions)) * adults
  * Returns null if either pass cannot be found.
@@ -81,16 +96,7 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
 
   const passData = Object.entries(Passes);
 
-  // [A]-Day All Inclusive — exact match on trip_days, default to 1-Day if A is 0 or unset
-  const effectiveDays = tripDays || 1;
-
-  const allIncPasses = passData
-    .filter(([id, p]) => p.pass_id?.includes('gocity_allinc'))
-    .sort((a, b) => Number(a[1].trip_days) - Number(b[1].trip_days));
-
-  const cappedDays = Math.min(effectiveDays, 10);
-  const exactAllInc = allIncPasses.find(([id, p]) => Number(p.trip_days) === cappedDays)
-    || [...allIncPasses].reverse().find(([id, p]) => Number(p.trip_days) < cappedDays);
+  const exactAllInc = resolveAllIncPass(Passes, tripDays);
   if (!exactAllInc) return null;
 
   const allIncPrice = Number(exactAllInc[1].pass_price) || 0;
