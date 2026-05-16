@@ -102,9 +102,8 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
   const allIncPrice = Number(exactAllInc[1].pass_price) || 0;
 
   console.log('passData:', passData)
-  console.log('effectiveDays:', effectiveDays)
-  console.log('allIncPasses:', allIncPasses)
   console.log('exactAllInc:', exactAllInc)
+  console.log('allIncPrice:', allIncPrice)
 
   // GoCity Explorer — best pass that covers the user's attractions count
   const explorerPasses = passData
