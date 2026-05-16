@@ -269,7 +269,7 @@ function setupPassCalculator() {
     const $citypassPrice = document.querySelector('[data-ak="pass-price"][named="citypass"]');
 
     $ticketsTotalPrice.textContent = `$${attractionsTotalCost}`;
-    $ticketsNum.forEach(n => n.textContent = $individualResultsContainer.children.length);
+    // $ticketsNum.forEach(n => n.textContent = $individualResultsContainer.children.length);
 
     function addAttractionToPassList(passes, passName, $resultEl, place_id, $passContainer) {
       const $result = $resultEl.cloneNode(true);
