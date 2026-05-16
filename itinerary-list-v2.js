@@ -195,7 +195,7 @@ async function renderData() {
 }
 
 // --- Auto-run ---
-if (location.hostname !== 'ask-khonsu.webflow.io' || location.hostname !== 'www.askkhonsu.com') {
+if (location.hostname !== 'ask-khonsu.webflow.io' && location.hostname !== 'www.askkhonsu.com') {
   if (!localStorage['ak-userMail']) {
     showRedirectLoader('User not logged in');
     setTimeout(() => { window.location.href = page1Url; }, 1500);
