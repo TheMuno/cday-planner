@@ -70,7 +70,7 @@ function showError(msg) {
   $itineraryWrap.textContent = msg;
   $itineraryWrap.classList.add("error");
   $itineraryWrap.classList.remove("loading");
-  $downloadBtn.classList.add("disable");
+  // $downloadBtn.classList.add("disable");
   $itineraryBtnsWrap.classList.add("disable");
 
   // Retry button
@@ -131,7 +131,7 @@ function renderTxtStyle(data, preliminaryStr='') {
   itineraryText = output.trim();
   $itineraryWrap.textContent = itineraryText || "Itinerary is empty.";
   $itineraryWrap.classList.remove("error", "loading");
-  $downloadBtn.classList.remove("disable");
+  // $downloadBtn.classList.remove("disable");
   $itineraryBtnsWrap.classList.remove("disable");
 }
 
