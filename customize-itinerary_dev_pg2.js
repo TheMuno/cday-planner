@@ -88,8 +88,9 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
     .filter(([id, p]) => p.pass_id?.includes('gocity_allinc'))
     .sort((a, b) => Number(a[1].trip_days) - Number(b[1].trip_days));
 
-  const exactAllInc = allIncPasses.find(([id, p]) => Number(p.trip_days) === effectiveDays)
-    || allIncPasses.find(([id, p]) => Number(p.trip_days) === 1); // hard fallback to 1-Day
+  const cappedDays = Math.min(effectiveDays, 10);
+  const exactAllInc = allIncPasses.find(([id, p]) => Number(p.trip_days) === cappedDays)
+    || [...allIncPasses].reverse().find(([id, p]) => Number(p.trip_days) < cappedDays);
   if (!exactAllInc) return null;
 
   const allIncPrice = Number(exactAllInc[1].pass_price) || 0;
@@ -108,6 +109,9 @@ function calcB(Passes, tripDays, attractionsOnPass, adults) {
   const bestExplorer  = exactExplorer
     || explorerPasses.find(([id, p]) => Number(p.attraction_count) >= attractionsOnPass)
     || [...explorerPasses].reverse().find(([id, p]) => Number(p.attraction_count) <= attractionsOnPass);
+
+  console.log('exactExplorer:', exactExplorer)
+  console.log('bestExplorer:', bestExplorer) 
 
   if (!bestExplorer) return null;
 
