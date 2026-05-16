@@ -35,7 +35,7 @@ function preCalculatePassStats(Attractions, Passes) {
 
   // Always populate A and Y immediately
   document.querySelectorAll('[data-ak="number-of-days"]').forEach(el => el.textContent = A);
-  document.querySelectorAll('[data-ak="tickets-num"]').forEach(el => el.textContent = Y);
+  document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
   let userAddedAttractions = JSON.parse(localStorage['ak-user-added-items'] || '[]');
