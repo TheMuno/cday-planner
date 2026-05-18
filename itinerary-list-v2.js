@@ -19,6 +19,7 @@ const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
 const $downloadBtn = document.querySelector('[data-ak="download-btn-v2"]');
+const $downloadBtnV3 = document.querySelector('[data-ak="download-btn-v3"]');
 
 let itineraryText = "";
 
@@ -45,8 +46,8 @@ async function getDataById(userId) {
 function showLoading(msg = "Loading itinerary...") {
   $itineraryWrap?.classList.add("loading");
   $itineraryWrap?.classList.remove("error");
-  $downloadBtn.classList.add("disable");
-
+  $itineraryWrap?.classList.add("disable");
+  
   // Clear content first
   if ($itineraryWrap) $itineraryWrap.textContent = "";
 
@@ -66,8 +67,8 @@ function showError(msg) {
   if ($itineraryWrap) $itineraryWrap.textContent = msg;
   $itineraryWrap?.classList.add("error");
   $itineraryWrap?.classList.remove("loading");
-  $downloadBtn.classList.add("disable");
-
+  $itineraryWrap?.classList.add("disable");
+  
   // Retry button
   const retryBtn = document.createElement("button");
   retryBtn.textContent = "Retry";
@@ -121,8 +122,8 @@ function renderTxtStyle(data, preliminaryStr='') {
   itineraryText = output.trim();
   if ($itineraryWrap) $itineraryWrap.textContent = itineraryText || "Itinerary is empty.";
   $itineraryWrap?.classList.remove("error", "loading");
-  $downloadBtn.classList.remove("disable");
-}
+  $itineraryWrap?.classList.remove("disable");
+  }
 
 // --- Main ---
 async function renderData() {
@@ -273,7 +274,7 @@ $downloadBtn.addEventListener("click", async () => {
 
   const originalHTML = $downloadBtn.innerHTML;
   $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Generating PDF...</span>`;
-  $downloadBtn.classList.add("disable");
+  $itineraryWrap?.classList.add("disable");
 
   try {
     const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");
@@ -294,9 +295,45 @@ $downloadBtn.addEventListener("click", async () => {
     alert("Failed to generate PDF. Please try again.");
   } finally {
     $downloadBtn.innerHTML = originalHTML;
-    $downloadBtn.classList.remove("disable");
+    $itineraryWrap?.classList.remove("disable");
   }
 });
+
+// --- Download as Advanced PDF (v3) ---
+if ($downloadBtnV3) {
+  $downloadBtnV3.addEventListener("click", async () => {
+    const userMail = localStorage['ak-userMail'];
+    if (!userMail) return;
+
+    injectPdfSpinnerStyle();
+
+    const originalHTML = $downloadBtnV3.innerHTML;
+    $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Generating PDF...</span>`;
+    $itineraryWrap?.classList.add("disable");
+
+    try {
+      const generateAdvancedItineraryPdf = httpsCallable(functions, "generateAdvancedItineraryPdf");
+      const { data } = await generateAdvancedItineraryPdf({ userId: `user-${userMail}` });
+
+      const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename;
+      a.click();
+
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("❌ Advanced PDF generation failed:", err);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      $downloadBtnV3.innerHTML = originalHTML;
+      $itineraryWrap?.classList.remove("disable");
+    }
+  });
+}
 
 function processTitleDates(date) {
   const theDate = parseJSON(date);
