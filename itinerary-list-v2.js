@@ -273,7 +273,7 @@ $downloadBtn.addEventListener("click", async () => {
   injectPdfSpinnerStyle();
 
   const originalHTML = $downloadBtn.innerHTML;
-  $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Generating PDF...</span>`;
+  $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
   $itineraryWrap?.classList.add("disable");
 
   try {
@@ -308,7 +308,7 @@ if ($downloadBtnV3) {
     injectPdfSpinnerStyle();
 
     const originalHTML = $downloadBtnV3.innerHTML;
-    $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Generating PDF...</span>`;
+    $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
     $itineraryWrap?.classList.add("disable");
 
     try {
