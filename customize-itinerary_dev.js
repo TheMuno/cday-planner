@@ -864,7 +864,7 @@ window.addEventListener('load', async () => {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'websiteUri', 'nationalPhoneNumber'] });
 
       const placeObj = place.toJSON();
       const { displayName, id, location: { lat, lng }, editorialSummary, types: type } = placeObj;
@@ -913,7 +913,7 @@ window.addEventListener('load', async () => {
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
 
-      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id };
+      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '' };
       processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj });
       setUnsavedChangesFlag();
     });
