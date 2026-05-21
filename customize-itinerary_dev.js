@@ -864,11 +864,12 @@ window.addEventListener('load', async () => {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos'] });
 
       const placeObj = place.toJSON();
       const { displayName, id, location: { lat, lng }, editorialSummary, types: type } = placeObj;
       const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
+      const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
       const $activeTimeslot = document.querySelector('[data-ak-timeslot].active');
       const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || document.querySelector('[data-ak-timeslot="morning"]');
@@ -913,7 +914,7 @@ window.addEventListener('load', async () => {
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
 
-      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '' };
+      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl };
       processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj });
       setUnsavedChangesFlag();
     });
