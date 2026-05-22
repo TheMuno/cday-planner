@@ -43,7 +43,7 @@ function preCalculatePassStats(Attractions, Passes) {
   const children = Number(localStorage['ak-children-num'] || 0);
   const allPeople = adults + children;
   document.querySelectorAll('[data-ak="all-people-num"]').forEach(el => el.textContent = allPeople);
-  document.querySelectorAll('[data-ak="all-people-cost"]').forEach(el => el.textContent = `$${allPeople * 60}`);
+  document.querySelectorAll('[data-ak="all-people-cost"]').forEach(el => el.textContent = allPeople * 60);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
   let userAddedAttractions = JSON.parse(localStorage['ak-user-added-items'] || '[]');
