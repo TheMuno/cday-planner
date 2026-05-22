@@ -31,7 +31,7 @@ async function fetchSheetData() {
 function preCalculatePassStats(Attractions, Passes) {
   const rawDays = Number(localStorage['ak-number-of-days'] || 0);
   const Y = Number(localStorage['ak-y-total-attractions'] || 0);
-  const adults = Number(localStorage['ak-number-of-adults'] || 1);
+  const adults = Number(localStorage['ak-adult-num'] || 1);
 
   const resolvedAllInc = Passes ? resolveAllIncPass(Passes, rawDays) : null;
   const A = resolvedAllInc ? Number(resolvedAllInc[1].trip_days) : rawDays;
@@ -39,6 +39,11 @@ function preCalculatePassStats(Attractions, Passes) {
   // Always populate A and Y immediately
   document.querySelectorAll('[data-ak="number-of-days"]').forEach(el => el.textContent = A);
   document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
+
+  const children = Number(localStorage['ak-children-num'] || 0);
+  const allPeople = adults + children;
+  document.querySelectorAll('[data-ak="all-people-num"]').forEach(el => el.textContent = allPeople);
+  document.querySelectorAll('[data-ak="all-people-cost"]').forEach(el => el.textContent = `$${allPeople * 60}`);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
   let userAddedAttractions = JSON.parse(localStorage['ak-user-added-items'] || '[]');
