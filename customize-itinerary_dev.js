@@ -563,9 +563,9 @@ window.addEventListener('load', async () => {
     }
 
     for (const [id, passInfo] of Object.entries(attractions)) {
-      const { place_id, on_pass, attraction_name } = passInfo;
+      const { place_id, place_id_secondary, on_pass, attraction_name } = passInfo;
 
-      const isMatchedById = placeIds.includes(place_id);
+      const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
       const normalizedAttractionName = normalize(attraction_name);
       const isMatchedByName = userAddedAttractions.some(attraction => attraction[0].includes(normalizedAttractionName));
 

@@ -51,10 +51,10 @@ function preCalculatePassStats(Attractions, Passes) {
   let X = 0;
 
   for (const [id, passInfo] of Object.entries(Attractions)) {
-    const { place_id, on_pass, attraction_name, passes } = passInfo;
+    const { place_id, place_id_secondary, on_pass, attraction_name, passes } = passInfo;
     const normalizedName = normalize(attraction_name);
 
-    const isMatchedById = placeIds.includes(place_id);
+    const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
     const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
 
     if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
@@ -235,9 +235,9 @@ function setupPassCalculator() {
     }
 
     for (const [id, passInfo] of Object.entries(attractions)) {
-      const { place_id, on_pass, attraction_name } = passInfo;
+      const { place_id, place_id_secondary, on_pass, attraction_name } = passInfo;
 
-      const isMatchedById = placeIds.includes(place_id);
+      const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
       const normalizedAttractionName = normalize(attraction_name);
       const isMatchedByName = userAddedAttractions.some(attraction => attraction[0].includes(normalizedAttractionName));
 
