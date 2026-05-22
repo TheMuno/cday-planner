@@ -70,6 +70,9 @@ function preCalculatePassStats(Attractions, Passes) {
   const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
   if ($onPassCounter) $onPassCounter.textContent = X;
 
+  const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
+  if ($attractionsOnPasses && X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
+
   const B = calcB(Passes, A, X, adults);
   const $savings = document.querySelector('[data-ak="allinc-vs-best-savings"]');
   if ($savings && B !== null) $savings.textContent = B;
