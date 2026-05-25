@@ -46,8 +46,7 @@ function preCalculatePassStats(Attractions, Passes) {
   document.querySelectorAll('[data-ak="all-people-cost"]').forEach(el => el.textContent = allPeople * 60);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
-  let userAddedAttractions = JSON.parse(localStorage['ak-user-added-items'] || '[]');
-  if (userAddedAttractions.length) userAddedAttractions = Object.entries(userAddedAttractions);
+  const userAddedAttractions = Object.entries(JSON.parse(localStorage['ak-user-added-items'] || '{}'));
 
   if (!Attractions || (!placeIds.length && !userAddedAttractions.length)) return;
 
