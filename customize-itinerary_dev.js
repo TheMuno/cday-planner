@@ -985,7 +985,9 @@ window.addEventListener('load', async () => {
   });
 
 
-  const ITINERARY_PAGE_2_URL = '/customize-itinerary-page-2';
+  const ITINERARY_PAGE_2_URL = (location.hostname === 'ask-khonsu.webflow.io' || location.hostname.endsWith('askkhonsu.com'))
+    ? '/attraction-savings'
+    : '/customize-itinerary-page-2';
   const ITINERARY_LIST_URL = '/itinerary-list';
   document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
     e.preventDefault();
