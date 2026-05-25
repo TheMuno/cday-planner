@@ -275,7 +275,7 @@ $downloadBtn.addEventListener("click", async () => {
   const originalHTML = $downloadBtn.innerHTML;
   $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
   $downloadBtn.disabled = true;
-  $downloadBtn.style.opacity = '0.5';
+  $downloadBtn.style.opacity = '0.8';
   $itineraryWrap?.classList.add("disable");
 
   try {
@@ -314,7 +314,7 @@ if ($downloadBtnV3) {
     const originalHTML = $downloadBtnV3.innerHTML;
     $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
     $downloadBtnV3.disabled = true;
-    $downloadBtnV3.style.opacity = '0.5';
+    $downloadBtnV3.style.opacity = '0.8';
     $itineraryWrap?.classList.add("disable");
 
     try {

@@ -521,7 +521,7 @@ window.addEventListener('load', async () => {
   $saveItineraryBtn.addEventListener('click', async e => {
     e.preventDefault();
     $saveItineraryBtn.disabled = true;
-    $saveItineraryBtn.style.opacity = '0.5';
+    $saveItineraryBtn.style.opacity = '0.8';
     await saveAttractionsDB();
     removeUnsavedChangesFlag();
     $saveItineraryBtn.disabled = false;
@@ -1024,7 +1024,7 @@ window.addEventListener('load', async () => {
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
-    $btn.style.opacity = '0.5';
+    $btn.style.opacity = '0.8';
 
     try {
       await saveAttractionsDB();
@@ -1043,7 +1043,8 @@ window.addEventListener('load', async () => {
     e.preventDefault();
     const $btn = e.currentTarget;
     $btn.disabled = true;
-    $btn.style.opacity = '0.5';
+    $btn.style.opacity = '0.8';
+    $btn.textContent = 'Processing...';
 
     await saveAttractionsDB();
     window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;

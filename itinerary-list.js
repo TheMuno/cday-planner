@@ -250,7 +250,7 @@ function showRedirectLoader(message) {
 $downloadBtn.addEventListener("click", () => {
   if (!itineraryText) return;
   $downloadBtn.disabled = true;
-  $downloadBtn.style.opacity = '0.5';
+  $downloadBtn.style.opacity = '0.8';
 
   const tagline = "\n\n\n\n| www.askkhonsu.com |"; // Local Tips | Maximized Trips";
   const fullText = itineraryText + tagline;
