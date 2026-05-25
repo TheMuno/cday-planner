@@ -532,10 +532,43 @@ function setupPassCalculator() {
 const $gotoItineraryList = document.querySelector('[data-ak="open-itinerary-list"]');
 $gotoItineraryList.addEventListener('click', e => {
   e.preventDefault();
+  if ($gotoItineraryList.disabled) return;
+
+  if (!document.getElementById('ak-step2-spinner-style')) {
+    const style = document.createElement('style');
+    style.id = 'ak-step2-spinner-style';
+    style.textContent = `
+      @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+      .ak-step2-spinner {
+        display: inline-block; width: 14px; height: 14px;
+        border: 2px solid currentColor; border-top-color: transparent;
+        border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+        opacity: 0.8; flex-shrink: 0;
+      }
+      .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const originalHTML = $gotoItineraryList.innerHTML;
+  $gotoItineraryList.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Loading...</span>`;
   $gotoItineraryList.disabled = true;
   $gotoItineraryList.style.opacity = '0.8';
-  const userMail = localStorage['ak-userMail'];
-  $gotoItineraryList.href = `${$gotoItineraryList.href}?id=${userMail}`;
-  window.location.href = $gotoItineraryList.href;
+
+  const restoreBtn = () => {
+    $gotoItineraryList.innerHTML = originalHTML;
+    $gotoItineraryList.disabled = false;
+    $gotoItineraryList.style.opacity = '';
+  };
+  const timeoutId = setTimeout(restoreBtn, 10000);
+
+  try {
+    const userMail = localStorage['ak-userMail'];
+    const targetPath = $gotoItineraryList.getAttribute('href');
+    window.location.href = `${targetPath}?id=${userMail}`;
+  } catch {
+    clearTimeout(timeoutId);
+    restoreBtn();
+  }
 });
 

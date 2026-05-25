@@ -1026,8 +1026,9 @@ window.addEventListener('load', async () => {
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
 
+    const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
-      await saveAttractionsDB();
+      await Promise.race([saveAttractionsDB(), step2Timeout]);
     } finally {
       $btn.innerHTML = originalHTML;
       $btn.classList.remove('ak-saving');
@@ -1042,8 +1043,7 @@ window.addEventListener('load', async () => {
   document.querySelector('[data-ak="go-to-itinerary"]')?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
-    $btn.disabled = true;
-    $btn.style.opacity = '0.8';
+    if ($btn.disabled) return;
 
     if (!document.getElementById('ak-step2-spinner-style')) {
       const style = document.createElement('style');
@@ -1060,11 +1060,22 @@ window.addEventListener('load', async () => {
       `;
       document.head.appendChild(style);
     }
+
+    const originalHTML = $btn.innerHTML;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
+    $btn.disabled = true;
+    $btn.style.opacity = '0.8';
     await new Promise(r => requestAnimationFrame(r));
 
-    await saveAttractionsDB();
-    window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
+    const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+    try {
+      await Promise.race([saveAttractionsDB(), saveTimeout]);
+      window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
+    } catch {
+      $btn.innerHTML = originalHTML;
+      $btn.disabled = false;
+      $btn.style.opacity = '';
+    }
   });
 
 
