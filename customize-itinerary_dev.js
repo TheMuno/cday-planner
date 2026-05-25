@@ -982,6 +982,7 @@ window.addEventListener('load', async () => {
 
 
   const ITINERARY_PAGE_2_URL = '/customize-itinerary-page-2';
+  const ITINERARY_LIST_URL = '/itinerary-list';
   document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
@@ -1027,6 +1028,17 @@ window.addEventListener('load', async () => {
     }
 
     window.location.href = ITINERARY_PAGE_2_URL;
+  });
+
+
+  document.querySelector('[data-ak="go-to-itinerary"]')?.addEventListener('click', async e => {
+    e.preventDefault();
+    const $btn = e.currentTarget;
+    $btn.disabled = true;
+    $btn.style.opacity = '0.5';
+
+    await saveAttractionsDB();
+    window.location.href = ITINERARY_LIST_URL;
   });
 
 
