@@ -555,12 +555,13 @@ $gotoItineraryList.addEventListener('click', e => {
   $gotoItineraryList.disabled = true;
   $gotoItineraryList.style.opacity = '0.8';
 
-  const restoreBtn = () => {
-    $gotoItineraryList.innerHTML = originalHTML;
+  const failAndRestore = () => {
     $gotoItineraryList.disabled = false;
     $gotoItineraryList.style.opacity = '';
+    $gotoItineraryList.innerHTML = 'Failed, try again!';
+    setTimeout(() => { $gotoItineraryList.innerHTML = originalHTML; }, 1000);
   };
-  const timeoutId = setTimeout(restoreBtn, 10000);
+  const timeoutId = setTimeout(failAndRestore, 10000);
 
   try {
     const userMail = localStorage['ak-userMail'];
@@ -568,7 +569,7 @@ $gotoItineraryList.addEventListener('click', e => {
     window.location.href = `${targetPath}?id=${userMail}`;
   } catch {
     clearTimeout(timeoutId);
-    restoreBtn();
+    failAndRestore();
   }
 });
 

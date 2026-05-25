@@ -1031,14 +1031,14 @@ window.addEventListener('load', async () => {
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
-    } finally {
-      $btn.innerHTML = originalHTML;
+      window.location.href = ITINERARY_PAGE_2_URL;
+    } catch {
       $btn.classList.remove('ak-saving');
       $btn.disabled = false;
       $btn.style.opacity = '';
+      $btn.innerHTML = 'Failed, try again!';
+      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
     }
-
-    window.location.href = ITINERARY_PAGE_2_URL;
   });
 
 
@@ -1074,9 +1074,10 @@ window.addEventListener('load', async () => {
       await Promise.race([saveAttractionsDB(), saveTimeout]);
       window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
     } catch {
-      $btn.innerHTML = originalHTML;
       $btn.disabled = false;
       $btn.style.opacity = '';
+      $btn.innerHTML = 'Failed, try again!';
+      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
     }
   });
 
