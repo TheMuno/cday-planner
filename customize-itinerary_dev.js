@@ -1046,7 +1046,7 @@ window.addEventListener('load', async () => {
     $btn.style.opacity = '0.5';
 
     await saveAttractionsDB();
-    window.location.href = ITINERARY_LIST_URL;
+    window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
   });
 
 
