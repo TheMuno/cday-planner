@@ -274,6 +274,8 @@ $downloadBtn.addEventListener("click", async () => {
 
   const originalHTML = $downloadBtn.innerHTML;
   $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
+  $downloadBtn.disabled = true;
+  $downloadBtn.style.opacity = '0.5';
   $itineraryWrap?.classList.add("disable");
 
   try {
@@ -295,6 +297,8 @@ $downloadBtn.addEventListener("click", async () => {
     alert("Failed to generate PDF. Please try again.");
   } finally {
     $downloadBtn.innerHTML = originalHTML;
+    $downloadBtn.disabled = false;
+    $downloadBtn.style.opacity = '';
     $itineraryWrap?.classList.remove("disable");
   }
 });
@@ -309,6 +313,8 @@ if ($downloadBtnV3) {
 
     const originalHTML = $downloadBtnV3.innerHTML;
     $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
+    $downloadBtnV3.disabled = true;
+    $downloadBtnV3.style.opacity = '0.5';
     $itineraryWrap?.classList.add("disable");
 
     try {
@@ -330,6 +336,8 @@ if ($downloadBtnV3) {
       alert("Failed to generate PDF. Please try again.");
     } finally {
       $downloadBtnV3.innerHTML = originalHTML;
+      $downloadBtnV3.disabled = false;
+      $downloadBtnV3.style.opacity = '';
       $itineraryWrap?.classList.remove("disable");
     }
   });

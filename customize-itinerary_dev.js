@@ -520,8 +520,12 @@ window.addEventListener('load', async () => {
 
   $saveItineraryBtn.addEventListener('click', async e => {
     e.preventDefault();
+    $saveItineraryBtn.disabled = true;
+    $saveItineraryBtn.style.opacity = '0.5';
     await saveAttractionsDB();
     removeUnsavedChangesFlag();
+    $saveItineraryBtn.disabled = false;
+    $saveItineraryBtn.style.opacity = '';
   });
 
 
@@ -1019,12 +1023,16 @@ window.addEventListener('load', async () => {
     const originalHTML = $btn.innerHTML;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
     $btn.classList.add('ak-saving');
+    $btn.disabled = true;
+    $btn.style.opacity = '0.5';
 
     try {
       await saveAttractionsDB();
     } finally {
       $btn.innerHTML = originalHTML;
       $btn.classList.remove('ak-saving');
+      $btn.disabled = false;
+      $btn.style.opacity = '';
     }
 
     window.location.href = ITINERARY_PAGE_2_URL;

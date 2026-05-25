@@ -531,7 +531,9 @@ function setupPassCalculator() {
 
 const $gotoItineraryList = document.querySelector('[data-ak="open-itinerary-list"]');
 $gotoItineraryList.addEventListener('click', e => {
-  e.preventDefault(); 
+  e.preventDefault();
+  $gotoItineraryList.disabled = true;
+  $gotoItineraryList.style.opacity = '0.5';
   const userMail = localStorage['ak-userMail'];
   $gotoItineraryList.href = `${$gotoItineraryList.href}?id=${userMail}`;
   window.location.href = $gotoItineraryList.href;

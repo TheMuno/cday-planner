@@ -19,7 +19,7 @@ const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
 const $downloadBtn = document.querySelector('[data-ak="download-btn"]');
-const $printPDFBtn = document.querySelector('[data-ak="download-btn-v2"]');
+// const $printPDFBtn = document.querySelector('[data-ak="download-btn-v2"]');
 const $itineraryBtnsWrap = document.querySelector('[data-ak="itinerary-btns-wrap"]');
 
 
@@ -249,6 +249,8 @@ function showRedirectLoader(message) {
 // --- Download as TXT ---
 $downloadBtn.addEventListener("click", () => {
   if (!itineraryText) return;
+  $downloadBtn.disabled = true;
+  $downloadBtn.style.opacity = '0.5';
 
   const tagline = "\n\n\n\n| www.askkhonsu.com |"; // Local Tips | Maximized Trips";
   const fullText = itineraryText + tagline;
@@ -263,6 +265,8 @@ $downloadBtn.addEventListener("click", () => {
   a.click();
 
   URL.revokeObjectURL(url);
+  $downloadBtn.disabled = false;
+  $downloadBtn.style.opacity = '';
 });
 
 function processTitleDates(date) {
