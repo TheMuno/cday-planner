@@ -78,6 +78,10 @@ function preCalculatePassStats(Attractions, Passes) {
   const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
   if ($attractionsOnPasses && X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
 
+  if (allPeople > 1) {
+    document.querySelectorAll('[data-ak="lost-money"], [data-ak="lost-money-spacer"]').forEach(el => el.removeAttribute('data-ak-hidden'));
+  }
+
   const B = calcB(Passes, A, X, adults);
   const $savings = document.querySelector('[data-ak="allinc-vs-best-savings"]');
   if ($savings && B !== null) $savings.textContent = B;
