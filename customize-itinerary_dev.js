@@ -1061,6 +1061,7 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
+    await new Promise(r => requestAnimationFrame(r));
 
     await saveAttractionsDB();
     window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
