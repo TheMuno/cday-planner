@@ -1044,7 +1044,23 @@ window.addEventListener('load', async () => {
     const $btn = e.currentTarget;
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
-    $btn.textContent = 'Processing...';
+
+    if (!document.getElementById('ak-step2-spinner-style')) {
+      const style = document.createElement('style');
+      style.id = 'ak-step2-spinner-style';
+      style.textContent = `
+        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+        .ak-step2-spinner {
+          display: inline-block; width: 14px; height: 14px;
+          border: 2px solid currentColor; border-top-color: transparent;
+          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+          opacity: 0.8; flex-shrink: 0;
+        }
+        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+      `;
+      document.head.appendChild(style);
+    }
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
 
     await saveAttractionsDB();
     window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
