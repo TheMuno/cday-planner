@@ -266,7 +266,8 @@ function injectPdfSpinnerStyle() {
   document.head.appendChild(style);
 }
 
-$downloadBtn.addEventListener("click", async () => {
+$downloadBtn.addEventListener("click", async (e) => {
+  e.preventDefault();
   const userMail = localStorage['ak-userMail'];
   if (!userMail) return;
 
@@ -305,7 +306,8 @@ $downloadBtn.addEventListener("click", async () => {
 
 // --- Download as Advanced PDF (v3) ---
 if ($downloadBtnV3) {
-  $downloadBtnV3.addEventListener("click", async () => {
+  $downloadBtnV3.addEventListener("click", async (e) => {
+    e.preventDefault();
     const userMail = localStorage['ak-userMail'];
     if (!userMail) return;
 
