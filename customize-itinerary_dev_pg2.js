@@ -164,11 +164,26 @@ function showRedirectLoader(message) {
   document.body.appendChild(overlay);
 }
 
-const pg1Keys = ['ak-number-of-days', 'ak-place-ids'];
-const missingPg1Data = pg1Keys.some(k => !localStorage[k]);
+// Fallback: recover ak-place-ids from ak-attractions-saved when it was cleared on pg1
+if (!localStorage['ak-place-ids'] && localStorage['ak-attractions-saved']) {
+  try {
+    const saved = JSON.parse(localStorage['ak-attractions-saved']);
+    const placeIds = [];
+    Object.values(saved).forEach(day => {
+      [...(day.attractions || []), ...(day.restaurants || []), ...(day.notes || [])].forEach(attr => {
+        if (attr?.placeId && !placeIds.includes(attr.placeId)) placeIds.push(attr.placeId);
+      });
+    });
+    if (placeIds.length) localStorage['ak-place-ids'] = JSON.stringify(placeIds);
+  } catch (_) {}
+}
+
+// ak-number-of-days is only set by the pg1 button click; page 2 already defaults it to 0,
+// so it should not gate entry — only the absence of any attraction data should redirect.
+const noAttractions = !localStorage['ak-place-ids'] && !localStorage['ak-attractions-saved'];
 const notLoggedIn = !localStorage['ak-userMail'];
 
-if (missingPg1Data || notLoggedIn) {
+if (noAttractions || notLoggedIn) {
   const reason = notLoggedIn ? 'User not logged in' : 'No attractions added';
   showRedirectLoader(reason);
   setTimeout(() => { window.location.href = page1Url; }, 1500);
