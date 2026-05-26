@@ -1022,12 +1022,12 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
-    const originalHTML = $btn.innerHTML;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
 
+    const originalHTML = $btn.innerHTML;
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
@@ -1448,7 +1448,6 @@ async function saveAttractionsDB() {
   if (!localStorage['ak-userMail']) return;
   const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
   const userRef = doc(db, 'locationsData', `user-${userMail}`);
-  const userSnap = await getDoc(userRef);
 
   const saveObj = {
     hotel: localStorage['ak-hotel'] || '',
@@ -1461,14 +1460,10 @@ async function saveAttractionsDB() {
 
   saveObj.adultNum = localStorage['ak-adult-num'] ?? null;
   saveObj.childrenNum = localStorage['ak-children-num'] ?? null;
+  saveObj.ModifiedAt = serverTimestamp();
 
-  if (userSnap.exists()) {
-    saveObj.ModifiedAt = serverTimestamp();
-    await updateDoc(userRef, saveObj);
-  } else {
-    saveObj.CreatedAt = serverTimestamp();
-    await setDoc(userRef, saveObj);
-  }
+  // Single round trip — merge preserves fields we don't touch (e.g. CreatedAt, referrerMail)
+  await setDoc(userRef, saveObj, { merge: true });
 
   for (const key of Object.keys(localStorage)) {
     if (!key.startsWith('ak-update')) continue;
