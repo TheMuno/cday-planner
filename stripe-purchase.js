@@ -38,18 +38,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
   const $postPurchaseEls = document.querySelectorAll('[data-ak-post-purchase]');
 
-  console.log('[stripe-purchase] buy buttons:', $buyButtons.length);
-  console.log('[stripe-purchase] download btns:', $downloadBtns.length);
-  console.log('[stripe-purchase] post-purchase els:', $postPurchaseEls.length);
+
+  // Show spinners immediately while auth + Firestore check runs
+  showSpinners($postPurchaseEls);
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
-  if (!user) return;
+  if (!user) { removeSpinners(); return; }
 
   const userRef   = doc(db, 'locationsData', `user-${user.email}`);
   const userSnap  = await getDoc(userRef);
   const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
 
+  removeSpinners();
   setUI(purchased);
 
   if (!purchased && new URLSearchParams(window.location.search).get('purchase') === 'success') {
@@ -92,7 +93,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     $buyButtons.forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.preventDefault();
-        $buyButtons.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+
+        // Save each button's original content and replace with spinner
+        const originals = Array.from($buyButtons).map(b => b.innerHTML);
+        $buyButtons.forEach(b => {
+          b.disabled = true;
+          b.innerHTML = `
+            <div style="display:inline-flex;align-items:center;gap:8px;">
+              <div style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:currentColor;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
+              <span>Processing...</span>
+            </div>`;
+        });
 
         try {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
@@ -104,7 +115,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.location.href = data.url;
         } catch (err) {
           console.error('Checkout error:', err);
-          $buyButtons.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+          $buyButtons.forEach((b, i) => {
+            b.disabled = false;
+            b.innerHTML = originals[i];
+          });
         }
       });
     });
@@ -136,6 +150,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
     });
+  }
+
+  function showSpinners($postPurchaseEls) {
+    if (!$postPurchaseEls.length) return;
+    // Add keyframe once to the document
+    if (!document.querySelector('#ak-spinner-style')) {
+      const style = document.createElement('style');
+      style.id = 'ak-spinner-style';
+      style.textContent = '@keyframes ak-spin { to { transform: rotate(360deg); } }';
+      document.head.appendChild(style);
+    }
+    $postPurchaseEls.forEach(el => {
+      const spinner = document.createElement('div');
+      spinner.setAttribute('data-ak-spinner', '');
+      spinner.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0;';
+      spinner.innerHTML = `
+        <div style="width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:#555;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
+        <span style="font-size:14px;color:#888;">Loading Calculate Savings...</span>
+      `;
+      el.parentNode.insertBefore(spinner, el);
+    });
+  }
+
+  function removeSpinners() {
+    document.querySelectorAll('[data-ak-spinner]').forEach(el => el.remove());
   }
 
   async function pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls, attempts = 0) {
