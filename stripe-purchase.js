@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         $buyButtons.forEach(b => {
           b.disabled = true;
           b.innerHTML = `
-            <div style="display:inline-flex;align-items:center;gap:8px;">
+            <div style="display:inline-flex;align-items:center;justify-content:center;gap:8px;">
               <div style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:currentColor;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
               <span>Processing...</span>
             </div>`;
@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $postPurchaseEls.forEach(el => {
       const spinner = document.createElement('div');
       spinner.setAttribute('data-ak-spinner', '');
-      spinner.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0;';
+      spinner.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:16px 0;';
       spinner.innerHTML = `
         <div style="width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:#555;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
         <span style="font-size:14px;color:#888;">Processing...</span>
