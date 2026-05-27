@@ -100,9 +100,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function wireBuyButtons(user, $buyButtons) {
+    let isLoading = false;
+
     $buyButtons.forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.preventDefault();
+        if (isLoading) return;
+        isLoading = true;
 
         // Save each button's original content and replace with spinner
         const originals = Array.from($buyButtons).map(b => b.innerHTML);
@@ -125,6 +129,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           window.location.href = data.url;
         } catch (err) {
           console.error('Checkout error:', err);
+          isLoading = false;
           $buyButtons.forEach((b, i) => {
             b.disabled = false;
             b.innerHTML = originals[i];
@@ -137,8 +142,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   function wireDownloadButton(user, $downloadBtns) {
     if (!$downloadBtns.length) return;
 
+    let isLoading = false;
+
     $downloadBtns.forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (isLoading) return;
+        isLoading = true;
         $downloadBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
 
         try {
@@ -156,6 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (err) {
           console.error('Download error:', err);
         } finally {
+          isLoading = false;
           $downloadBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
         }
       });
