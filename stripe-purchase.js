@@ -52,7 +52,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const userRef   = doc(db, 'locationsData', `user-${user.email}`);
     const userSnap  = await getDoc(userRef);
-    const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
+    const userData  = userSnap.exists() ? userSnap.data() : {};
+    const purchased = userData.hasPurchasedPlan === true;
+
+    if (purchased) {
+      if (userData.planAmountPaid)      localStorage.setItem('ak-sm-price', userData.planAmountPaid);
+      if (userData.planItemName)        localStorage.setItem('ak-sm-name',  userData.planItemName);
+      if (userData.planItemDescription) localStorage.setItem('ak-sm-desc',  userData.planItemDescription);
+    }
 
     clearTimeout(spinnerTimeout);
     removeSpinners();
