@@ -30,8 +30,9 @@ const auth      = getAuth(app);
 const db        = getFirestore(app);
 const functions = getFunctions(app);
 
-const $buyButtons  = document.querySelectorAll('[data-ak="buy-plan"]');
-const $downloadBtn = document.querySelector('[data-ak-download-guide]');
+const $buyButtons       = document.querySelectorAll('[data-ak="buy-plan"]');
+const $downloadBtns     = document.querySelectorAll('[data-ak-download-guide]');
+const $prePurchaseEls   = document.querySelectorAll('[data-pre-purchase="true"]');
 
 window.addEventListener('load', async () => {
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
@@ -62,10 +63,15 @@ function setUI(purchased) {
     else btn.removeAttribute('data-ak-hidden');
   });
 
-  if ($downloadBtn) {
-    if (purchased) $downloadBtn.removeAttribute('data-ak-hidden');
-    else $downloadBtn.setAttribute('data-ak-hidden', '');
-  }
+  $prePurchaseEls.forEach(el => {
+    if (purchased) el.removeAttribute('data-ak-hidden');
+    else el.setAttribute('data-ak-hidden', '');
+  });
+
+  $downloadBtns.forEach(btn => {
+    if (purchased) btn.removeAttribute('data-ak-hidden');
+    else btn.setAttribute('data-ak-hidden', '');
+  });
 }
 
 function wireBuyButtons(user) {
@@ -91,30 +97,30 @@ function wireBuyButtons(user) {
 }
 
 function wireDownloadButton(user) {
-  if (!$downloadBtn) return;
+  if (!$downloadBtns.length) return;
 
-  $downloadBtn.addEventListener('click', async () => {
-    $downloadBtn.disabled = true;
-    $downloadBtn.style.opacity = '0.6';
+  $downloadBtns.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      $downloadBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
 
-    try {
-      const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
-      const { data } = await generateGuide({ userId: `user-${user.email}` });
+      try {
+        const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
+        const { data } = await generateGuide({ userId: `user-${user.email}` });
 
-      const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: 'application/pdf' });
-      const url   = URL.createObjectURL(blob);
-      const a     = document.createElement('a');
-      a.href      = url;
-      a.download  = data.filename || 'smart-guide.pdf';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Download error:', err);
-    } finally {
-      $downloadBtn.disabled = false;
-      $downloadBtn.style.opacity = '';
-    }
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        const blob  = new Blob([bytes], { type: 'application/pdf' });
+        const url   = URL.createObjectURL(blob);
+        const a     = document.createElement('a');
+        a.href      = url;
+        a.download  = data.filename || 'smart-guide.pdf';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Download error:', err);
+      } finally {
+        $downloadBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+      }
+    });
   });
 }
 
