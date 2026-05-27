@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
   // Show spinners immediately while auth + Firestore check runs
-  showSpinners($postPurchaseEls);
+  showSpinners($buyButtons);
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       spinner.style.cssText = 'display:flex;align-items:center;gap:10px;padding:16px 0;';
       spinner.innerHTML = `
         <div style="width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:#555;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
-        <span style="font-size:14px;color:#888;">Loading Calculate Savings...</span>
+        <span style="font-size:14px;color:#888;">Processing...</span>
       `;
       el.parentNode.insertBefore(spinner, el);
     });
