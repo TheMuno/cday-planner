@@ -70,7 +70,8 @@ function setUI(purchased) {
 
 function wireBuyButtons(user) {
   $buyButtons.forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
       $buyButtons.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
 
       try {
