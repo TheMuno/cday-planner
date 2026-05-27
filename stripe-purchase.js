@@ -130,7 +130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
           const { data } = await createPlanCheckout({
             userEmail:  user.email,
-            successUrl: window.location.origin + '/thank-you',
+            successUrl: window.location.origin + '/thank-you?purchase=success',
             cancelUrl:  window.location.origin + window.location.pathname,
           });
           window.location.href = data.url;
@@ -212,6 +212,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
 
     if (purchased) {
+      const userData = userSnap.data();
+      if (userData.planAmountPaid)      localStorage.setItem('ak-sm-price', userData.planAmountPaid);
+      if (userData.planItemName)        localStorage.setItem('ak-sm-name',  userData.planItemName);
+      if (userData.planItemDescription) localStorage.setItem('ak-sm-desc',  userData.planItemDescription);
+
       setUI(true);
       wireDownloadButton(user, $downloadBtns);
       history.replaceState(null, '', window.location.pathname);
