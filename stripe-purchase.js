@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
           const { data } = await createPlanCheckout({
             userEmail:  user.email,
-            successUrl: window.location.origin + window.location.pathname + '?purchase=success',
+            successUrl: window.location.origin + '/thank-you',
             cancelUrl:  window.location.origin + window.location.pathname,
           });
           window.location.href = data.url;
