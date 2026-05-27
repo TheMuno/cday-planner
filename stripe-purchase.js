@@ -3,8 +3,9 @@
  * Add as a <script type="module"> embed in Webflow (page settings → Before </body>).
  *
  * Webflow attributes managed by this script:
- *   data-ak="buy-plan"       — checkout trigger buttons (hidden via data-ak-hidden when user has paid)
- *   data-ak-download-guide   — download button (hidden via data-ak-hidden until user has paid)
+ *   data-ak="buy-plan"       — checkout trigger buttons (hidden after purchase)
+ *   data-ak-post-purchase    — any element revealed after purchase
+ *   data-ak-download-guide   — download button(s) revealed after purchase
  */
 
 import { initializeApp, getApps, getApp }
@@ -32,7 +33,7 @@ const functions = getFunctions(app);
 
 const $buyButtons       = document.querySelectorAll('[data-ak="buy-plan"]');
 const $downloadBtns     = document.querySelectorAll('[data-ak-download-guide]');
-const $prePurchaseEls   = document.querySelectorAll('[data-pre-purchase="true"]');
+const $postPurchaseEls  = document.querySelectorAll('[data-ak-post-purchase]');
 
 window.addEventListener('load', async () => {
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
@@ -63,7 +64,7 @@ function setUI(purchased) {
     else btn.removeAttribute('data-ak-hidden');
   });
 
-  $prePurchaseEls.forEach(el => {
+  $postPurchaseEls.forEach(el => {
     if (purchased) el.removeAttribute('data-ak-hidden');
     else el.setAttribute('data-ak-hidden', '');
   });
