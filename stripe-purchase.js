@@ -2,12 +2,9 @@
  * stripe-purchase.js
  * Add as a <script type="module"> embed in Webflow (page settings → Before </body>).
  *
- * Required data-ak attributes in Webflow:
- *   data-ak="buy-plan"       — the 2 purchase buttons (hidden after purchase)
- *   data-ak="download-guide" — the advanced guide download button (shown after purchase)
- *
- * Set the download button to display:none by default in the Webflow Designer.
- * Security is enforced server-side — hiding it in CSS is just UX.
+ * Webflow attributes managed by this script:
+ *   data-ak="buy-plan"       — checkout trigger buttons (hidden via data-ak-hidden when user has paid)
+ *   data-ak-download-guide   — download button (hidden via data-ak-hidden until user has paid)
  */
 
 import { initializeApp, getApps, getApp }
@@ -34,22 +31,19 @@ const db        = getFirestore(app);
 const functions = getFunctions(app);
 
 const $buyButtons  = document.querySelectorAll('[data-ak="buy-plan"]');
-const $downloadBtn = document.querySelector('[data-ak="download-guide"]');
-
-setUI(false);
+const $downloadBtn = document.querySelector('[data-ak-download-guide]');
 
 window.addEventListener('load', async () => {
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
-  if (!user) return; // Not logged in — buy buttons remain visible
+  if (!user) return;
 
-  const userRef  = doc(db, 'locationsData', `user-${user.email}`);
-  const userSnap = await getDoc(userRef);
+  const userRef   = doc(db, 'locationsData', `user-${user.email}`);
+  const userSnap  = await getDoc(userRef);
   const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
 
   setUI(purchased);
 
-  // Poll briefly if Stripe just redirected back — webhook fires within a few seconds
   if (!purchased && new URLSearchParams(window.location.search).get('purchase') === 'success') {
     pollForPurchase(user);
     return;
@@ -106,7 +100,6 @@ function wireDownloadButton(user) {
       const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
       const { data } = await generateGuide({ userId: `user-${user.email}` });
 
-      // data.pdf is a base64-encoded PDF — decode it and trigger browser download
       const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
       const blob  = new Blob([bytes], { type: 'application/pdf' });
       const url   = URL.createObjectURL(blob);
@@ -124,12 +117,11 @@ function wireDownloadButton(user) {
   });
 }
 
-// Poll Firestore up to ~10s after Stripe redirects back with ?purchase=success
 async function pollForPurchase(user, attempts = 0) {
   if (attempts >= 10) return;
 
   await new Promise(r => setTimeout(r, 1000));
-  const userSnap = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
+  const userSnap  = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
   const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
 
   if (purchased) {
