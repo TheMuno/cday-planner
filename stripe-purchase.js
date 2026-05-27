@@ -56,16 +56,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const purchased = userData.hasPurchasedPlan === true;
 
     if (purchased) {
-      if (userData.planAmountPaid)      localStorage.setItem('ak-sm-price', userData.planAmountPaid);
-      if (userData.planItemName)        localStorage.setItem('ak-sm-name',  userData.planItemName);
-      if (userData.planItemDescription) localStorage.setItem('ak-sm-desc',  userData.planItemDescription);
+      const plan = userData.planDetails || {};
+      if (plan.amountPaid)  localStorage.setItem('ak-sm-price', plan.amountPaid);
+      if (plan.name)        localStorage.setItem('ak-sm-name',  plan.name);
+      if (plan.description) localStorage.setItem('ak-sm-desc',  plan.description);
     }
 
     clearTimeout(spinnerTimeout);
     removeSpinners();
     setUI(purchased);
 
-    if (!purchased && new URLSearchParams(window.location.search).get('purchase') === 'success') {
+    const isPurchaseReturn = new URLSearchParams(window.location.search).get('purchase') === 'success';
+    if (isPurchaseReturn) history.replaceState(null, '', window.location.pathname);
+
+    if (!purchased && isPurchaseReturn) {
       pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls);
       return;
     }
@@ -213,9 +217,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (purchased) {
       const userData = userSnap.data();
-      if (userData.planAmountPaid)      localStorage.setItem('ak-sm-price', userData.planAmountPaid);
-      if (userData.planItemName)        localStorage.setItem('ak-sm-name',  userData.planItemName);
-      if (userData.planItemDescription) localStorage.setItem('ak-sm-desc',  userData.planItemDescription);
+      const plan = userData.planDetails || {};
+      if (plan.amountPaid)  localStorage.setItem('ak-sm-price', plan.amountPaid);
+      if (plan.name)        localStorage.setItem('ak-sm-name',  plan.name);
+      if (plan.description) localStorage.setItem('ak-sm-desc',  plan.description);
 
       setUI(true);
       wireDownloadButton(user, $downloadBtns);
