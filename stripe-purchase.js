@@ -42,26 +42,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Show spinners immediately while auth + Firestore check runs
   showSpinners($buyButtons);
 
-  const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  // Fail-safe: remove spinners after 8s if auth or Firestore hasn't responded
+  const spinnerTimeout = setTimeout(removeSpinners, 8000);
 
-  if (!user) { removeSpinners(); return; }
+  try {
+    const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
-  const userRef   = doc(db, 'locationsData', `user-${user.email}`);
-  const userSnap  = await getDoc(userRef);
-  const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
+    if (!user) { clearTimeout(spinnerTimeout); removeSpinners(); return; }
 
-  removeSpinners();
-  setUI(purchased);
+    const userRef   = doc(db, 'locationsData', `user-${user.email}`);
+    const userSnap  = await getDoc(userRef);
+    const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
 
-  if (!purchased && new URLSearchParams(window.location.search).get('purchase') === 'success') {
-    pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls);
-    return;
-  }
+    clearTimeout(spinnerTimeout);
+    removeSpinners();
+    setUI(purchased);
 
-  if (!purchased) {
-    wireBuyButtons(user, $buyButtons);
-  } else {
-    wireDownloadButton(user, $downloadBtns);
+    if (!purchased && new URLSearchParams(window.location.search).get('purchase') === 'success') {
+      pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls);
+      return;
+    }
+
+    if (!purchased) {
+      wireBuyButtons(user, $buyButtons);
+    } else {
+      wireDownloadButton(user, $downloadBtns);
+    }
+  } catch (err) {
+    clearTimeout(spinnerTimeout);
+    removeSpinners();
+    console.error('Purchase check failed:', err);
   }
 
   function setUI(purchased) {
