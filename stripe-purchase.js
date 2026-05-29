@@ -36,6 +36,7 @@ const functions = getFunctions(app);
 document.addEventListener('DOMContentLoaded', async () => {
   const $buyButtons      = document.querySelectorAll('[data-ak="buy-plan"]');
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
+  const $downloadMapsBtns = document.querySelectorAll('[data-ak="download-google-maps-btn"]');
   const $postPurchaseEls = document.querySelectorAll('[data-ak-post-purchase]');
 
 
@@ -70,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isPurchaseReturn) history.replaceState(null, '', window.location.pathname);
 
     if (!purchased && isPurchaseReturn) {
-      pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls);
+      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls);
       return;
     }
 
@@ -78,6 +79,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       wireBuyButtons(user, $buyButtons);
     } else {
       wireDownloadButton(user, $downloadBtns);
+      wireGoogleMapsButton($downloadMapsBtns);
     }
   } catch (err) {
     clearTimeout(spinnerTimeout);
@@ -101,6 +103,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     $downloadBtns.forEach(btn => {
+      if (purchased) {
+        btn.removeAttribute('data-ak-hidden');
+        btn.style.display = ''; // clear any Webflow inline display:none
+      } else {
+        btn.setAttribute('data-ak-hidden', '');
+      }
+    });
+
+    $downloadMapsBtns.forEach(btn => {
       if (purchased) {
         btn.removeAttribute('data-ak-hidden');
         btn.style.display = ''; // clear any Webflow inline display:none
@@ -219,6 +230,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function wireGoogleMapsButton($downloadMapsBtns) {
+    if (!$downloadMapsBtns.length) return;
+    window.akWireGoogleMapsBtn?.($downloadMapsBtns);
+  }
+
   function showSpinners($postPurchaseEls) {
     if (!$postPurchaseEls.length) return;
     // Add keyframe once to the document
@@ -244,7 +260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('[data-ak-spinner]').forEach(el => el.remove());
   }
 
-  async function pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls, attempts = 0) {
+  async function pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, attempts = 0) {
     if (attempts >= 10) return;
 
     await new Promise(r => setTimeout(r, 1000));
@@ -260,9 +276,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       setUI(true);
       wireDownloadButton(user, $downloadBtns);
+      wireGoogleMapsButton($downloadMapsBtns);
       history.replaceState(null, '', window.location.pathname);
     } else {
-      pollForPurchase(user, $buyButtons, $downloadBtns, $postPurchaseEls, attempts + 1);
+      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, attempts + 1);
     }
   }
 });
