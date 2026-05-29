@@ -247,10 +247,13 @@ function showRedirectLoader(message) {
 }
 
 // --- Download as TXT ---
+let isDownloading = false;
+
 $downloadBtns.forEach(btn => {
   btn.addEventListener("click", (e) => {
     e.preventDefault();
-    if (!itineraryText) return;
+    if (isDownloading || !itineraryText) return;
+    isDownloading = true;
 
     $downloadBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.8'; });
 
@@ -267,6 +270,7 @@ $downloadBtns.forEach(btn => {
     a.click();
 
     URL.revokeObjectURL(url);
+    isDownloading = false;
     $downloadBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
   });
 });
