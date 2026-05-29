@@ -194,7 +194,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let isLoading = false;
 
     $downloadBtns.forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
         if (isLoading) return;
         isLoading = true;
 

@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
-const $downloadBtn = document.querySelector('[data-ak="download-btn-v2"]');
+const $downloadBtns = document.querySelectorAll('[data-ak="download-btn-v2"]');
 
 let itineraryText = "";
 
@@ -265,43 +265,56 @@ function injectPdfSpinnerStyle() {
   document.head.appendChild(style);
 }
 
-$downloadBtn.addEventListener("click", async (e) => {
-  e.preventDefault();
-  const userMail = localStorage['ak-userMail'];
-  if (!userMail) return;
+if ($downloadBtns.length) {
+  let isLoading = false;
 
-  injectPdfSpinnerStyle();
+  $downloadBtns.forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      if (isLoading) return;
+      const userMail = localStorage['ak-userMail'];
+      if (!userMail) return;
 
-  const originalHTML = $downloadBtn.innerHTML;
-  $downloadBtn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
-  $downloadBtn.disabled = true;
-  $downloadBtn.style.opacity = '0.8';
-  $itineraryWrap?.classList.add("disable");
+      isLoading = true;
+      injectPdfSpinnerStyle();
 
-  try {
-    const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");
-    const { data } = await generateItineraryPdf({ userId: `user-${userMail}` });
+      const originals = Array.from($downloadBtns).map(b => b.innerHTML);
+      $downloadBtns.forEach(b => {
+        b.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
+        b.disabled = true;
+        b.style.opacity = '0.8';
+      });
+      $itineraryWrap?.classList.add("disable");
 
-    const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
+      try {
+        const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");
+        const { data } = await generateItineraryPdf({ userId: `user-${userMail}` });
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = data.filename;
-    a.click();
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
 
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error("❌ PDF generation failed:", err);
-    alert("Failed to generate PDF. Please try again.");
-  } finally {
-    $downloadBtn.innerHTML = originalHTML;
-    $downloadBtn.disabled = false;
-    $downloadBtn.style.opacity = '';
-    $itineraryWrap?.classList.remove("disable");
-  }
-});
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = data.filename;
+        a.click();
+
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("❌ PDF generation failed:", err);
+        alert("Failed to generate PDF. Please try again.");
+      } finally {
+        isLoading = false;
+        $downloadBtns.forEach((b, i) => {
+          b.innerHTML = originals[i];
+          b.disabled = false;
+          b.style.opacity = '';
+        });
+        $itineraryWrap?.classList.remove("disable");
+      }
+    });
+  });
+}
 
 function processTitleDates(date) {
   const theDate = parseJSON(date);

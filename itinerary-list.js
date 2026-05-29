@@ -18,7 +18,7 @@ const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
-const $downloadBtn = document.querySelector('[data-ak="download-btn"]');
+const $downloadBtns = document.querySelectorAll('[data-ak="download-btn"]');
 // const $printPDFBtn = document.querySelector('[data-ak="download-btn-v2"]');
 const $itineraryBtnsWrap = document.querySelector('[data-ak="itinerary-btns-wrap"]');
 
@@ -247,26 +247,28 @@ function showRedirectLoader(message) {
 }
 
 // --- Download as TXT ---
-$downloadBtn.addEventListener("click", () => {
-  if (!itineraryText) return;
-  $downloadBtn.disabled = true;
-  $downloadBtn.style.opacity = '0.8';
+$downloadBtns.forEach(btn => {
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!itineraryText) return;
 
-  const tagline = "\n\n\n\n| www.askkhonsu.com |"; // Local Tips | Maximized Trips";
-  const fullText = itineraryText + tagline;
+    $downloadBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.8'; });
 
-  const blob = new Blob([fullText], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
+    const tagline = "\n\n\n\n| www.askkhonsu.com |"; // Local Tips | Maximized Trips";
+    const fullText = itineraryText + tagline;
 
-  const a = document.createElement("a");
-  a.href = url;
-  const downloadName = localStorage['ak-tripName'] ? `${localStorage['ak-tripName']}'s Trip` : 'itinerary.txt';
-  a.download = downloadName;
-  a.click();
+    const blob = new Blob([fullText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
 
-  URL.revokeObjectURL(url);
-  $downloadBtn.disabled = false;
-  $downloadBtn.style.opacity = '';
+    const a = document.createElement("a");
+    a.href = url;
+    const downloadName = localStorage['ak-tripName'] ? `${localStorage['ak-tripName']}'s Trip` : 'itinerary.txt';
+    a.download = downloadName;
+    a.click();
+
+    URL.revokeObjectURL(url);
+    $downloadBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+  });
 });
 
 function processTitleDates(date) {
