@@ -19,7 +19,6 @@ const functions = getFunctions(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
 const $downloadBtn = document.querySelector('[data-ak="download-btn-v2"]');
-const $downloadBtnV3 = document.querySelector('[data-ak="download-btn-v3"]');
 
 let itineraryText = "";
 
@@ -303,47 +302,6 @@ $downloadBtn.addEventListener("click", async (e) => {
     $itineraryWrap?.classList.remove("disable");
   }
 });
-
-// --- Download as Advanced PDF (v3) ---
-if ($downloadBtnV3) {
-  $downloadBtnV3.addEventListener("click", async (e) => {
-    e.preventDefault();
-    const userMail = localStorage['ak-userMail'];
-    if (!userMail) return;
-
-    injectPdfSpinnerStyle();
-
-    const originalHTML = $downloadBtnV3.innerHTML;
-    $downloadBtnV3.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
-    $downloadBtnV3.disabled = true;
-    $downloadBtnV3.style.opacity = '0.8';
-    $itineraryWrap?.classList.add("disable");
-
-    try {
-      const generateAdvancedItineraryPdf = httpsCallable(functions, "generateAdvancedItineraryPdf");
-      const { data } = await generateAdvancedItineraryPdf({ userId: `user-${userMail}` });
-
-      const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = data.filename;
-      a.click();
-
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("❌ Advanced PDF generation failed:", err);
-      alert("Failed to generate PDF. Please try again.");
-    } finally {
-      $downloadBtnV3.innerHTML = originalHTML;
-      $downloadBtnV3.disabled = false;
-      $downloadBtnV3.style.opacity = '';
-      $itineraryWrap?.classList.remove("disable");
-    }
-  });
-}
 
 function processTitleDates(date) {
   const theDate = parseJSON(date);

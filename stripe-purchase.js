@@ -150,16 +150,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function injectPdfSpinnerStyle() {
+    if (document.getElementById('ak-pdf-spinner-style')) return;
+    const style = document.createElement('style');
+    style.id = 'ak-pdf-spinner-style';
+    style.textContent = `
+      @keyframes ak-pdf-spin { to { transform: rotate(360deg); } }
+      .ak-pdf-spinner {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: ak-pdf-spin 0.7s linear infinite;
+        opacity: 0.8;
+        flex-shrink: 0;
+      }
+      .ak-pdf-btn-loading {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function wireDownloadButton(user, $downloadBtns) {
     if (!$downloadBtns.length) return;
 
+    const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
     let isLoading = false;
 
     $downloadBtns.forEach(btn => {
       btn.addEventListener('click', async () => {
         if (isLoading) return;
         isLoading = true;
-        $downloadBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+
+        injectPdfSpinnerStyle();
+
+        const originals = Array.from($downloadBtns).map(b => b.innerHTML);
+        $downloadBtns.forEach(b => {
+          b.disabled = true;
+          b.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
+        });
+        $itineraryWrap?.classList.add('disable');
 
         try {
           const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
@@ -177,7 +212,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           console.error('Download error:', err);
         } finally {
           isLoading = false;
-          $downloadBtns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
+          $downloadBtns.forEach((b, i) => { b.disabled = false; b.innerHTML = originals[i]; });
+          $itineraryWrap?.classList.remove('disable');
         }
       });
     });
