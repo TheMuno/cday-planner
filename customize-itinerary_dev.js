@@ -1022,7 +1022,7 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
-    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Calculating Savings...</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
@@ -1064,7 +1064,7 @@ window.addEventListener('load', async () => {
     }
 
     const originalHTML = $btn.innerHTML;
-    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Processing...</span>`;
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Loading Itinerary...</span>`;
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
     await new Promise(r => requestAnimationFrame(r));
