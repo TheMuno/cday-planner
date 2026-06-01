@@ -174,7 +174,19 @@ async function renderData() {
     localStorage['ak-tripName'] = tripName;
     const titleDatesStr = processTitleDates(travelDates);
     preliminaryStr += `${titleDatesStr ? titleDatesStr + '\n\n' : ''}`;
-    
+
+    if (tripName) {
+      const firstName = tripName.split(/\s+/)[0];
+      const formatted = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+      const $userName = document.querySelector('[data-ak="trip-user-name"]');
+      if ($userName) $userName.textContent = `${formatted}'s`;
+    }
+    if (titleDatesStr) {
+      const $titleDates = document.querySelector('[data-ak="title-travel-dates"]');
+      if ($titleDates) $titleDates.textContent = titleDatesStr;
+    }
+    document.querySelector('.ak-trip-info')?.classList.remove('hidden');
+
     if (hotel) {
       hotelName = parseJSON(hotel)?.displayName;
       preliminaryStr += `Hotel\n${hotelName || ''}\n\n`;
