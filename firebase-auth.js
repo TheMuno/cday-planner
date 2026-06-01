@@ -411,17 +411,17 @@ if (googleBtn) {
     clearError();
     isSigningIn = true;
     try {
-      if (isMobile) {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, new GoogleAuthProvider());
-        return;
-      }
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
       await linkPendingCredential(result.user);
       await saveUserProvider(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/web-storage-unsupported') {
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+        await signInWithRedirect(auth, new GoogleAuthProvider());
+        return;
+      }
       isSigningIn = false;
       hideLoader();
       handleAuthError(err);
@@ -437,11 +437,6 @@ if (facebookBtn) {
     try {
       const fbProvider = new FacebookAuthProvider();
       fbProvider.addScope("email");
-      if (isMobile) {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, fbProvider);
-        return;
-      }
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
@@ -485,6 +480,13 @@ if (facebookBtn) {
 
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/web-storage-unsupported') {
+        const fbProvider = new FacebookAuthProvider();
+        fbProvider.addScope("email");
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+        await signInWithRedirect(auth, fbProvider);
+        return;
+      }
       isSigningIn = false;
       hideLoader();
       handleAuthError(err);
