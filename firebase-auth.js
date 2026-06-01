@@ -105,8 +105,11 @@ pendingCredential = loadPendingCred();
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // If we're returning from an OAuth redirect, suppress the onAuthStateChanged
-// early-redirect so getRedirectResult can handle the destination correctly.
-if (localStorage.getItem('ak-redirect-destination')) isSigningIn = true;
+// early-redirect and show a loader immediately so the login page never flashes.
+if (localStorage.getItem('ak-redirect-destination')) {
+  isSigningIn = true;
+  showLoader();
+}
 
 // Handle result after OAuth redirect (mobile flow)
 getRedirectResult(auth).then(async (result) => {
@@ -411,6 +414,11 @@ if (googleBtn) {
     clearError();
     isSigningIn = true;
     try {
+      if (isMobile) {
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+        await signInWithRedirect(auth, new GoogleAuthProvider());
+        return;
+      }
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
       await linkPendingCredential(result.user);
@@ -437,6 +445,11 @@ if (facebookBtn) {
     try {
       const fbProvider = new FacebookAuthProvider();
       fbProvider.addScope("email");
+      if (isMobile) {
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+        await signInWithRedirect(auth, fbProvider);
+        return;
+      }
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
@@ -495,6 +508,7 @@ if (facebookBtn) {
 }
 
 // ── 8. EMAIL / PASSWORD ──────────────────────────────────────
+
 if (submitBtn) {
   submitBtn.addEventListener("click", async (e) => {
     e.preventDefault();
