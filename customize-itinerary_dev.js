@@ -80,6 +80,10 @@ async function initMap(center) {
 
 window.addEventListener('load', async () => {
 
+  document.getElementById('user-search-form')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') e.preventDefault();
+  });
+
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged
