@@ -17,6 +17,8 @@ import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } 
 import {
   getAuth,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   FacebookAuthProvider,
   signInWithEmailAndPassword,
@@ -99,6 +101,45 @@ function clearPendingCred() {
 }
 
 pendingCredential = loadPendingCred();
+
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// Handle result after OAuth redirect (mobile flow)
+getRedirectResult(auth).then(async (result) => {
+  if (!result) return;
+  showLoader();
+  try {
+    await linkPendingCredential(result.user);
+    let email = result.user.email;
+
+    if (!email) {
+      try {
+        const snap = await getDoc(doc(db, "users", result.user.uid));
+        if (snap.exists()) email = snap.data().email || null;
+      } catch (_) {}
+    }
+
+    if (!email) {
+      hideLoader();
+      email = await collectMissingEmail();
+      if (!email) {
+        await signOut(auth);
+        showError("An email address is required to sign in with Facebook. Please try again.");
+        return;
+      }
+      showLoader();
+    }
+
+    await saveUserProvider(result.user, email || undefined);
+    if (email) localStorage.setItem("ak-userMail", email);
+    window.location.replace(REDIRECT_AFTER_LOGIN);
+  } catch (err) {
+    hideLoader();
+    handleAuthError(err);
+  }
+}).catch((err) => {
+  handleAuthError(err);
+});
 
 // ── 5. HELPERS ───────────────────────────────────────────────
 function showPopup(msg, duration, isError) {
@@ -235,6 +276,7 @@ function collectMissingEmail() {
     Object.assign(btn.style, {
       width: "100%", padding: "10px", background: "#ff7f34", color: "#fff",
       border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+      textAlign: "center",
     });
 
     const cancelLink = document.createElement("a");
@@ -360,6 +402,10 @@ if (googleBtn) {
     clearError();
     isSigningIn = true;
     try {
+      if (isMobile) {
+        await signInWithRedirect(auth, new GoogleAuthProvider());
+        return;
+      }
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
       await linkPendingCredential(result.user);
@@ -381,6 +427,10 @@ if (facebookBtn) {
     try {
       const fbProvider = new FacebookAuthProvider();
       fbProvider.addScope("email");
+      if (isMobile) {
+        await signInWithRedirect(auth, fbProvider);
+        return;
+      }
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
