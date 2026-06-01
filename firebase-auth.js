@@ -104,9 +104,16 @@ pendingCredential = loadPendingCred();
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+// If we're returning from an OAuth redirect, suppress the onAuthStateChanged
+// early-redirect so getRedirectResult can handle the destination correctly.
+if (localStorage.getItem('ak-redirect-destination')) isSigningIn = true;
+
 // Handle result after OAuth redirect (mobile flow)
 getRedirectResult(auth).then(async (result) => {
-  if (!result) return;
+  if (!result) {
+    isSigningIn = false;
+    return;
+  }
   showLoader();
   try {
     await linkPendingCredential(result.user);
