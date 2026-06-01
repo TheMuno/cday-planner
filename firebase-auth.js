@@ -132,7 +132,9 @@ getRedirectResult(auth).then(async (result) => {
 
     await saveUserProvider(result.user, email || undefined);
     if (email) localStorage.setItem("ak-userMail", email);
-    window.location.replace(REDIRECT_AFTER_LOGIN);
+    const destination = localStorage.getItem('ak-redirect-destination') || REDIRECT_AFTER_LOGIN;
+    localStorage.removeItem('ak-redirect-destination');
+    window.location.replace(destination);
   } catch (err) {
     hideLoader();
     handleAuthError(err);
@@ -403,6 +405,7 @@ if (googleBtn) {
     isSigningIn = true;
     try {
       if (isMobile) {
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
         await signInWithRedirect(auth, new GoogleAuthProvider());
         return;
       }
@@ -428,6 +431,7 @@ if (facebookBtn) {
       const fbProvider = new FacebookAuthProvider();
       fbProvider.addScope("email");
       if (isMobile) {
+        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
         await signInWithRedirect(auth, fbProvider);
         return;
       }
