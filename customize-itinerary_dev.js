@@ -80,8 +80,11 @@ async function initMap(center) {
 
 window.addEventListener('load', async () => {
 
-  document.getElementById('user-search-form')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') e.preventDefault();
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.closest('#user-search-form')) e.preventDefault();
+  }, true);
+  document.getElementById('user-search-form')?.addEventListener('submit', e => {
+    if (!e.submitter) e.preventDefault();
   });
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
