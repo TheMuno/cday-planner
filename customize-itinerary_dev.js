@@ -80,12 +80,16 @@ async function initMap(center) {
 
 window.addEventListener('load', async () => {
 
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.closest('#user-search-form')) e.preventDefault();
-  }, true);
-  document.getElementById('user-search-form')?.addEventListener('submit', e => {
-    if (!e.submitter) e.preventDefault();
-  });
+  const $userSearchForm = document.getElementById('user-search-form');
+  if ($userSearchForm) {
+    const dummy = document.createElement('input');
+    dummy.type = 'text';
+    dummy.style.cssText = 'display:none';
+    dummy.tabIndex = -1;
+    dummy.ariaHidden = 'true';
+    $userSearchForm.appendChild(dummy);
+    $userSearchForm.addEventListener('submit', e => e.preventDefault(), true);
+  }
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
