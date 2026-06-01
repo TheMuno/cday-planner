@@ -68,7 +68,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setUI(purchased);
 
     const isPurchaseReturn = new URLSearchParams(window.location.search).get('purchase') === 'success';
-    if (isPurchaseReturn) history.replaceState(null, '', window.location.pathname);
+    if (isPurchaseReturn) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('purchase');
+      const clean = params.toString();
+      history.replaceState(null, '', window.location.pathname + (clean ? '?' + clean : ''));
+    }
 
     if (!purchased && isPurchaseReturn) {
       pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls);
@@ -145,8 +150,22 @@ document.addEventListener('DOMContentLoaded', async () => {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
           const { data } = await createPlanCheckout({
             userEmail:  user.email,
-            successUrl: window.location.origin + window.location.pathname + '?purchase=success',
-            cancelUrl:  window.location.origin + window.location.pathname,
+            successUrl: (() => {
+              const base = window.location.origin + window.location.pathname + '?purchase=success';
+              if (window.location.pathname === '/itinerary-list') {
+                const mail = localStorage['ak-userMail'];
+                return base + (mail ? '&id=' + encodeURIComponent(mail) : '');
+              }
+              return base;
+            })(),
+            cancelUrl: (() => {
+              const base = window.location.origin + window.location.pathname;
+              if (window.location.pathname === '/itinerary-list') {
+                const mail = localStorage['ak-userMail'];
+                return base + (mail ? '?id=' + encodeURIComponent(mail) : '');
+              }
+              return base;
+            })(),
           });
           window.location.href = data.url;
         } catch (err) {
