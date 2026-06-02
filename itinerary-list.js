@@ -291,7 +291,7 @@ function processTitleDates(date) {
   const theDate = parseJSON(date);
   if (!theDate) return;
   const { dateStr, flatpickrDate } = theDate;
-  const dateToExtractFrom = dateStr ? dateStr : flatpickrDate;
+  const dateToExtractFrom = flatpickrDate ? flatpickrDate : dateStr;
   const [ startDate, endDate ] = dateToExtractFrom.split(/\s+to\s+/);
   return getTitleDates(startDate, endDate);
 }
