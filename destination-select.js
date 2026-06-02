@@ -1,4 +1,5 @@
 const $attractionsWrap = document.querySelector('[data-ak="attractions-wrap"]');
+let isRestoring = false;
 
 restoreSavedSelections();
 
@@ -8,14 +9,17 @@ function restoreSavedSelections() {
   const attractions = JSON.parse(saved)?.slide1?.attractions || [];
   const savedNames = new Set(attractions.map(a => a.displayName.toLowerCase().trim()));
 
+  isRestoring = true;
   $attractionsWrap?.querySelectorAll('input[type="checkbox"]').forEach($input => {
     const name = ($input.getAttribute('data-name') || '').toLowerCase().trim();
-    if (savedNames.has(name)) $input.checked = true;
+    if (savedNames.has(name)) $input.closest('label')?.click();
   });
+  isRestoring = false;
 }
 
 if ($attractionsWrap) {
   $attractionsWrap.addEventListener('change', e => {
+    if (isRestoring) return;
     const $checkbox = e.target.closest('input[type="checkbox"]');
     if (!$checkbox) return;
     saveSelectedAttractions();
