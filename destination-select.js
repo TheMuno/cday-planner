@@ -8,12 +8,16 @@ function restoreSavedSelections() {
   const attractions = JSON.parse(saved)?.slide1?.attractions || [];
   const savedNames = new Set(attractions.map(a => a.displayName.toLowerCase().trim()));
 
+  let anyChecked = false;
   $attractionsWrap?.querySelectorAll('input[type="checkbox"]').forEach($input => {
     const name = ($input.getAttribute('data-name') || '').toLowerCase().trim();
     if (!savedNames.has(name)) return;
     $input.checked = true;
     $input.closest('label')?.querySelector('.w-checkbox-input')?.classList.add('w--redirected-checked');
+    anyChecked = true;
   });
+
+  if (anyChecked) document.querySelector('[data-ak="attractions"] .formicon_wrap')?.click();
 }
 
 if ($attractionsWrap) {
