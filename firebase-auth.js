@@ -102,68 +102,8 @@ function clearPendingCred() {
 
 pendingCredential = loadPendingCred();
 
-const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-// If we're returning from an OAuth redirect, suppress the onAuthStateChanged
-// early-redirect and show a loader immediately so the login page never flashes.
-if (localStorage.getItem('ak-redirect-destination')) {
-  isSigningIn = true;
-  showLoader();
-}
-
-// Handle result after OAuth redirect (mobile flow)
-getRedirectResult(auth).then(async (result) => {
-  if (!result) {
-    isSigningIn = false;
-    const pendingDest = localStorage.getItem('ak-redirect-destination');
-    localStorage.removeItem('ak-redirect-destination');
-    hideLoader();
-    if (auth.currentUser) {
-      window.location.replace(pendingDest || REDIRECT_AFTER_LOGIN);
-    }
-    return;
-  }
-  try {
-    await linkPendingCredential(result.user);
-    let email = result.user.email;
-
-    if (!email) {
-      try {
-        const snap = await getDoc(doc(db, "users", result.user.uid));
-        if (snap.exists()) email = snap.data().email || null;
-      } catch (_) {}
-    }
-
-    if (!email) {
-      hideLoader();
-      email = await collectMissingEmail();
-      if (!email) {
-        await signOut(auth);
-        isSigningIn = false;
-        localStorage.removeItem('ak-redirect-destination');
-        showError("An email address is required to sign in with Facebook. Please try again.");
-        return;
-      }
-      showLoader();
-    }
-
-    await saveUserProvider(result.user, email || undefined);
-    if (email) localStorage.setItem("ak-userMail", email);
-    const destination = localStorage.getItem('ak-redirect-destination') || REDIRECT_AFTER_LOGIN;
-    localStorage.removeItem('ak-redirect-destination');
-    window.location.replace(destination);
-  } catch (err) {
-    isSigningIn = false;
-    localStorage.removeItem('ak-redirect-destination');
-    hideLoader();
-    handleAuthError(err);
-  }
-}).catch((err) => {
-  isSigningIn = false;
-  localStorage.removeItem('ak-redirect-destination');
-  hideLoader();
-  handleAuthError(err);
-});
+// Clean up any stale redirect state from previous failed attempts
+localStorage.removeItem('ak-redirect-destination');
 
 // ── 5. HELPERS ───────────────────────────────────────────────
 function showPopup(msg, duration, isError) {
@@ -426,11 +366,6 @@ if (googleBtn) {
     clearError();
     isSigningIn = true;
     try {
-      if (isMobile) {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, new GoogleAuthProvider());
-        return;
-      }
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
       await linkPendingCredential(result.user);
@@ -457,11 +392,6 @@ if (facebookBtn) {
     try {
       const fbProvider = new FacebookAuthProvider();
       fbProvider.addScope("email");
-      if (isMobile) {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, fbProvider);
-        return;
-      }
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
