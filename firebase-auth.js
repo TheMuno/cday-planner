@@ -115,9 +115,10 @@ if (localStorage.getItem('ak-redirect-destination')) {
 getRedirectResult(auth).then(async (result) => {
   if (!result) {
     isSigningIn = false;
+    localStorage.removeItem('ak-redirect-destination');
+    hideLoader();
     return;
   }
-  showLoader();
   try {
     await linkPendingCredential(result.user);
     let email = result.user.email;
@@ -134,6 +135,8 @@ getRedirectResult(auth).then(async (result) => {
       email = await collectMissingEmail();
       if (!email) {
         await signOut(auth);
+        isSigningIn = false;
+        localStorage.removeItem('ak-redirect-destination');
         showError("An email address is required to sign in with Facebook. Please try again.");
         return;
       }
@@ -146,10 +149,15 @@ getRedirectResult(auth).then(async (result) => {
     localStorage.removeItem('ak-redirect-destination');
     window.location.replace(destination);
   } catch (err) {
+    isSigningIn = false;
+    localStorage.removeItem('ak-redirect-destination');
     hideLoader();
     handleAuthError(err);
   }
 }).catch((err) => {
+  isSigningIn = false;
+  localStorage.removeItem('ak-redirect-destination');
+  hideLoader();
   handleAuthError(err);
 });
 
