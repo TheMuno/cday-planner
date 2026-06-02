@@ -173,7 +173,7 @@ function showLoader(message) {
   overlay.id = "auth-loader-overlay";
   Object.assign(overlay.style, {
     position: "fixed", inset: "0",
-    background: "rgba(255,255,255,0.5)",
+    background: "#fff",
     display: "flex", flexDirection: "column",
     alignItems: "center", justifyContent: "center",
     gap: "12px", zIndex: "9999",
