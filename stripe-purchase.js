@@ -75,6 +75,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       history.replaceState(null, '', window.location.pathname + (clean ? '?' + clean : ''));
     }
 
+    if (isPurchaseReturn && purchased) {
+      fireConversionPixel(userData.planDetails?.amountPaid);
+    }
+
     if (!purchased && isPurchaseReturn) {
       pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls);
       return;
@@ -90,6 +94,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearTimeout(spinnerTimeout);
     removeSpinners();
     console.error('Purchase check failed:', err);
+  }
+
+  function fireConversionPixel(value) {
+    if (typeof gtag !== 'function') return;
+    gtag('event', 'smart_guide_purchase', {
+      value:    value ? parseFloat(value) : 0,
+      currency: 'USD',
+    });
   }
 
   function setUI(purchased) {
@@ -294,6 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (plan.name)        localStorage.setItem('ak-sm-name',  plan.name);
       if (plan.description) localStorage.setItem('ak-sm-desc',  plan.description);
 
+      fireConversionPixel(plan.amountPaid);
       setUI(true);
       wireDownloadButton(user, $downloadBtns);
       wireGoogleMapsButton($downloadMapsBtns);
