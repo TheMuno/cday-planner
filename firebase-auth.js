@@ -115,8 +115,12 @@ if (localStorage.getItem('ak-redirect-destination')) {
 getRedirectResult(auth).then(async (result) => {
   if (!result) {
     isSigningIn = false;
+    const pendingDest = localStorage.getItem('ak-redirect-destination');
     localStorage.removeItem('ak-redirect-destination');
     hideLoader();
+    if (auth.currentUser) {
+      window.location.replace(pendingDest || REDIRECT_AFTER_LOGIN);
+    }
     return;
   }
   try {
