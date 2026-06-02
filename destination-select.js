@@ -1,5 +1,19 @@
 const $attractionsWrap = document.querySelector('[data-ak="attractions-wrap"]');
 
+restoreSavedSelections();
+
+function restoreSavedSelections() {
+  const saved = localStorage['ak-attractions-saved'];
+  if (!saved) return;
+  const attractions = JSON.parse(saved)?.slide1?.attractions || [];
+  const savedNames = new Set(attractions.map(a => a.displayName.toLowerCase().trim()));
+
+  $attractionsWrap?.querySelectorAll('input[type="checkbox"]').forEach($input => {
+    const name = ($input.getAttribute('data-name') || '').toLowerCase().trim();
+    if (savedNames.has(name)) $input.checked = true;
+  });
+}
+
 if ($attractionsWrap) {
   $attractionsWrap.addEventListener('change', e => {
     const $checkbox = e.target.closest('input[type="checkbox"]');
