@@ -102,8 +102,65 @@ function clearPendingCred() {
 
 pendingCredential = loadPendingCred();
 
-// Clean up any stale redirect state from previous failed attempts
-localStorage.removeItem('ak-redirect-destination');
+// If returning from an OAuth redirect fallback, suppress early onAuthStateChanged and show loader
+if (localStorage.getItem('ak-redirect-destination')) {
+  isSigningIn = true;
+  showLoader();
+}
+
+// Handle result after OAuth redirect (used as fallback when popup fails)
+getRedirectResult(auth).then(async (result) => {
+  if (!result) {
+    isSigningIn = false;
+    const pendingDest = localStorage.getItem('ak-redirect-destination');
+    localStorage.removeItem('ak-redirect-destination');
+    hideLoader();
+    if (auth.currentUser) {
+      window.location.replace(pendingDest || REDIRECT_AFTER_LOGIN);
+    }
+    return;
+  }
+  try {
+    await linkPendingCredential(result.user);
+    let email = result.user.email;
+
+    if (!email) {
+      try {
+        const snap = await getDoc(doc(db, "users", result.user.uid));
+        if (snap.exists()) email = snap.data().email || null;
+      } catch (_) {}
+    }
+
+    if (!email) {
+      hideLoader();
+      email = await collectMissingEmail();
+      if (!email) {
+        await signOut(auth);
+        isSigningIn = false;
+        localStorage.removeItem('ak-redirect-destination');
+        showError("An email address is required to sign in with Facebook. Please try again.");
+        return;
+      }
+      showLoader();
+    }
+
+    await saveUserProvider(result.user, email || undefined);
+    if (email) localStorage.setItem("ak-userMail", email);
+    const destination = localStorage.getItem('ak-redirect-destination') || REDIRECT_AFTER_LOGIN;
+    localStorage.removeItem('ak-redirect-destination');
+    window.location.replace(destination);
+  } catch (err) {
+    isSigningIn = false;
+    localStorage.removeItem('ak-redirect-destination');
+    hideLoader();
+    handleAuthError(err);
+  }
+}).catch((err) => {
+  isSigningIn = false;
+  localStorage.removeItem('ak-redirect-destination');
+  hideLoader();
+  handleAuthError(err);
+});
 
 // ── 5. HELPERS ───────────────────────────────────────────────
 function showPopup(msg, duration, isError) {
@@ -318,7 +375,6 @@ async function handleAuthError(err) {
   }
 
   if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
-    showError("Sign-in was interrupted. Please try again.");
     return;
   }
 
@@ -435,7 +491,10 @@ if (facebookBtn) {
 
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/web-storage-unsupported') {
+      if (err.code === 'auth/popup-blocked' ||
+          err.code === 'auth/web-storage-unsupported' ||
+          err.code === 'auth/popup-closed-by-user' ||
+          err.code === 'auth/cancelled-popup-request') {
         const fbProvider = new FacebookAuthProvider();
         fbProvider.addScope("email");
         localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
