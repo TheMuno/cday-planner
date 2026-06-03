@@ -317,8 +317,8 @@ async function handleAuthError(err) {
     return;
   }
 
-  if (err.code === "auth/popup-closed-by-user") {
-    console.log("Sign-in popup closed by user.");
+  if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+    showError("Sign-in was interrupted. Please try again.");
     return;
   }
 
