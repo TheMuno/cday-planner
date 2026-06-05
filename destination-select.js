@@ -30,8 +30,12 @@ if ($attractionsWrap) {
 
 function saveSelectedAttractions() {
   const checked = [...$attractionsWrap.querySelectorAll('input[type="checkbox"]:checked')];
+  const allCheckboxNames = new Set(
+    [...$attractionsWrap.querySelectorAll('input[type="checkbox"]')]
+      .map($input => ($input.getAttribute('data-name') || $input.name.replace(/-/g, ' ')).toLowerCase().trim())
+  );
 
-  const attractions = checked.map($input => {
+  const newAttractions = checked.map($input => {
     const $label = $input.closest('label');
     const displayName = $input.getAttribute('data-name') || $input.name.replace(/-/g, ' ');
     const coordsRaw = $label?.getAttribute('coordinates') || '';
@@ -56,11 +60,27 @@ function saveSelectedAttractions() {
     };
   });
 
+  const existing = localStorage['ak-attractions-saved'] ? JSON.parse(localStorage['ak-attractions-saved']) : {};
+  const existingSlide1 = existing.slide1 || {};
+  const existingAttractions = existingSlide1.attractions || [];
+
+  // Preserve attractions added elsewhere (e.g. via autocomplete) that aren't in this page's checkbox set
+  const otherAttractions = existingAttractions.filter(
+    a => !allCheckboxNames.has(a.displayName.toLowerCase().trim())
+  );
+
+  // Merge: others first, then newly checked — deduplicated by displayName
+  const combined = [...new Map(
+    [...otherAttractions, ...newAttractions].map(a => [a.displayName.toLowerCase().trim(), a])
+  ).values()];
+
   const savedAttractions = {
+    ...existing,
     slide1: {
-      attractions,
-      restaurants: [],
-      notes: [],
+      ...existingSlide1,
+      attractions: combined,
+      restaurants: existingSlide1.restaurants || [],
+      notes: existingSlide1.notes || [],
     }
   };
 
