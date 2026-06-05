@@ -105,9 +105,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function setUI(purchased) {
+    const onUpgradePage = window.location.pathname === '/upgrade';
+
     $buyButtons.forEach(btn => {
-      if (purchased) btn.setAttribute('data-ak-hidden', '');
-      else btn.removeAttribute('data-ak-hidden');
+      if (purchased) {
+        if (onUpgradePage) {
+          btn.textContent = 'Already bought';
+          btn.disabled = true;
+        } else {
+          btn.setAttribute('data-ak-hidden', '');
+        }
+      } else {
+        btn.removeAttribute('data-ak-hidden');
+      }
     });
 
     $postPurchaseEls.forEach(el => {
@@ -269,27 +279,49 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function showSpinners($postPurchaseEls) {
     if (!$postPurchaseEls.length) return;
-    // Add keyframe once to the document
     if (!document.querySelector('#ak-spinner-style')) {
       const style = document.createElement('style');
       style.id = 'ak-spinner-style';
       style.textContent = '@keyframes ak-spin { to { transform: rotate(360deg); } }';
       document.head.appendChild(style);
     }
+
+    const onUpgradePage = window.location.pathname === '/upgrade';
+
     $postPurchaseEls.forEach(el => {
-      const spinner = document.createElement('div');
-      spinner.setAttribute('data-ak-spinner', '');
-      spinner.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:16px 0;';
-      spinner.innerHTML = `
-        <div style="width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:#555;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
-        <span style="font-size:14px;color:#888;">Processing...</span>
-      `;
-      el.parentNode.insertBefore(spinner, el);
+      if (onUpgradePage) {
+        el.dataset.akOriginalHtml = el.innerHTML;
+        el.disabled = true;
+        el.innerHTML = `
+          <div style="display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+            <div style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:currentColor;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
+            <span>Processing...</span>
+          </div>`;
+      } else {
+        const spinner = document.createElement('div');
+        spinner.setAttribute('data-ak-spinner', '');
+        spinner.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;padding:16px 0;';
+        spinner.innerHTML = `
+          <div style="width:18px;height:18px;border:2px solid #e0e0e0;border-top-color:#555;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
+          <span style="font-size:14px;color:#888;">Processing...</span>
+        `;
+        el.parentNode.insertBefore(spinner, el);
+      }
     });
   }
 
   function removeSpinners() {
     document.querySelectorAll('[data-ak-spinner]').forEach(el => el.remove());
+
+    if (window.location.pathname === '/upgrade') {
+      $buyButtons.forEach(btn => {
+        if (btn.dataset.akOriginalHtml !== undefined) {
+          btn.innerHTML = btn.dataset.akOriginalHtml;
+          btn.disabled = false;
+          delete btn.dataset.akOriginalHtml;
+        }
+      });
+    }
   }
 
   async function pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, attempts = 0) {
