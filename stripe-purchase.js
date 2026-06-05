@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $buyButtons.forEach(btn => {
       if (purchased) {
         if (onUpgradePage) {
-          btn.textContent = 'Already bought';
+          btn.textContent = 'Thanks for purchasing Smart Guide';
           btn.disabled = true;
         } else {
           btn.setAttribute('data-ak-hidden', '');
