@@ -329,14 +329,14 @@ window.addEventListener('load', async () => {
   }
 
   function mergelocalNDBAttractions(savedAttractionsDB) {
-    const localSavedAttractions = JSON.parse(localStorage['ak-attractions-saved']);
+    const localSavedAttractions = JSON.parse(localStorage['ak-attractions-saved']) || {};
     const savedAttractions = JSON.parse(savedAttractionsDB);
 
     for (const [slide, attractions] of Object.entries(savedAttractions)) {
       if (slide !== 'slide1' && slide !== 'slide2') continue;
 
-      const { attractions: savedAttractionsArr, restaurants: savedRestaurantsArr, notes: savedNotesArr } = attractions;
-      const { attractions: localAttractionsArr, restaurants: localRestaurantsArr, notes: localNotesArr } = localSavedAttractions[slide];
+      const { attractions: savedAttractionsArr = [], restaurants: savedRestaurantsArr = [], notes: savedNotesArr = [] } = attractions || {};
+      const { attractions: localAttractionsArr = [], restaurants: localRestaurantsArr = [], notes: localNotesArr = [] } = localSavedAttractions[slide] || {};
 
       savedAttractions[slide].attractions = combineArrays(savedAttractionsArr, localAttractionsArr);
       savedAttractions[slide].restaurants = combineArrays(savedRestaurantsArr, localRestaurantsArr);
