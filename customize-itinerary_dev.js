@@ -329,7 +329,9 @@ window.addEventListener('load', async () => {
   }
 
   function mergelocalNDBAttractions(savedAttractionsDB) {
-    const localSavedAttractions = JSON.parse(localStorage['ak-attractions-saved']) || {};
+    if (!savedAttractionsDB || savedAttractionsDB === 'undefined') return;
+    const rawLocal = localStorage['ak-attractions-saved'];
+    const localSavedAttractions = (rawLocal && rawLocal !== 'undefined') ? JSON.parse(rawLocal) : {};
     const savedAttractions = JSON.parse(savedAttractionsDB);
 
     for (const [slide, attractions] of Object.entries(savedAttractions)) {
