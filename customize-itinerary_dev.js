@@ -91,6 +91,27 @@ window.addEventListener('load', async () => {
     $userSearchForm.addEventListener('submit', e => e.preventDefault(), true);
   }
 
+  setupAutocompleteInp();
+  const cachedName = localStorage['ak-user-name'];
+  const cachedDates = localStorage['ak-travel-days'];
+  if (cachedName || cachedDates) {
+    if (cachedName) {
+      $tripTitle.querySelector('[data-ak="trip-user-name"]').textContent = `${cachedName}'s`;
+    }
+    if (cachedDates) {
+      try {
+        const { flatpickrDate } = JSON.parse(cachedDates);
+        const [startDate, endDate] = flatpickrDate.split(/\s+to\s+/);
+        const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
+        const s = fmt(new Date(startDate));
+        const e = fmt(new Date(endDate));
+        document.querySelector('[data-ak="title-travel-dates"]').textContent = s === e ? s : `${s} - ${e}`;
+      } catch (_) {}
+    }
+    showTripInfoHeader();
+  }
+
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged
@@ -866,7 +887,7 @@ window.addEventListener('load', async () => {
 
 
   // Main attraction autocomplete
-  (async function setupAutocompleteInp() {
+  async function setupAutocompleteInp() {
     await google.maps.importLibrary('places');
 
     const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
@@ -951,7 +972,7 @@ window.addEventListener('load', async () => {
       addAttractionToList(displayName, $timeslotWrap, marker, saveObj);
       saveAttractionLocal();
     }
-  })();
+  }
 
 
   $attractionsSlider.addEventListener('click', e => {
