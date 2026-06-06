@@ -24,11 +24,16 @@ function restoreSavedSelections() {
   if (anyChecked) document.querySelector('[data-ak="attractions"] .formicon_wrap')?.click();
 }
 
+// Checking several boxes quickly fires several overlapping saves; chain them so only one
+// runs at a time (each still reads the live checkbox state, so the final save is correct
+// and later saves can reuse data the earlier ones already fetched).
+let saveQueue = Promise.resolve();
+
 if ($attractionsWrap) {
   $attractionsWrap.addEventListener('change', e => {
     const $checkbox = e.target.closest('input[type="checkbox"]');
     if (!$checkbox) return;
-    saveSelectedAttractions();
+    saveQueue = saveQueue.catch(() => {}).then(() => saveSelectedAttractions());
   });
 }
 
@@ -44,7 +49,11 @@ async function saveSelectedAttractions() {
   const existingAttractions = existingSlide1.attractions || [];
   const existingByName = new Map(existingAttractions.map(a => [a.displayName.toLowerCase().trim(), a]));
 
-  const newAttractions = await Promise.all(checked.map(async $input => {
+  // Fetch one place at a time (mirrors the autocomplete flow in customize-itinerary_dev.js,
+  // which only ever resolves a single place per user action) — firing them all in parallel
+  // bursts past the Places API's rate limit and most of the batch comes back empty.
+  const newAttractions = [];
+  for (const $input of checked) {
     const $label = $input.closest('label');
     const displayName = $input.getAttribute('data-name') || $input.name.replace(/-/g, ' ');
     const coordsRaw = $label?.getAttribute('coordinates') || '';
@@ -57,12 +66,13 @@ async function saveSelectedAttractions() {
     // Already enriched on a previous toggle (or saved elsewhere) — reuse it instead of refetching
     const cached = existingByName.get(displayName.toLowerCase().trim());
     if (cached && cached.placeId === placeId && (cached.address || cached.neighborhood)) {
-      return { ...cached, displayName, placeId, location: location || cached.location };
+      newAttractions.push({ ...cached, displayName, placeId, location: location || cached.location });
+      continue;
     }
 
     const details = placeId ? await fetchPlaceDetails(placeId) : null;
 
-    return {
+    newAttractions.push({
       location,
       displayName,
       neighborhood: details?.neighborhood || '',
@@ -75,8 +85,8 @@ async function saveSelectedAttractions() {
       phone: details?.phone || '',
       reviewCount: details?.reviewCount ?? null,
       photoUrl: details?.photoUrl || '',
-    };
-  }));
+    });
+  }
 
   // Preserve attractions added elsewhere (e.g. via autocomplete) that aren't in this page's checkbox set
   const otherAttractions = existingAttractions.filter(
