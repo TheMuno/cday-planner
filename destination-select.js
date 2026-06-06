@@ -43,6 +43,7 @@ function saveSelectedAttractions() {
     const lat = parseFloat(latStr?.trim());
     const lng = parseFloat(lngStr?.trim());
     const location = (isNaN(lat) || isNaN(lng)) ? null : { lat, lng };
+    const placeId = $input.getAttribute('data-place-id') || $label?.getAttribute('data-place-id') || '';
 
     return {
       location,
@@ -51,7 +52,7 @@ function saveSelectedAttractions() {
       address: '',
       editorialSummary: null,
       type: ['tourist_attraction'],
-      placeId: '',
+      placeId,
       rating: null,
       website: '',
       phone: '',
