@@ -35,7 +35,7 @@ import {
 // Firebase Console → Project Settings → Your Apps → SDK setup
 const firebaseConfig = {
     apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
-    authDomain: "askkhonsu-map.firebaseapp.com",
+    authDomain: "auth.askkhonsu.com",
     projectId: "askkhonsu-map",
     storageBucket: "askkhonsu-map.appspot.com",
     messagingSenderId: "266031876218",
