@@ -195,7 +195,7 @@ function showPopup(msg, duration, isError) {
   closeBtn.addEventListener("click", () => backdrop.remove());
 
   const text = document.createElement("p");
-  text.textContent = msg;
+  text.innerHTML = msg.replace(/\n/g, "<br>");
   Object.assign(text.style, {
     margin: "0", fontSize: window.innerWidth > 768 ? "17px" : "14px",
     color: isError ? "#dc2626" : "#16a34a",
@@ -380,7 +380,7 @@ async function handleAuthError(err) {
 
   if (err.code === "auth/user-not-found") {
     setMode(true);
-    showError("No account found with that email. We're redirecting you to Sign Up.");
+    showError("No account with that email\nPlease Sign Up");
     return;
   }
 
@@ -656,7 +656,7 @@ if (forgotSubmitBtn) {
       if (err.code === "auth/user-not-found") {
         showLoginView();
         setMode(true);
-        showError("No account found with that email. We're redirecting you to Sign Up.");
+        showError("No account with that email\nPlease Sign Up");
       } else {
         showError("Something went wrong. Please try again.");
       }
