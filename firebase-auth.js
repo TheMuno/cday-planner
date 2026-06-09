@@ -197,7 +197,7 @@ function showPopup(msg, duration, isError) {
   const text = document.createElement("p");
   text.textContent = msg;
   Object.assign(text.style, {
-    margin: "0", fontSize: "14px",
+    margin: "0", fontSize: window.innerWidth > 768 ? "17px" : "14px",
     color: isError ? "#dc2626" : "#16a34a",
   });
 
@@ -378,8 +378,13 @@ async function handleAuthError(err) {
     return;
   }
 
+  if (err.code === "auth/user-not-found") {
+    setMode(true);
+    showError("No account found with that email. We're redirecting you to Sign Up.");
+    return;
+  }
+
   const messages = {
-    "auth/user-not-found":       "No account found with that email.",
     "auth/wrong-password":       "Incorrect password.",
     "auth/invalid-credential":   "Incorrect email or password.",
     "auth/invalid-email":        "Please enter a valid email address.",
@@ -649,7 +654,9 @@ if (forgotSubmitBtn) {
       showSuccess("Reset email sent! Check your inbox — and your spam folder if you don't see it.");
     } catch (err) {
       if (err.code === "auth/user-not-found") {
-        showError("No account found with that email.");
+        showLoginView();
+        setMode(true);
+        showError("No account found with that email. We're redirecting you to Sign Up.");
       } else {
         showError("Something went wrong. Please try again.");
       }
