@@ -74,9 +74,11 @@ let isSignUpMode = false;
 let pendingCredential = null;
 let isSigningIn = false;
 
-function isMobileOrInAppBrowser() {
+function isInAppBrowser() {
   const ua = navigator.userAgent || "";
-  return /FBAN|FBAV|FB_IAB|Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+  // Facebook, Instagram, and similar in-app browsers partition sessionStorage,
+  // breaking both popup and redirect OAuth flows.
+  return /FBAN|FBAV|FB_IAB|Instagram|MicroMessenger/i.test(ua);
 }
 
 // ── PENDING CREDENTIAL PERSISTENCE (sessionStorage) ──────────
@@ -164,6 +166,10 @@ getRedirectResult(auth).then(async (result) => {
   isSigningIn = false;
   localStorage.removeItem('ak-redirect-destination');
   hideLoader();
+  if (err.message && err.message.includes('missing initial state')) {
+    showError("Sign-in couldn't complete — your browser's storage was inaccessible.\nPlease open this page in Safari or Chrome and try again.");
+    return;
+  }
   handleAuthError(err);
 });
 
@@ -459,11 +465,11 @@ if (facebookBtn) {
     const fbProvider = new FacebookAuthProvider();
     fbProvider.addScope("email");
 
-    // Mobile browsers and Facebook's in-app browser block popups reliably —
-    // skip the popup attempt entirely and go straight to redirect.
-    if (isMobileOrInAppBrowser()) {
-      localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-      await signInWithRedirect(auth, fbProvider);
+    // In-app browsers (Facebook app, Instagram) partition sessionStorage, which
+    // breaks both popups and redirects. The only fix is opening in a real browser.
+    if (isInAppBrowser()) {
+      isSigningIn = false;
+      showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
       return;
     }
 
