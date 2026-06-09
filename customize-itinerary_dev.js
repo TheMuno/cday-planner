@@ -909,10 +909,10 @@ window.addEventListener('load', async () => {
       const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
       const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-      const $activeTimeslot = document.querySelector('[data-ak-timeslot].active');
-      const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || document.querySelector('[data-ak-timeslot="morning"]');
-      const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
-      if (attractionExists($timeslotWrap, displayName)) {
+      const isRestaurant = type.includes('restaurant') || type.includes('food');
+      const { $currentSlide: $slideForDupCheck } = getCurrentSlideInfo();
+      const $dupCheckWrap = $slideForDupCheck.querySelector(`[data-ak-timeslot="${isRestaurant ? 'afternoon' : 'morning'}"] [data-ak-timeslot-wrap]`);
+      if (attractionExists($dupCheckWrap, displayName)) {
         alert('Sorry, Already Added!');
         return;
       }
@@ -953,24 +953,24 @@ window.addEventListener('load', async () => {
       markerObj[`slide${slideIndex}`].push(marker);
 
       const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl };
-      processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj });
+      processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj, isRestaurant });
       setUnsavedChangesFlag();
     });
 
     function processAttractionSave($currentSlide, addNSaveObj) {
-      const $activeTimeslot = $currentSlide.querySelector('[data-ak-timeslots].active');
-      const $morningTimeslot = $currentSlide.querySelector('[data-ak-timeslot="morning"]');
-      const $timeslot = ($activeTimeslot?.getAttribute('data-ak-timeslot') !== 'evening' && $activeTimeslot) || $morningTimeslot;
+      const { slideIndex, displayName, marker, saveObj, isRestaurant } = addNSaveObj;
+      const $timeslot = $currentSlide.querySelector(`[data-ak-timeslot="${isRestaurant ? 'afternoon' : 'morning'}"]`);
 
       if ($timeslot.querySelector('[data-ak-timeslot-content]').style.height === '0px') {
         $timeslot.querySelector('[data-ak-timeslot-title]').click();
       }
 
-      const { slideIndex, displayName, marker, saveObj } = addNSaveObj;
       const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
-      const timeslotName = $timeslot.getAttribute('data-ak-timeslot');
       addAttractionToList(displayName, $timeslotWrap, marker, saveObj);
       saveAttractionLocal();
+
+      $currentSlide.querySelector('[data-ak-timeslots].active')?.classList.remove('active');
+      $timeslot.classList.add('active');
     }
   }
 
