@@ -380,7 +380,7 @@ async function handleAuthError(err) {
 
   if (err.code === "auth/user-not-found") {
     setMode(true);
-    showError("No account with that email\nPlease Sign Up");
+    showError("No account found with that email\nPlease Sign Up");
     return;
   }
 
@@ -656,7 +656,7 @@ if (forgotSubmitBtn) {
       if (err.code === "auth/user-not-found") {
         showLoginView();
         setMode(true);
-        showError("No account with that email\nPlease Sign Up");
+        showError("No account found with that email\nPlease Sign Up");
       } else {
         showError("Something went wrong. Please try again.");
       }
