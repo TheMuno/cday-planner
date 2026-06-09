@@ -444,13 +444,23 @@ if (googleBtn) {
       await saveUserProvider(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
-      if (err.code === 'auth/popup-blocked' || err.code === 'auth/web-storage-unsupported') {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, new GoogleAuthProvider());
-        return;
-      }
       isSigningIn = false;
       hideLoader();
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        // On mobile the popup opens as a new tab with no window.opener, so auth
+        // can succeed before postMessage fails. Redirect if we're already signed in.
+        if (auth.currentUser) {
+          showLoader();
+          window.location.replace(REDIRECT_AFTER_LOGIN);
+        }
+        return;
+      }
+      if (err.code === 'auth/popup-blocked' ||
+          err.code === 'auth/web-storage-unsupported' ||
+          err.code === 'auth/operation-not-supported-in-this-environment') {
+        showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
+        return;
+      }
       handleAuthError(err);
     }
   });
@@ -517,17 +527,21 @@ if (facebookBtn) {
 
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
-      if (err.code === 'auth/popup-blocked' ||
-          err.code === 'auth/web-storage-unsupported' ||
-          err.code === 'auth/operation-not-supported-in-this-environment' ||
-          err.code === 'auth/popup-closed-by-user' ||
-          err.code === 'auth/cancelled-popup-request') {
-        localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-        await signInWithRedirect(auth, fbProvider);
-        return;
-      }
       isSigningIn = false;
       hideLoader();
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        if (auth.currentUser) {
+          showLoader();
+          window.location.replace(REDIRECT_AFTER_LOGIN);
+        }
+        return;
+      }
+      if (err.code === 'auth/popup-blocked' ||
+          err.code === 'auth/web-storage-unsupported' ||
+          err.code === 'auth/operation-not-supported-in-this-environment') {
+        showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
+        return;
+      }
       handleAuthError(err);
     }
   });
