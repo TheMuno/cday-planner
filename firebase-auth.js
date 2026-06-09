@@ -74,6 +74,11 @@ let isSignUpMode = false;
 let pendingCredential = null;
 let isSigningIn = false;
 
+function isMobileOrInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  return /FBAN|FBAV|FB_IAB|Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+}
+
 // ── PENDING CREDENTIAL PERSISTENCE (sessionStorage) ──────────
 const PENDING_CRED_KEY = "auth_pending_cred";
 
@@ -450,9 +455,19 @@ if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
     clearError();
     isSigningIn = true;
+
+    const fbProvider = new FacebookAuthProvider();
+    fbProvider.addScope("email");
+
+    // Mobile browsers and Facebook's in-app browser block popups reliably —
+    // skip the popup attempt entirely and go straight to redirect.
+    if (isMobileOrInAppBrowser()) {
+      localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+      await signInWithRedirect(auth, fbProvider);
+      return;
+    }
+
     try {
-      const fbProvider = new FacebookAuthProvider();
-      fbProvider.addScope("email");
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await linkPendingCredential(result.user);
@@ -498,10 +513,9 @@ if (facebookBtn) {
     } catch (err) {
       if (err.code === 'auth/popup-blocked' ||
           err.code === 'auth/web-storage-unsupported' ||
+          err.code === 'auth/operation-not-supported-in-this-environment' ||
           err.code === 'auth/popup-closed-by-user' ||
           err.code === 'auth/cancelled-popup-request') {
-        const fbProvider = new FacebookAuthProvider();
-        fbProvider.addScope("email");
         localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
         await signInWithRedirect(auth, fbProvider);
         return;
