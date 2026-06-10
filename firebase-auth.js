@@ -121,27 +121,11 @@ pendingCredential = loadPendingCred();
 // and onAuthStateChanged can reference it even after localStorage is cleared.
 const storedRedirectDest = localStorage.getItem('ak-redirect-destination');
 
-// DEBUG OVERLAY — remove after diagnosing mobile redirect failure
-let _dbgTop = 0;
-function dbg(msg) {
-  const el = document.createElement('div');
-  Object.assign(el.style, {
-    position:'fixed', top: _dbgTop + 'px', left:'0', right:'0',
-    background:'#111', color:'#0f0', fontSize:'13px', lineHeight:'1.5',
-    padding:'6px 10px', zIndex:'999999', whiteSpace:'pre-wrap',
-    borderBottom:'1px solid #0f0',
-  });
-  el.textContent = '[DBG] ' + msg;
-  _dbgTop += 44;
-  document.body.appendChild(el);
-  setTimeout(() => { el.remove(); _dbgTop = Math.max(0, _dbgTop - 44); }, 60000);
-}
-
 // ── Handle return from manual Facebook OAuth redirect (mobile) ──
-const _fbHash   = new URLSearchParams(window.location.hash.slice(1));
-const _fbQuery  = new URLSearchParams(window.location.search);
-const _fbToken  = _fbHash.get('access_token');
-const _fbIsFB   = _fbHash.get('state') === 'fb-mobile-auth' || _fbQuery.get('state') === 'fb-mobile-auth';
+const _fbHash  = new URLSearchParams(window.location.hash.slice(1));
+const _fbQuery = new URLSearchParams(window.location.search);
+const _fbToken = _fbHash.get('access_token');
+const _fbIsFB  = _fbHash.get('state') === 'fb-mobile-auth' || _fbQuery.get('state') === 'fb-mobile-auth';
 
 if (_fbIsFB) {
   history.replaceState(null, '', window.location.pathname);
@@ -149,7 +133,6 @@ if (_fbIsFB) {
     redirectHandled = true;
     isSigningIn = true;
     showLoader();
-    dbg('FB manual OAuth return — processing token');
     (async () => {
       try {
         const credential = FacebookAuthProvider.credential(_fbToken);
@@ -181,7 +164,6 @@ if (_fbIsFB) {
         isSigningIn = false;
         redirectHandled = false;
         hideLoader();
-        dbg('FB signInWithCredential error: ' + err.code);
         handleAuthError(err);
       }
     })();
@@ -194,26 +176,23 @@ if (_fbIsFB) {
 if (storedRedirectDest) {
   isSigningIn = true;
   showLoader();
-  dbg('storedRedirectDest="' + storedRedirectDest + '" → calling getRedirectResult...');
 }
 
-// Handle result after OAuth redirect (mobile signInWithRedirect or desktop popup fallback)
+// Handle result after OAuth redirect (desktop popup fallback)
 getRedirectResult(auth).then(async (result) => {
   if (!result) {
-    isSigningIn = false;
-    localStorage.removeItem('ak-redirect-destination');
-    hideLoader();
-    dbg('getRedirectResult → NULL\ncurrentUser=' + (auth.currentUser ? auth.currentUser.uid : 'null') + '\nstoredDest=' + (storedRedirectDest||'null'));
-    // auth.currentUser may already be set if Firebase restored state before this resolved
-    if (auth.currentUser && storedRedirectDest) {
-      redirectHandled = true;
-      window.location.replace(storedRedirectDest);
+    if (!redirectHandled) {
+      isSigningIn = false;
+      localStorage.removeItem('ak-redirect-destination');
+      hideLoader();
+      if (auth.currentUser && storedRedirectDest) {
+        redirectHandled = true;
+        window.location.replace(storedRedirectDest);
+      }
     }
-    // If no currentUser yet, onAuthStateChanged will handle the redirect when ready
     return;
   }
   redirectHandled = true;
-  dbg('getRedirectResult → GOT USER uid=' + result.user.uid + ' email=' + (result.user.email||'none'));
   try {
     await linkPendingCredential(result.user);
     let email = result.user.email;
@@ -249,10 +228,11 @@ getRedirectResult(auth).then(async (result) => {
     handleAuthError(err);
   }
 }).catch((err) => {
-  isSigningIn = false;
-  localStorage.removeItem('ak-redirect-destination');
-  hideLoader();
-  dbg('getRedirectResult → CATCH err.code=' + err.code + '\nmsg=' + err.message);
+  if (!redirectHandled) {
+    isSigningIn = false;
+    localStorage.removeItem('ak-redirect-destination');
+    hideLoader();
+  }
   if (err.message && err.message.includes('missing initial state')) {
     showError("Sign-in couldn't complete — your browser's storage was inaccessible.\nPlease open this page in Safari or Chrome and try again.");
     return;
@@ -562,8 +542,6 @@ if (facebookBtn) {
     const fbProvider = new FacebookAuthProvider();
     fbProvider.addScope("email");
 
-    dbg('FB click: inApp=' + isInAppBrowser() + ' mobile=' + isMobile() + ' firefox=' + isFirefoxBrowser() + ' FB=' + typeof FB);
-
     if (isInAppBrowser()) {
       isSigningIn = false;
       showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
@@ -577,10 +555,7 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
-      // Direct OAuth redirect — no FB SDK popup, no iframe relay.
-      // Facebook returns access_token in the URL hash on callback.
       const redirectUri = window.location.origin + window.location.pathname;
-      dbg('FB manual redirect: ' + redirectUri);
       window.location.href =
         'https://www.facebook.com/dialog/oauth' +
         '?client_id=4017096908582533' +
@@ -659,8 +634,6 @@ if (submitBtn) {
     e.preventDefault();
     clearError();
 
-    console.log('Sign-Up Btn Clicked!!!')
-
     const email    = emailInput?.value.trim();
     const password = passwordInput?.value;
 
@@ -673,8 +646,6 @@ if (submitBtn) {
       showError("Please enter a valid email address.");
       return;
     }
-
-    console.log('isSignUpMode::', isSignUpMode)
 
     if (isSignUpMode && confirmPasswordInput) {
       if (password !== confirmPasswordInput.value) {
@@ -805,7 +776,6 @@ if (forgotSubmitBtn) {
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
 onAuthStateChanged(auth, async (user) => {
-  dbg('onAuthStateChanged: user=' + (user ? user.uid : 'NULL') + '\nisSigningIn=' + isSigningIn + ' storedDest=' + (storedRedirectDest||'null') + ' handled=' + redirectHandled);
   if (!user) return;
 
   // Redirect flow fallback: onAuthStateChanged can fire before getRedirectResult
