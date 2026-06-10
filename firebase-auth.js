@@ -122,17 +122,19 @@ pendingCredential = loadPendingCred();
 const storedRedirectDest = localStorage.getItem('ak-redirect-destination');
 
 // DEBUG OVERLAY — remove after diagnosing mobile redirect failure
+let _dbgTop = 0;
 function dbg(msg) {
   const el = document.createElement('div');
   Object.assign(el.style, {
-    position:'fixed', top:'0', left:'0', right:'0',
+    position:'fixed', top: _dbgTop + 'px', left:'0', right:'0',
     background:'#111', color:'#0f0', fontSize:'13px', lineHeight:'1.5',
-    padding:'8px 10px', zIndex:'999999', whiteSpace:'pre-wrap',
-    borderBottom:'2px solid #0f0',
+    padding:'6px 10px', zIndex:'999999', whiteSpace:'pre-wrap',
+    borderBottom:'1px solid #0f0',
   });
   el.textContent = '[DBG] ' + msg;
-  document.body.prepend(el);
-  setTimeout(() => el.remove(), 60000);
+  _dbgTop += 44;
+  document.body.appendChild(el);
+  setTimeout(() => { el.remove(); _dbgTop = Math.max(0, _dbgTop - 44); }, 60000);
 }
 
 if (storedRedirectDest) {
