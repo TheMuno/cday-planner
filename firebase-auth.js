@@ -471,23 +471,19 @@ if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
     clearError();
     isSigningIn = true;
-    showLoader("Connecting to Facebook...");
 
     const fbProvider = new FacebookAuthProvider();
     fbProvider.addScope("email");
 
     if (isInAppBrowser()) {
       isSigningIn = false;
-      hideLoader();
       showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
       return;
     }
 
     try {
-      // On desktop: resolves normally and we handle everything below.
-      // On mobile: opens as a new tab with no window.opener, so this promise
-      // hangs. The onAuthStateChanged fallback at the bottom handles that case.
       const result = await signInWithPopup(auth, fbProvider);
+      showLoader();
       await linkPendingCredential(result.user);
 
       let email = result.user.email;
