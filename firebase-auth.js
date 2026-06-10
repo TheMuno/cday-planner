@@ -73,6 +73,7 @@ const successEl            = document.getElementById("auth-success");
 let isSignUpMode = false;
 let pendingCredential = null;
 let isSigningIn = false;
+let redirectHandled = false; // prevents onAuthStateChanged and getRedirectResult racing
 
 function isInAppBrowser() {
   const ua = navigator.userAgent || "";
@@ -115,24 +116,30 @@ function clearPendingCred() {
 
 pendingCredential = loadPendingCred();
 
-// If returning from an OAuth redirect fallback, suppress early onAuthStateChanged and show loader
-if (localStorage.getItem('ak-redirect-destination')) {
+// Capture the redirect destination once at load time so both getRedirectResult
+// and onAuthStateChanged can reference it even after localStorage is cleared.
+const storedRedirectDest = localStorage.getItem('ak-redirect-destination');
+
+if (storedRedirectDest) {
   isSigningIn = true;
   showLoader();
 }
 
-// Handle result after OAuth redirect (used as fallback when popup fails)
+// Handle result after OAuth redirect (mobile signInWithRedirect or desktop popup fallback)
 getRedirectResult(auth).then(async (result) => {
   if (!result) {
     isSigningIn = false;
-    const pendingDest = localStorage.getItem('ak-redirect-destination');
     localStorage.removeItem('ak-redirect-destination');
     hideLoader();
-    if (auth.currentUser) {
-      window.location.replace(pendingDest || REDIRECT_AFTER_LOGIN);
+    // auth.currentUser may already be set if Firebase restored state before this resolved
+    if (auth.currentUser && storedRedirectDest) {
+      redirectHandled = true;
+      window.location.replace(storedRedirectDest);
     }
+    // If no currentUser yet, onAuthStateChanged will handle the redirect when ready
     return;
   }
+  redirectHandled = true;
   try {
     await linkPendingCredential(result.user);
     let email = result.user.email;
@@ -159,9 +166,8 @@ getRedirectResult(auth).then(async (result) => {
 
     await saveUserProvider(result.user, email || undefined);
     if (email) localStorage.setItem("ak-userMail", email);
-    const destination = localStorage.getItem('ak-redirect-destination') || REDIRECT_AFTER_LOGIN;
     localStorage.removeItem('ak-redirect-destination');
-    window.location.replace(destination);
+    window.location.replace(storedRedirectDest || REDIRECT_AFTER_LOGIN);
   } catch (err) {
     isSigningIn = false;
     localStorage.removeItem('ak-redirect-destination');
@@ -714,8 +720,22 @@ if (forgotSubmitBtn) {
 }
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
-onAuthStateChanged(auth, (user) => {
-  if (user && !isSigningIn) {
+onAuthStateChanged(auth, async (user) => {
+  if (!user) return;
+
+  // Redirect flow fallback: onAuthStateChanged can fire before getRedirectResult
+  // resolves, leaving isSigningIn=true and the user stranded on the login page.
+  // If we came from a redirect and it hasn't been handled yet, handle it now.
+  if (storedRedirectDest && !redirectHandled) {
+    redirectHandled = true;
+    isSigningIn = false;
+    try { await saveUserProvider(user); } catch (_) {}
+    hideLoader();
+    window.location.replace(storedRedirectDest);
+    return;
+  }
+
+  if (!isSigningIn) {
     showLoader("Already logged in...");
     window.location.replace(REDIRECT_AFTER_LOGIN);
   }
