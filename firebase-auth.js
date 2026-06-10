@@ -506,6 +506,8 @@ if (facebookBtn) {
     const fbProvider = new FacebookAuthProvider();
     fbProvider.addScope("email");
 
+    dbg('FB click: inApp=' + isInAppBrowser() + ' mobile=' + isMobile() + ' firefox=' + isFirefoxBrowser() + ' FB=' + typeof FB);
+
     if (isInAppBrowser()) {
       isSigningIn = false;
       showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
@@ -527,7 +529,9 @@ if (facebookBtn) {
         showError("Facebook sign-in failed to initialise.\nPlease refresh the page and try again.");
         return;
       }
+      dbg('FB.login() calling...');
       FB.login(async (response) => {
+        dbg('FB.login callback: status=' + (response && response.status) + ' authResponse=' + (response && !!response.authResponse));
         if (!response || !response.authResponse) {
           isSigningIn = false;
           return; // user cancelled
