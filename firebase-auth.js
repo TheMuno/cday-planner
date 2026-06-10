@@ -120,9 +120,24 @@ pendingCredential = loadPendingCred();
 // and onAuthStateChanged can reference it even after localStorage is cleared.
 const storedRedirectDest = localStorage.getItem('ak-redirect-destination');
 
+// DEBUG OVERLAY — remove after diagnosing mobile redirect failure
+function dbg(msg) {
+  const el = document.createElement('div');
+  Object.assign(el.style, {
+    position:'fixed', top:'0', left:'0', right:'0',
+    background:'#111', color:'#0f0', fontSize:'13px', lineHeight:'1.5',
+    padding:'8px 10px', zIndex:'999999', whiteSpace:'pre-wrap',
+    borderBottom:'2px solid #0f0',
+  });
+  el.textContent = '[DBG] ' + msg;
+  document.body.prepend(el);
+  setTimeout(() => el.remove(), 60000);
+}
+
 if (storedRedirectDest) {
   isSigningIn = true;
   showLoader();
+  dbg('storedRedirectDest="' + storedRedirectDest + '" → calling getRedirectResult...');
 }
 
 // Handle result after OAuth redirect (mobile signInWithRedirect or desktop popup fallback)
@@ -131,6 +146,7 @@ getRedirectResult(auth).then(async (result) => {
     isSigningIn = false;
     localStorage.removeItem('ak-redirect-destination');
     hideLoader();
+    dbg('getRedirectResult → NULL\ncurrentUser=' + (auth.currentUser ? auth.currentUser.uid : 'null') + '\nstoredDest=' + (storedRedirectDest||'null'));
     // auth.currentUser may already be set if Firebase restored state before this resolved
     if (auth.currentUser && storedRedirectDest) {
       redirectHandled = true;
@@ -140,6 +156,7 @@ getRedirectResult(auth).then(async (result) => {
     return;
   }
   redirectHandled = true;
+  dbg('getRedirectResult → GOT USER uid=' + result.user.uid + ' email=' + (result.user.email||'none'));
   try {
     await linkPendingCredential(result.user);
     let email = result.user.email;
@@ -178,6 +195,7 @@ getRedirectResult(auth).then(async (result) => {
   isSigningIn = false;
   localStorage.removeItem('ak-redirect-destination');
   hideLoader();
+  dbg('getRedirectResult → CATCH err.code=' + err.code + '\nmsg=' + err.message);
   if (err.message && err.message.includes('missing initial state')) {
     showError("Sign-in couldn't complete — your browser's storage was inaccessible.\nPlease open this page in Safari or Chrome and try again.");
     return;
@@ -721,6 +739,7 @@ if (forgotSubmitBtn) {
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
 onAuthStateChanged(auth, async (user) => {
+  dbg('onAuthStateChanged: user=' + (user ? user.uid : 'NULL') + '\nisSigningIn=' + isSigningIn + ' storedDest=' + (storedRedirectDest||'null') + ' handled=' + redirectHandled);
   if (!user) return;
 
   // Redirect flow fallback: onAuthStateChanged can fire before getRedirectResult
