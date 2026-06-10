@@ -700,10 +700,24 @@ if (forgotSubmitBtn) {
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
 onAuthStateChanged(auth, (user) => {
-  if (user && !isSigningIn) {
+  if (!user) return;
+
+  if (!isSigningIn) {
     showLoader("Already logged in...");
     window.location.replace(REDIRECT_AFTER_LOGIN);
+    return;
   }
+
+  // isSigningIn is true but auth already succeeded. On mobile, signInWithPopup
+  // opens as a new tab with no window.opener, so its promise hangs forever and
+  // never redirects. After 5 s, if we're still here, redirect as a fallback.
+  setTimeout(async () => {
+    if (!isSigningIn || !auth.currentUser) return;
+    isSigningIn = false;
+    try { await saveUserProvider(auth.currentUser); } catch (_) {}
+    showLoader();
+    window.location.replace(REDIRECT_AFTER_LOGIN);
+  }, 5000);
 });
 
 
