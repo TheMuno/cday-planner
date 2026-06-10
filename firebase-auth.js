@@ -76,9 +76,15 @@ let isSigningIn = false;
 
 function isInAppBrowser() {
   const ua = navigator.userAgent || "";
-  // Facebook, Instagram, and similar in-app browsers partition sessionStorage,
-  // breaking both popup and redirect OAuth flows.
   return /FBAN|FBAV|FB_IAB|Instagram|MicroMessenger/i.test(ua);
+}
+
+function isMobile() {
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+}
+
+function isFirefoxBrowser() {
+  return /Firefox/i.test(navigator.userAgent || "");
 }
 
 // ── PENDING CREDENTIAL PERSISTENCE (sessionStorage) ──────────
@@ -481,6 +487,20 @@ if (facebookBtn) {
       return;
     }
 
+    if (isMobile() && isFirefoxBrowser()) {
+      isSigningIn = false;
+      showError("Facebook sign-in on Firefox mobile isn't supported.\nPlease open this page in Chrome or Safari and try again.");
+      return;
+    }
+
+    if (isMobile()) {
+      // On mobile Chrome/Safari, signInWithPopup opens as a new tab with no
+      // window.opener, so it can never report back. Use redirect instead.
+      localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
+      await signInWithRedirect(auth, fbProvider);
+      return;
+    }
+
     try {
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
@@ -695,24 +715,10 @@ if (forgotSubmitBtn) {
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
 onAuthStateChanged(auth, (user) => {
-  if (!user) return;
-
-  if (!isSigningIn) {
+  if (user && !isSigningIn) {
     showLoader("Already logged in...");
     window.location.replace(REDIRECT_AFTER_LOGIN);
-    return;
   }
-
-  // isSigningIn is true but auth already succeeded. On mobile, signInWithPopup
-  // opens as a new tab with no window.opener, so its promise hangs forever and
-  // never redirects. After 5 s, if we're still here, redirect as a fallback.
-  setTimeout(async () => {
-    if (!isSigningIn || !auth.currentUser) return;
-    isSigningIn = false;
-    try { await saveUserProvider(auth.currentUser); } catch (_) {}
-    showLoader();
-    window.location.replace(REDIRECT_AFTER_LOGIN);
-  }, 5000);
 });
 
 
