@@ -467,7 +467,7 @@ if (googleBtn) {
 }
 
 // ── 7. FACEBOOK SIGN-IN ──────────────────────────────────────
-if (facebookBtn) {
+/*if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
     clearError();
     isSigningIn = true;
@@ -542,6 +542,45 @@ if (facebookBtn) {
         showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
         return;
       }
+      handleAuthError(err);
+    }
+  });
+} */
+
+// ── 7. FACEBOOK SIGN-IN ──────────────────────────────────────
+if (facebookBtn) {
+  facebookBtn.addEventListener("click", async () => {
+    clearError();
+    isSigningIn = true;
+    showLoader("Connecting to Facebook..."); // Show loader immediately on click
+
+    const fbProvider = new FacebookAuthProvider();
+    fbProvider.addScope("email");
+
+    if (isInAppBrowser()) {
+      isSigningIn = false;
+      hideLoader();
+      showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
+      return;
+    }
+
+    try {
+      // Launch the popup. 
+      // NOTE: On mobile iOS, this opens a new tab and the code below will HANG.
+      // That is completely fine now because onAuthStateChanged at the bottom 
+      // will catch the login instantly and handle the redirect!
+      await signInWithPopup(auth, fbProvider);
+      
+    } catch (err) {
+      // Only handle error if the user actively closed the popup manually
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        isSigningIn = false;
+        hideLoader();
+        return;
+      }
+      
+      isSigningIn = false;
+      hideLoader();
       handleAuthError(err);
     }
   });
