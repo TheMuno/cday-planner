@@ -11,12 +11,12 @@
 // those are all injected by the script.
 // ============================================================
 
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
   getAuth,
   verifyPasswordResetCode,
   confirmPasswordReset,
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
 // ── YOUR FIREBASE CONFIG ────────────────────────────────────
 const firebaseConfig = {

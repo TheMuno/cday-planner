@@ -12,8 +12,8 @@
 //   auth-mode-label  → (optional) element that shows "Login" or "Sign Up"
 // ============================================================
 
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 import {
   getAuth,
   signInWithPopup,
@@ -28,7 +28,7 @@ import {
   fetchSignInMethodsForEmail,
   sendPasswordResetEmail,
   signOut,
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
 // ── 1. YOUR FIREBASE CONFIG ─────────────────────────────────
 // Replace these values with your project's config from:
