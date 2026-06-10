@@ -137,6 +137,60 @@ function dbg(msg) {
   setTimeout(() => { el.remove(); _dbgTop = Math.max(0, _dbgTop - 44); }, 60000);
 }
 
+// ── Handle return from manual Facebook OAuth redirect (mobile) ──
+const _fbHash   = new URLSearchParams(window.location.hash.slice(1));
+const _fbQuery  = new URLSearchParams(window.location.search);
+const _fbToken  = _fbHash.get('access_token');
+const _fbIsFB   = _fbHash.get('state') === 'fb-mobile-auth' || _fbQuery.get('state') === 'fb-mobile-auth';
+
+if (_fbIsFB) {
+  history.replaceState(null, '', window.location.pathname);
+  if (_fbToken) {
+    redirectHandled = true;
+    isSigningIn = true;
+    showLoader();
+    dbg('FB manual OAuth return — processing token');
+    (async () => {
+      try {
+        const credential = FacebookAuthProvider.credential(_fbToken);
+        const result = await signInWithCredential(auth, credential);
+        await linkPendingCredential(result.user);
+        let email = result.user.email;
+        if (!email) {
+          try {
+            const snap = await getDoc(doc(db, "users", result.user.uid));
+            if (snap.exists()) email = snap.data().email || null;
+          } catch (_) {}
+        }
+        if (!email) {
+          hideLoader();
+          email = await collectMissingEmail();
+          if (!email) {
+            await signOut(auth);
+            isSigningIn = false;
+            showError("An email address is required to sign in with Facebook. Please try again.");
+            return;
+          }
+          showLoader();
+        }
+        await saveUserProvider(result.user, email);
+        localStorage.setItem('ak-userMail', email);
+        isSigningIn = false;
+        window.location.replace(REDIRECT_AFTER_LOGIN);
+      } catch (err) {
+        isSigningIn = false;
+        redirectHandled = false;
+        hideLoader();
+        dbg('FB signInWithCredential error: ' + err.code);
+        handleAuthError(err);
+      }
+    })();
+  } else {
+    const fbErr = _fbQuery.get('error_description') || _fbQuery.get('error');
+    if (fbErr) showError('Facebook sign-in failed: ' + fbErr);
+  }
+}
+
 if (storedRedirectDest) {
   isSigningIn = true;
   showLoader();
@@ -523,56 +577,17 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
-      // On mobile, use Facebook's own JS SDK to get an access token, then
-      // exchange it for a Firebase credential directly — no redirects or iframes,
-      // so Chrome's storage partitioning cannot interfere.
-      if (typeof FB === 'undefined') {
-        isSigningIn = false;
-        showError("Facebook sign-in failed to initialise.\nPlease refresh the page and try again.");
-        return;
-      }
-      dbg('FB.login() calling...');
-      FB.login(async (response) => {
-        dbg('FB.login callback: status=' + (response && response.status) + ' authResponse=' + (response && !!response.authResponse));
-        if (!response || !response.authResponse) {
-          isSigningIn = false;
-          return; // user cancelled
-        }
-        redirectHandled = true; // block onAuthStateChanged from racing with our flow
-        try {
-          showLoader();
-          const credential = FacebookAuthProvider.credential(response.authResponse.accessToken);
-          const result = await signInWithCredential(auth, credential);
-          await linkPendingCredential(result.user);
-          let email = result.user.email;
-          if (!email) {
-            try {
-              const snap = await getDoc(doc(db, "users", result.user.uid));
-              if (snap.exists()) email = snap.data().email || null;
-            } catch (_) {}
-          }
-          if (!email) {
-            hideLoader();
-            email = await collectMissingEmail();
-            if (!email) {
-              await signOut(auth);
-              isSigningIn = false;
-              showError("An email address is required to sign in with Facebook. Please try again.");
-              return;
-            }
-            showLoader();
-          }
-          await saveUserProvider(result.user, email);
-          localStorage.setItem("ak-userMail", email);
-          isSigningIn = false;
-          window.location.replace(REDIRECT_AFTER_LOGIN);
-        } catch (err) {
-          isSigningIn = false;
-          redirectHandled = false;
-          hideLoader();
-          handleAuthError(err);
-        }
-      }, { scope: 'email' });
+      // Direct OAuth redirect — no FB SDK popup, no iframe relay.
+      // Facebook returns access_token in the URL hash on callback.
+      const redirectUri = window.location.origin + window.location.pathname;
+      dbg('FB manual redirect: ' + redirectUri);
+      window.location.href =
+        'https://www.facebook.com/dialog/oauth' +
+        '?client_id=4017096908582533' +
+        '&redirect_uri=' + encodeURIComponent(redirectUri) +
+        '&scope=email' +
+        '&response_type=token' +
+        '&state=fb-mobile-auth';
       return;
     }
 
