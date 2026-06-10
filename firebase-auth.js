@@ -21,6 +21,7 @@ import {
   getRedirectResult,
   GoogleAuthProvider,
   FacebookAuthProvider,
+  signInWithCredential,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -518,28 +519,55 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
-      // On mobile, signInWithPopup opens as a new tab (window.opener is null).
-      // The promise will likely hang, but auth state propagates to this tab via
-      // BroadcastChannel and onAuthStateChanged (below) handles the redirect.
-      signInWithPopup(auth, fbProvider).then(async result => {
-        // Resolved (rare on mobile — opener worked). Let onAuthStateChanged handle it.
-        // isSigningIn stays true so that path fires.
-      }).catch(err => {
-        if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-          if (!auth.currentUser) isSigningIn = false;
-          // If currentUser exists, onAuthStateChanged already redirected
-        } else if (err.code === 'auth/popup-blocked' ||
-                   err.code === 'auth/web-storage-unsupported' ||
-                   err.code === 'auth/operation-not-supported-in-this-environment') {
+      // On mobile, use Facebook's own JS SDK to get an access token, then
+      // exchange it for a Firebase credential directly — no redirects or iframes,
+      // so Chrome's storage partitioning cannot interfere.
+      if (typeof FB === 'undefined') {
+        isSigningIn = false;
+        showError("Facebook sign-in failed to initialise.\nPlease refresh the page and try again.");
+        return;
+      }
+      FB.login(async (response) => {
+        if (!response || !response.authResponse) {
           isSigningIn = false;
-          showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
-        } else {
+          return; // user cancelled
+        }
+        redirectHandled = true; // block onAuthStateChanged from racing with our flow
+        try {
+          showLoader();
+          const credential = FacebookAuthProvider.credential(response.authResponse.accessToken);
+          const result = await signInWithCredential(auth, credential);
+          await linkPendingCredential(result.user);
+          let email = result.user.email;
+          if (!email) {
+            try {
+              const snap = await getDoc(doc(db, "users", result.user.uid));
+              if (snap.exists()) email = snap.data().email || null;
+            } catch (_) {}
+          }
+          if (!email) {
+            hideLoader();
+            email = await collectMissingEmail();
+            if (!email) {
+              await signOut(auth);
+              isSigningIn = false;
+              showError("An email address is required to sign in with Facebook. Please try again.");
+              return;
+            }
+            showLoader();
+          }
+          await saveUserProvider(result.user, email);
+          localStorage.setItem("ak-userMail", email);
           isSigningIn = false;
+          window.location.replace(REDIRECT_AFTER_LOGIN);
+        } catch (err) {
+          isSigningIn = false;
+          redirectHandled = false;
           hideLoader();
           handleAuthError(err);
         }
-      });
-      return; // onAuthStateChanged watches for auth state and redirects
+      }, { scope: 'email' });
+      return;
     }
 
     try {
