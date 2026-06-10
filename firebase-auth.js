@@ -518,11 +518,28 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
-      // On mobile Chrome/Safari, signInWithPopup opens as a new tab with no
-      // window.opener, so it can never report back. Use redirect instead.
-      localStorage.setItem('ak-redirect-destination', REDIRECT_AFTER_LOGIN);
-      await signInWithRedirect(auth, fbProvider);
-      return;
+      // On mobile, signInWithPopup opens as a new tab (window.opener is null).
+      // The promise will likely hang, but auth state propagates to this tab via
+      // BroadcastChannel and onAuthStateChanged (below) handles the redirect.
+      signInWithPopup(auth, fbProvider).then(async result => {
+        // Resolved (rare on mobile — opener worked). Let onAuthStateChanged handle it.
+        // isSigningIn stays true so that path fires.
+      }).catch(err => {
+        if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+          if (!auth.currentUser) isSigningIn = false;
+          // If currentUser exists, onAuthStateChanged already redirected
+        } else if (err.code === 'auth/popup-blocked' ||
+                   err.code === 'auth/web-storage-unsupported' ||
+                   err.code === 'auth/operation-not-supported-in-this-environment') {
+          isSigningIn = false;
+          showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
+        } else {
+          isSigningIn = false;
+          hideLoader();
+          handleAuthError(err);
+        }
+      });
+      return; // onAuthStateChanged watches for auth state and redirects
     }
 
     try {
@@ -754,8 +771,14 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
 
-  if (!isSigningIn) {
-    showLoader("Already logged in...");
+  // Redirect if nothing else has taken ownership. This handles:
+  // - Already logged in on page load
+  // - Popup-as-new-tab on mobile: auth completes in another tab, BroadcastChannel
+  //   fires here before signInWithPopup resolves (it may never resolve)
+  if (!redirectHandled) {
+    redirectHandled = true;
+    saveUserProvider(user).catch(() => {});
+    showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
   }
 });
