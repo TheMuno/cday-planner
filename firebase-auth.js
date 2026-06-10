@@ -467,43 +467,40 @@ if (googleBtn) {
 }
 
 // ── 7. FACEBOOK SIGN-IN ──────────────────────────────────────
-/*if (facebookBtn) {
+if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
     clearError();
     isSigningIn = true;
+    showLoader("Connecting to Facebook...");
 
     const fbProvider = new FacebookAuthProvider();
     fbProvider.addScope("email");
 
-    // In-app browsers (Facebook app, Instagram) partition sessionStorage, which
-    // breaks both popups and redirects. The only fix is opening in a real browser.
     if (isInAppBrowser()) {
       isSigningIn = false;
+      hideLoader();
       showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
       return;
     }
 
     try {
+      // On desktop: resolves normally and we handle everything below.
+      // On mobile: opens as a new tab with no window.opener, so this promise
+      // hangs. The onAuthStateChanged fallback at the bottom handles that case.
       const result = await signInWithPopup(auth, fbProvider);
-      showLoader();
       await linkPendingCredential(result.user);
 
       let email = result.user.email;
-
       if (!email) {
-        // Returning user may already have an email saved in Firestore
         try {
           const snap = await getDoc(doc(db, "users", result.user.uid));
           if (snap.exists()) email = snap.data().email || null;
         } catch (_) {}
       }
-
       if (!email) {
-        // Facebook didn't provide an email — ask the user for it
         hideLoader();
         email = await collectMissingEmail();
         if (!email) {
-          // User cancelled — sign them out and let them try again
           await signOut(auth);
           isSigningIn = false;
           showError("An email address is required to sign in with Facebook. Please try again.");
@@ -513,8 +510,6 @@ if (googleBtn) {
       }
 
       await saveUserProvider(result.user, email);
-
-      // Patch the nav's localStorage cache so the email is available immediately after redirect
       try {
         const cached = localStorage.getItem("ak-user");
         if (cached) {
@@ -524,12 +519,12 @@ if (googleBtn) {
         }
       } catch (_) {}
       localStorage.setItem("ak-userMail", email);
-
       window.location.replace(REDIRECT_AFTER_LOGIN);
+
     } catch (err) {
-      isSigningIn = false;
-      hideLoader();
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        isSigningIn = false;
+        hideLoader();
         if (auth.currentUser) {
           showLoader();
           window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -539,46 +534,11 @@ if (googleBtn) {
       if (err.code === 'auth/popup-blocked' ||
           err.code === 'auth/web-storage-unsupported' ||
           err.code === 'auth/operation-not-supported-in-this-environment') {
+        isSigningIn = false;
+        hideLoader();
         showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
         return;
       }
-      handleAuthError(err);
-    }
-  });
-} */
-
-// ── 7. FACEBOOK SIGN-IN ──────────────────────────────────────
-if (facebookBtn) {
-  facebookBtn.addEventListener("click", async () => {
-    clearError();
-    isSigningIn = true;
-    showLoader("Connecting to Facebook..."); // Show loader immediately on click
-
-    const fbProvider = new FacebookAuthProvider();
-    fbProvider.addScope("email");
-
-    if (isInAppBrowser()) {
-      isSigningIn = false;
-      hideLoader();
-      showError("Facebook sign-in doesn't work inside the Facebook app.\nTap the menu (⋮ or ···) and choose \"Open in browser\", then try again.");
-      return;
-    }
-
-    try {
-      // Launch the popup. 
-      // NOTE: On mobile iOS, this opens a new tab and the code below will HANG.
-      // That is completely fine now because onAuthStateChanged at the bottom 
-      // will catch the login instantly and handle the redirect!
-      await signInWithPopup(auth, fbProvider);
-      
-    } catch (err) {
-      // Only handle error if the user actively closed the popup manually
-      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        isSigningIn = false;
-        hideLoader();
-        return;
-      }
-      
       isSigningIn = false;
       hideLoader();
       handleAuthError(err);
