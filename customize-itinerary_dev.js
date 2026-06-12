@@ -1360,11 +1360,7 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
   });
 
   marker.addListener('gmp-click', () => {
-    // openMapPopup(title, editorialSummary, saveObj);
-    const content = `<div class="marker-popup-title">${title}</div><div class="marker-popup-desc">${editorialSummary || title}</div>`;
-    infoWindow.close();
-    infoWindow.setContent(content);
-    infoWindow.open(marker.map, marker);
+    openMapPopup(title, editorialSummary, saveObj);
   });
 
   return marker;
