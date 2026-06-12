@@ -40,7 +40,6 @@ const $saveItineraryBtn = document.querySelector('[data-ak="save-itinerary"]');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 const $mapPinsRadios = document.querySelectorAll('.ak-map-pins-wrap input[type=radio]');
 const $sliderArrows = document.querySelectorAll('.w-slider-arrow-left, .w-slider-arrow-right');
-const $mapPopup = document.querySelector('[data-ak="map-popup"]');
 const currentPage = window.location.pathname || '/customize-itinerary';
 const nonCountDays = 2;
 const attractionslimit = 5;
@@ -92,8 +91,8 @@ window.addEventListener('load', async () => {
     $userSearchForm.addEventListener('submit', e => e.preventDefault(), true);
   }
 
-  $mapPopup?.querySelector('.map-popup-close')?.addEventListener('click', () => {
-    $mapPopup.setAttribute('data-ak-hidden', 'true');
+  document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
+    document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
   });
 
   setupAutocompleteInp();
@@ -1367,13 +1366,16 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
 }
 
 function openMapPopup(title, editorialSummary, saveObj) {
+  const $mapPopup = document.querySelector('[data-ak="map-popup"]');
   if (!$mapPopup) return;
 
   const $locationBlock = $mapPopup.querySelector('.map_card_content > .map_card_title:first-child');
   if (!$locationBlock) return;
 
-  $locationBlock.querySelector('.u-size-56-28 h2').textContent = title || '';
-  $locationBlock.querySelector('.u-size-56-28 + .u-size-24-10 p').textContent = editorialSummary || '';
+  const $titleEl = $locationBlock.querySelector('.u-size-56-28 h2');
+  if ($titleEl) $titleEl.textContent = title || '';
+  const $descEl = $locationBlock.querySelector('.u-size-56-28 + .u-size-24-10 p');
+  if ($descEl) $descEl.textContent = editorialSummary || '';
 
   const $img = $mapPopup.querySelector('.map_card_img_item');
   const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap + .u-size-24-10 p em');
