@@ -907,7 +907,7 @@ window.addEventListener('load', async () => {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
 
       const placeObj = place.toJSON();
       const { displayName, id, location: { lat, lng }, editorialSummary, types: type } = placeObj;
@@ -953,7 +953,7 @@ window.addEventListener('load', async () => {
       }
 
       const { $currentSlide, slideIndex } = getCurrentSlideInfo();
-      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl };
+      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl, openingHours: placeObj.regularOpeningHours || null, priceRange: placeObj.priceRange || null, businessStatus: placeObj.businessStatus || null };
       const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
@@ -1360,7 +1360,11 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
   });
 
   marker.addListener('gmp-click', () => {
-    openMapPopup(title, editorialSummary, saveObj);
+    // openMapPopup(title, editorialSummary, saveObj);
+    const content = `<div class="marker-popup-title">${title}</div><div class="marker-popup-desc">${editorialSummary || title}</div>`;
+    infoWindow.close();
+    infoWindow.setContent(content);
+    infoWindow.open(marker.map, marker);
   });
 
   return marker;
@@ -1396,16 +1400,43 @@ function openMapPopup(title, editorialSummary, saveObj) {
     if ($address) $address.textContent = saveObj.address || '';
 
     const $hours = $keyItems[1]?.querySelector('.u-size-24-10-2 p');
-    if ($hours) $hours.textContent = '';
+    if ($hours) $hours.textContent = getTodayHours(saveObj.openingHours);
 
     const $phone = $keyItems[2]?.querySelector('.u-size-24-10-2 p');
     if ($phone) $phone.textContent = saveObj.phone || '';
 
     const $price = $keyItems[3]?.querySelector('.u-size-24-10-2 p');
-    if ($price) $price.textContent = '';
+    if ($price) $price.textContent = formatPriceRange(saveObj.priceRange);
+
+    const $closedBadge = $locationBlock.querySelector('.map_card_closed');
+    if ($closedBadge) {
+      $closedBadge.style.display = saveObj.businessStatus === 'CLOSED_TEMPORARILY' ? '' : 'none';
+    }
   }
 
   $mapPopup.removeAttribute('data-ak-hidden');
+}
+
+function getTodayHours(openingHours) {
+  if (!openingHours?.weekdayDescriptions?.length) return '';
+  // JS getDay(): 0=Sun…6=Sat; Google weekdayDescriptions: 0=Mon…6=Sun
+  const dayIndex = (new Date().getDay() + 6) % 7;
+  const desc = openingHours.weekdayDescriptions[dayIndex] || '';
+  const colon = desc.indexOf(':');
+  return colon >= 0 ? desc.slice(colon + 1).trim() : desc;
+}
+
+function formatPriceRange(priceRange) {
+  if (!priceRange) return '';
+  const fmt = money => {
+    if (!money) return '';
+    const units = money.units ?? money.value ?? '';
+    return units !== '' ? `$${units}` : '';
+  };
+  const start = fmt(priceRange.startPrice);
+  const end = fmt(priceRange.endPrice);
+  if (start && end) return `${start} - ${end}`;
+  return start || end;
 }
 
 function format(str) {
