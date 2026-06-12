@@ -1372,12 +1372,12 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $locationBlock = $mapPopup.querySelector('.map_card_content > .map_card_title:first-child');
   if (!$locationBlock) return;
 
-  $locationBlock.querySelector('.u-size-56-28-2 h2').textContent = title || '';
-  $locationBlock.querySelector('.u-size-56-28-2 + .u-size-24-10-2 p').textContent = editorialSummary || '';
+  $locationBlock.querySelector('.u-size-56-28 h2').textContent = title || '';
+  $locationBlock.querySelector('.u-size-56-28 + .u-size-24-10 p').textContent = editorialSummary || '';
 
   const $img = $mapPopup.querySelector('.map_card_img_item');
-  const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap-2 + .u-size-24-10-2 p em');
-  const $reviewCount = $locationBlock.querySelector('.map_card_info-2 .u-hflex-left-center:last-child .u-size-24-10-2:first-child p');
+  const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap + .u-size-24-10 p em');
+  const $reviewCount = $locationBlock.querySelector('.map_card_info .u-hflex-left-center:last-child .u-size-24-10:first-child p');
   const $keyItems = $mapPopup.querySelectorAll('.map_card_key .map_card_key_iem');
 
   if (saveObj) {
@@ -1392,16 +1392,16 @@ function openMapPopup(title, editorialSummary, saveObj) {
       $reviewCount.textContent = saveObj.reviewCount != null ? saveObj.reviewCount.toLocaleString() : '';
     }
 
-    const $address = $keyItems[0]?.querySelector('.u-size-24-10-2 p');
+    const $address = $keyItems[0]?.querySelector('.u-size-24-10 p');
     if ($address) $address.textContent = saveObj.address || '';
 
-    const $hours = $keyItems[1]?.querySelector('.u-size-24-10-2 p');
+    const $hours = $keyItems[1]?.querySelector('.u-size-24-10 p');
     if ($hours) $hours.textContent = getTodayHours(saveObj.openingHours);
 
-    const $phone = $keyItems[2]?.querySelector('.u-size-24-10-2 p');
+    const $phone = $keyItems[2]?.querySelector('.u-size-24-10 p');
     if ($phone) $phone.textContent = saveObj.phone || '';
 
-    const $price = $keyItems[3]?.querySelector('.u-size-24-10-2 p');
+    const $price = $keyItems[3]?.querySelector('.u-size-24-10 p');
     if ($price) $price.textContent = formatPriceRange(saveObj.priceRange);
 
     const $closedBadge = $locationBlock.querySelector('.map_card_closed');
