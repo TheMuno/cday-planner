@@ -40,6 +40,7 @@ const $saveItineraryBtn = document.querySelector('[data-ak="save-itinerary"]');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 const $mapPinsRadios = document.querySelectorAll('.ak-map-pins-wrap input[type=radio]');
 const $sliderArrows = document.querySelectorAll('.w-slider-arrow-left, .w-slider-arrow-right');
+const $mapPopup = document.querySelector('[data-ak="map-popup"]');
 const currentPage = window.location.pathname || '/customize-itinerary';
 const nonCountDays = 2;
 const attractionslimit = 5;
@@ -90,6 +91,10 @@ window.addEventListener('load', async () => {
     $userSearchForm.appendChild(dummy);
     $userSearchForm.addEventListener('submit', e => e.preventDefault(), true);
   }
+
+  $mapPopup?.querySelector('.map-popup-close')?.addEventListener('click', () => {
+    $mapPopup.setAttribute('data-ak-hidden', 'true');
+  });
 
   setupAutocompleteInp();
   const cachedName = localStorage['ak-user-name'];
@@ -948,11 +953,11 @@ window.addEventListener('load', async () => {
       }
 
       const { $currentSlide, slideIndex } = getCurrentSlideInfo();
-      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type);
+      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl };
+      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
 
-      const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl };
       processAttractionSave($currentSlide, { slideIndex, displayName, marker, saveObj, isRestaurant });
       setUnsavedChangesFlag();
     });
@@ -1340,7 +1345,7 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
   $listName.append($location);
 }
 
-function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl) {
+function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
   const markerPinImg = document.createElement('img');
   const isRestaurant = type.includes('restaurant') || type.includes('food');
   markerPinImg.src = isRestaurant && markerPinSrc !== hotelMarkerPinUrl ? foodForkPinUrl : markerPinSrc;
@@ -1354,14 +1359,53 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
     gmpClickable: true,
   });
 
-  const content = `<div class="marker-popup-title">${title}</div><div class="marker-popup-desc">${editorialSummary || title}</div>`;
   marker.addListener('gmp-click', () => {
-    infoWindow.close();
-    infoWindow.setContent(content);
-    infoWindow.open(marker.map, marker);
+    openMapPopup(title, editorialSummary, saveObj);
   });
 
   return marker;
+}
+
+function openMapPopup(title, editorialSummary, saveObj) {
+  if (!$mapPopup) return;
+
+  const $locationBlock = $mapPopup.querySelector('.map_card_content > .map_card_title:first-child');
+  if (!$locationBlock) return;
+
+  $locationBlock.querySelector('.u-size-56-28-2 h2').textContent = title || '';
+  $locationBlock.querySelector('.u-size-56-28-2 + .u-size-24-10-2 p').textContent = editorialSummary || '';
+
+  const $img = $mapPopup.querySelector('.map_card_img_item');
+  const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap-2 + .u-size-24-10-2 p em');
+  const $reviewCount = $locationBlock.querySelector('.map_card_info-2 .u-hflex-left-center:last-child .u-size-24-10-2:first-child p');
+  const $keyItems = $mapPopup.querySelectorAll('.map_card_key .map_card_key_iem');
+
+  if (saveObj) {
+    if ($img && saveObj.photoUrl) {
+      $img.src = saveObj.photoUrl;
+      $img.srcset = '';
+    }
+
+    if ($ratingNum) $ratingNum.textContent = saveObj.rating != null ? saveObj.rating : '';
+
+    if ($reviewCount) {
+      $reviewCount.textContent = saveObj.reviewCount != null ? saveObj.reviewCount.toLocaleString() : '';
+    }
+
+    const $address = $keyItems[0]?.querySelector('.u-size-24-10-2 p');
+    if ($address) $address.textContent = saveObj.address || '';
+
+    const $hours = $keyItems[1]?.querySelector('.u-size-24-10-2 p');
+    if ($hours) $hours.textContent = '';
+
+    const $phone = $keyItems[2]?.querySelector('.u-size-24-10-2 p');
+    if ($phone) $phone.textContent = saveObj.phone || '';
+
+    const $price = $keyItems[3]?.querySelector('.u-size-24-10-2 p');
+    if ($price) $price.textContent = '';
+  }
+
+  $mapPopup.removeAttribute('data-ak-hidden');
 }
 
 function format(str) {
@@ -1646,7 +1690,7 @@ function restoreSavedAttractions(savedAttractions) {
   function processSectionAttractions(attractions, $sectionWrap, slideNum) {
     attractions.forEach((attraction) => {
       const { displayName, editorialSummary, location, type } = attraction;
-      const marker = createMarker(displayName, location, editorialSummary, type);
+      const marker = createMarker(displayName, location, editorialSummary, type, cameraPinUrl, attraction);
       addAttractionToList(displayName, $sectionWrap, marker, attraction);
       markerObj[`slide${slideNum}`] = markerObj[`slide${slideNum}`] || [];
       markerObj[`slide${slideNum}`].push(marker);
