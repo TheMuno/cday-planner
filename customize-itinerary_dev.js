@@ -31,6 +31,9 @@ const busPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/6
 const trainPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/68b9c7346b2a3e350322617a_train.png';
 const directionsUrlBase = 'https://www.google.com/maps/search/';
 const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
+const insiderTipsUrl = 'https://us-central1-askkhonsu-map.cloudfunctions.net/getInsiderTips';
+
+let insiderTipsData = null;
 
 const $tripTitleInfo = document.querySelector('.ak-trip-info');
 const $tripTitle = $tripTitleInfo.querySelector('[data-ak="trip-title"]');
@@ -94,6 +97,8 @@ window.addEventListener('load', async () => {
   document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
     document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
   });
+
+  loadInsiderTips();
 
   setupAutocompleteInp();
   const cachedName = localStorage['ak-user-name'];
@@ -1412,6 +1417,19 @@ function openMapPopup(title, editorialSummary, saveObj) {
     }
   }
 
+  const $tipTitle = $mapPopup.querySelector('[data-ak="insider-tip-title"]');
+  const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
+  const $tipSection = $tipTitle?.closest('.map_card_title');
+  const rawTip = insiderTipsData && saveObj?.placeId ? insiderTipsData[saveObj.placeId] : null;
+  if (rawTip) {
+    const { title, desc } = parseInsiderTip(rawTip);
+    if ($tipTitle) $tipTitle.textContent = title;
+    if ($tipDesc) $tipDesc.textContent = desc;
+    if ($tipSection) $tipSection.style.display = '';
+  } else {
+    if ($tipSection) $tipSection.style.display = 'none';
+  }
+
   $mapPopup.removeAttribute('data-ak-hidden');
 }
 
@@ -1435,6 +1453,25 @@ function formatPriceRange(priceRange) {
   const end = fmt(priceRange.endPrice);
   if (start && end) return `${start} - ${end}`;
   return start || end;
+}
+
+async function loadInsiderTips() {
+  try {
+    const res = await fetch(insiderTipsUrl);
+    insiderTipsData = await res.json();
+  } catch (e) {
+    console.warn('Could not load insider tips:', e);
+  }
+}
+
+function parseInsiderTip(raw) {
+  if (!raw) return { title: '', desc: '' };
+  const dotIndex = raw.indexOf('.');
+  if (dotIndex === -1) return { title: raw.trim(), desc: '' };
+  return {
+    title: raw.slice(0, dotIndex).trim(),
+    desc: raw.slice(dotIndex + 1).trim(),
+  };
 }
 
 function format(str) {
