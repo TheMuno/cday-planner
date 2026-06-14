@@ -1394,6 +1394,8 @@ function openMapPopup(title, editorialSummary, saveObj) {
       showImageWithSpinner($img, saveObj.photoUrl || noPhotoPlaceholder);
     }
 
+    if ($ratingNum) $ratingNum.textContent = saveObj.rating != null ? saveObj.rating : '';
+
     if ($reviewCount) {
       $reviewCount.textContent = saveObj.reviewCount != null ? saveObj.reviewCount.toLocaleString() : '0';
     }
