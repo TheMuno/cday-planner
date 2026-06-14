@@ -1391,7 +1391,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
 
   if (saveObj) {
     if ($img) {
-      $img.src = noPhotoPlaceholder;
+      $img.src = saveObj.photoUrl || noPhotoPlaceholder;
       $img.srcset = '';
     }
 
