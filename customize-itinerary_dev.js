@@ -1420,6 +1420,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $tipTitle = $mapPopup.querySelector('[data-ak="insider-tip-title"]');
   const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
   const $tipSection = $tipTitle?.closest('.map_card_title');
+  console.log('[InsiderTips] placeId:', saveObj?.placeId, '| tip:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
   const rawTip = insiderTipsData && saveObj?.placeId ? insiderTipsData[saveObj.placeId] : null;
   if (rawTip) {
     const { title, desc } = parseInsiderTip(rawTip);
