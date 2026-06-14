@@ -1391,8 +1391,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
 
   if (saveObj) {
     if ($img) {
-      $img.src = saveObj.photoUrl || noPhotoPlaceholder;
-      $img.srcset = '';
+      showImageWithSpinner($img, saveObj.photoUrl || noPhotoPlaceholder);
     }
 
     if ($ratingNum) $ratingNum.textContent = saveObj.rating != null ? saveObj.rating : '';
@@ -1434,6 +1433,29 @@ function openMapPopup(title, editorialSummary, saveObj) {
   }
 
   $mapPopup.removeAttribute('data-ak-hidden');
+}
+
+function showImageWithSpinner($img, src) {
+  if (!document.getElementById('ak-spinner-style')) {
+    const s = document.createElement('style');
+    s.id = 'ak-spinner-style';
+    s.textContent = '@keyframes ak-spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+  const $container = $img.parentElement;
+  $container.querySelector('.ak-img-spinner')?.remove();
+  if (getComputedStyle($container).position === 'static') $container.style.position = 'relative';
+  const $spinner = document.createElement('div');
+  $spinner.className = 'ak-img-spinner';
+  $spinner.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#ece9e4;gap:10px;z-index:1;';
+  $spinner.innerHTML = '<div style="width:32px;height:32px;border:3px solid #ddd;border-top-color:#888;border-radius:50%;animation:ak-spin 0.7s linear infinite;"></div><span style="font-size:11px;color:#999;letter-spacing:0.08em;">Loading image...</span>';
+  $container.appendChild($spinner);
+  $img.style.opacity = '0';
+  const cleanup = () => { $spinner.remove(); $img.style.opacity = ''; };
+  $img.onload = cleanup;
+  $img.onerror = () => { $img.src = noPhotoPlaceholder; $img.srcset = ''; cleanup(); };
+  $img.src = src;
+  $img.srcset = '';
 }
 
 function getTodayHours(openingHours) {
