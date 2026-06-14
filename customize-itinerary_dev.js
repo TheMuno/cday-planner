@@ -958,6 +958,7 @@ window.addEventListener('load', async () => {
 
       const { $currentSlide, slideIndex } = getCurrentSlideInfo();
       const saveObj = { location: { lat, lng }, displayName, neighborhood, address: placeObj.formattedAddress || '', editorialSummary, type, placeId: id, rating: placeObj.rating ?? null, website: placeObj.websiteURI || placeObj.websiteUri || '', phone: placeObj.nationalPhoneNumber || '', reviewCount: placeObj.userRatingCount ?? null, photoUrl, openingHours: placeObj.regularOpeningHours || null, priceRange: placeObj.priceRange || null, businessStatus: placeObj.businessStatus || null };
+      console.log('[Place Added]', displayName, '| place_id:', id);
       const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
       markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
       markerObj[`slide${slideIndex}`].push(marker);
