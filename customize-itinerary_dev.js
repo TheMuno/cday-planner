@@ -1382,7 +1382,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $titleEl = $locationBlock.querySelector('.u-size-56-28 h2');
   if ($titleEl) $titleEl.textContent = title || '';
   const $descEl = $locationBlock.querySelector('.u-size-56-28 + .u-size-24-10 p');
-  if ($descEl) $descEl.textContent = editorialSummary || '';
+  if ($descEl) $descEl.textContent = editorialSummary || title || '';
 
   const $img = $mapPopup.querySelector('.map_card_img_item');
   const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap + .u-size-24-10 p em');
@@ -1401,16 +1401,24 @@ function openMapPopup(title, editorialSummary, saveObj) {
     }
 
     const $address = $keyItems[0]?.querySelector('.u-size-24-10 p');
-    if ($address) $address.textContent = saveObj.address || '';
+    const addressVal = saveObj.address || '';
+    if ($address) $address.textContent = addressVal;
+    if ($keyItems[0]) $keyItems[0].style.display = addressVal ? '' : 'none';
 
     const $hours = $keyItems[1]?.querySelector('.u-size-24-10 p');
-    if ($hours) $hours.textContent = getTodayHours(saveObj.openingHours);
+    const hoursVal = getTodayHours(saveObj.openingHours);
+    if ($hours) $hours.textContent = hoursVal;
+    if ($keyItems[1]) $keyItems[1].style.display = hoursVal ? '' : 'none';
 
     const $phone = $keyItems[2]?.querySelector('.u-size-24-10 p');
-    if ($phone) $phone.textContent = saveObj.phone || '';
+    const phoneVal = saveObj.phone || '';
+    if ($phone) $phone.textContent = phoneVal;
+    if ($keyItems[2]) $keyItems[2].style.display = phoneVal ? '' : 'none';
 
     const $price = $keyItems[3]?.querySelector('.u-size-24-10 p');
-    if ($price) $price.textContent = formatPriceRange(saveObj.priceRange);
+    const priceVal = formatPriceRange(saveObj.priceRange);
+    if ($price) $price.textContent = priceVal;
+    if ($keyItems[3]) $keyItems[3].style.display = priceVal ? '' : 'none';
 
     const $closedBadge = $locationBlock.querySelector('.map_card_closed');
     if ($closedBadge) {
