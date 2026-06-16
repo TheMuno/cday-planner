@@ -1448,8 +1448,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   console.log('[InsiderTips] placeId:', saveObj?.placeId, '| raw entry:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
   const rawTip = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
   if (rawTip) {
-    const { title, desc } = parseInsiderTip(rawTip);
-    if ($tipTitle) $tipTitle.textContent = title;
+    const { desc } = parseInsiderTip(rawTip);
     if ($tipDesc) $tipDesc.textContent = desc;
     if ($tipSection) $tipSection.style.display = '';
   } else {
@@ -1538,12 +1537,7 @@ async function loadInsiderTips() {
 
 function parseInsiderTip(raw) {
   if (!raw) return { title: '', desc: '' };
-  const dotIndex = raw.indexOf('.');
-  if (dotIndex === -1) return { title: raw.trim(), desc: '' };
-  return {
-    title: raw.slice(0, dotIndex).trim(),
-    desc: raw.slice(dotIndex + 1).trim(),
-  };
+  return { title: '', desc: raw.trim() };
 }
 
 function format(str) {
