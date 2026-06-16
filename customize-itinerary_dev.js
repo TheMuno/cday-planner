@@ -1495,6 +1495,7 @@ function getTodayHours(openingHours) {
 }
 
 function isCurrentlyOpen(openingHours) {
+  console.log('[isCurrentlyOpen] openingHours:', openingHours);
   if (!openingHours?.periods?.length) return null;
   const now = new Date();
   const day = now.getDay();
