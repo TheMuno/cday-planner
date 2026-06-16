@@ -1530,6 +1530,7 @@ async function loadInsiderTips() {
   try {
     const res = await fetch(insiderTipsUrl);
     insiderTipsData = await res.json();
+    console.log('[InsiderTips] raw data:', insiderTipsData);
   } catch (e) {
     console.warn('Could not load insider tips:', e);
   }
