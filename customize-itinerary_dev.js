@@ -1452,10 +1452,22 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
   const $tipInsiders = $mapPopup.querySelectorAll('[data-ak-insider]');
   console.log('[InsiderTips] placeId:', saveObj?.placeId, '| raw entry:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
-  const rawTip = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
-  if (rawTip) {
-    const { desc } = parseInsiderTip(rawTip);
-    if ($tipDesc) $tipDesc.textContent = desc;
+  const rawEntry = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
+  const rawTip = rawEntry?.tip || null;
+  const reservationsRequired = rawEntry?.reservationsRequired ?? false;
+
+  let $resBadge = $mapPopup.querySelector('[data-ak="reservation-badge"]');
+  if (!$resBadge && $tipDesc) {
+    $resBadge = document.createElement('p');
+    $resBadge.setAttribute('data-ak', 'reservation-badge');
+    $resBadge.style.cssText = 'display:none;background:#FEF3C7;color:#92400E;border:1px solid #FBBF24;border-radius:4px;padding:6px 10px;font-size:12px;font-weight:600;margin-bottom:8px;';
+    $resBadge.textContent = '⚠️ Reservation Required';
+    $tipDesc.parentElement.insertBefore($resBadge, $tipDesc);
+  }
+  if ($resBadge) $resBadge.style.display = reservationsRequired ? '' : 'none';
+
+  if (rawTip || reservationsRequired) {
+    if ($tipDesc) $tipDesc.textContent = rawTip ? parseInsiderTip(rawTip).desc : '';
     $tipInsiders.forEach($el => $el.style.display = '');
   } else {
     $tipInsiders.forEach($el => $el.style.display = 'none');
