@@ -1422,7 +1422,26 @@ function openMapPopup(title, editorialSummary, saveObj) {
 
     const $closedBadge = $locationBlock.querySelector('.map_card_closed');
     if ($closedBadge) {
-      $closedBadge.style.display = saveObj.businessStatus === 'CLOSED_TEMPORARILY' ? '' : 'none';
+      const $badgeText = $closedBadge.querySelector('p');
+      const status = saveObj.businessStatus;
+      console.log('[BusinessStatus]', saveObj.displayName, '|', status);
+      if (status === 'TEMPORARILY_CLOSED') {
+        if ($badgeText) { $badgeText.textContent = 'Temporarily Closed'; $badgeText.style.color = '#E07B00'; }
+        $closedBadge.style.display = '';
+      } else if (status === 'PERMANENTLY_CLOSED') {
+        if ($badgeText) { $badgeText.textContent = 'Permanently Closed'; $badgeText.style.color = '#D0021B'; }
+        $closedBadge.style.display = '';
+      } else if (status === 'OPERATIONAL') {
+        const openNow = isCurrentlyOpen(saveObj.openingHours);
+        if (openNow === null) {
+          $closedBadge.style.display = 'none';
+        } else {
+          if ($badgeText) { $badgeText.textContent = openNow ? 'Open' : 'Closed'; $badgeText.style.color = openNow ? '#2E7D32' : '#D0021B'; }
+          $closedBadge.style.display = '';
+        }
+      } else {
+        $closedBadge.style.display = 'none';
+      }
     }
   }
 
@@ -1473,6 +1492,28 @@ function getTodayHours(openingHours) {
   const desc = openingHours.weekdayDescriptions[dayIndex] || '';
   const colon = desc.indexOf(':');
   return colon >= 0 ? desc.slice(colon + 1).trim() : desc;
+}
+
+function isCurrentlyOpen(openingHours) {
+  if (!openingHours?.periods?.length) return null;
+  const now = new Date();
+  const day = now.getDay();
+  const time = now.getHours() * 100 + now.getMinutes();
+  for (const period of openingHours.periods) {
+    if (!period.close) return true; // open 24/7
+    const openDay = period.open.day;
+    const closeDay = period.close.day;
+    const openTime = period.open.hour * 100 + (period.open.minute || 0);
+    const closeTime = period.close.hour * 100 + (period.close.minute || 0);
+    if (openDay === closeDay) {
+      if (day === openDay && time >= openTime && time < closeTime) return true;
+    } else {
+      // period spans midnight
+      if (day === openDay && time >= openTime) return true;
+      if (day === closeDay && time < closeTime) return true;
+    }
+  }
+  return false;
 }
 
 function formatPriceRange(priceRange) {
