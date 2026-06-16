@@ -1432,7 +1432,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
         if ($badgeText) { $badgeText.textContent = 'Permanently Closed'; $badgeText.style.color = '#D0021B'; }
         $closedBadge.style.display = '';
       } else if (status === 'OPERATIONAL') {
-        const openNow = isCurrentlyOpen(saveObj.openingHours);
+        const openNow = window.__akOpenOverride !== undefined ? window.__akOpenOverride : isCurrentlyOpen(saveObj.openingHours);
         const isOpen = openNow !== false; // null (no hours data) defaults to open
         if ($badgeText) { $badgeText.textContent = isOpen ? 'Open' : 'Closed'; $badgeText.style.color = isOpen ? '#2E7D32' : '#D0021B'; }
         $closedBadge.style.display = '';
