@@ -1431,7 +1431,6 @@ function openMapPopup(title, editorialSummary, saveObj) {
     if ($closedBadge) {
       const $badgeText = $closedBadge.querySelector('p');
       const status = saveObj.businessStatus;
-      console.log('[BusinessStatus]', saveObj.displayName, '|', status);
       if (status === 'TEMPORARILY_CLOSED') {
         if ($badgeText) { $badgeText.textContent = 'Temporarily Closed'; $badgeText.style.color = '#E07B00'; }
         $closedBadge.style.display = '';
@@ -1451,7 +1450,6 @@ function openMapPopup(title, editorialSummary, saveObj) {
 
   const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
   const $tipInsiders = $mapPopup.querySelectorAll('[data-ak-insider]');
-  console.log('[InsiderTips] placeId:', saveObj?.placeId, '| raw entry:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
   const rawEntry = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
   const rawTip = rawEntry?.tip || null;
   const reservationsRequired = rawEntry?.reservationsRequired ?? false;
@@ -1569,7 +1567,6 @@ async function loadInsiderTips() {
   try {
     const res = await fetch(insiderTipsUrl);
     insiderTipsData = await res.json();
-    console.log('[InsiderTips] raw data:', insiderTipsData);
   } catch (e) {
     console.warn('Could not load insider tips:', e);
   }
