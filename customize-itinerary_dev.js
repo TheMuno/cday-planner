@@ -1460,7 +1460,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   if (!$resBadge && $tipDesc) {
     $resBadge = document.createElement('p');
     $resBadge.setAttribute('data-ak', 'reservation-badge');
-    $resBadge.style.cssText = 'display:none;background:#FEF3C7;color:#92400E;border:1px solid #FBBF24;border-radius:4px;padding:6px 10px;font-size:12px;font-weight:600;margin-bottom:8px;';
+    $resBadge.style.cssText = 'display:none;color:#92400E;border-radius:4px;padding:6px 0;font-size:12px;font-weight:600;margin-bottom:12px;';
     $resBadge.textContent = '⚠️ Reservation Required';
     $tipDesc.parentElement.insertBefore($resBadge, $tipDesc);
   }
