@@ -1375,7 +1375,7 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
 if (!document.getElementById('ak-tip-clamp-style')) {
   const s = document.createElement('style');
   s.id = 'ak-tip-clamp-style';
-  s.textContent = '@media(max-width:767px){[data-ak="insider-tip-desc"]{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}}';
+  s.textContent = '@media(max-width:767px){[data-ak="insider-tip-desc"]{display:-webkit-box!important;-webkit-line-clamp:3;-webkit-box-orient:vertical!important;overflow:hidden!important;}}';
   document.head.appendChild(s);
 }
 
