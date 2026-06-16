@@ -1372,6 +1372,13 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
   return marker;
 }
 
+if (!document.getElementById('ak-tip-clamp-style')) {
+  const s = document.createElement('style');
+  s.id = 'ak-tip-clamp-style';
+  s.textContent = '@media(max-width:767px){[data-ak="insider-tip-desc"]{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}}';
+  document.head.appendChild(s);
+}
+
 function openMapPopup(title, editorialSummary, saveObj) {
   const $mapPopup = document.querySelector('[data-ak="map-popup"]');
   if (!$mapPopup) return;
