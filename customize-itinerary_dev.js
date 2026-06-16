@@ -1454,6 +1454,21 @@ function openMapPopup(title, editorialSummary, saveObj) {
     $tipInsiders.forEach($el => $el.style.display = 'none');
   }
 
+  const $popupRemoveBtn = $mapPopup.querySelector('.map_card_btn_wrap');
+  if ($popupRemoveBtn) {
+    $popupRemoveBtn.onclick = () => {
+      const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)');
+      const $match = [...$attractions].find(el =>
+        (saveObj?.placeId && el.placeId === saveObj.placeId) ||
+        (saveObj?.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
+      );
+      $match?.querySelector('[data-ak="remove-location"]')?.click();
+      $mapPopup.setAttribute('data-ak-hidden', 'true');
+    };
+  }
+
+  $mapPopup.scrollTop = 0;
+  $mapPopup.querySelector('.map_card_-inner')?.scrollTo(0, 0);
   $mapPopup.removeAttribute('data-ak-hidden');
 }
 
