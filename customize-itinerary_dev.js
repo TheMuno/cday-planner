@@ -1457,6 +1457,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $popupRemoveBtn = $mapPopup.querySelector('.map_card_btn_wrap');
   if ($popupRemoveBtn) {
     $popupRemoveBtn.onclick = () => {
+      if (!confirm(`Remove ${saveObj?.displayName || 'this location'}?`)) return;
       const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)');
       const $match = [...$attractions].find(el =>
         (saveObj?.placeId && el.placeId === saveObj.placeId) ||
