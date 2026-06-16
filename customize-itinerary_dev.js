@@ -1467,9 +1467,10 @@ function openMapPopup(title, editorialSummary, saveObj) {
     };
   }
 
-  $mapPopup.scrollTop = 0;
-  $mapPopup.querySelector('.map_card_-inner')?.scrollTo(0, 0);
   $mapPopup.removeAttribute('data-ak-hidden');
+  requestAnimationFrame(() => {
+    $mapPopup.querySelector('.map_card_-inner')?.scrollTo(0, 0);
+  });
 }
 
 function showImageWithSpinner($img, src) {
