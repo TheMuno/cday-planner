@@ -1423,8 +1423,8 @@ function openMapPopup(title, editorialSummary, saveObj) {
     const $closedBadge = $locationBlock.querySelector('.map_card_closed');
     if ($closedBadge) {
       const $badgeText = $closedBadge.querySelector('p');
-      const status = window.__akStatusOverride || saveObj.businessStatus;
-      console.log('[BusinessStatus]', saveObj.displayName, '|', status, window.__akStatusOverride ? '(overridden)' : '');
+      const status = saveObj.businessStatus;
+      console.log('[BusinessStatus]', saveObj.displayName, '|', status);
       if (status === 'TEMPORARILY_CLOSED') {
         if ($badgeText) { $badgeText.textContent = 'Temporarily Closed'; $badgeText.style.color = '#E07B00'; }
         $closedBadge.style.display = '';
@@ -1432,7 +1432,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
         if ($badgeText) { $badgeText.textContent = 'Permanently Closed'; $badgeText.style.color = '#D0021B'; }
         $closedBadge.style.display = '';
       } else if (status === 'OPERATIONAL') {
-        const openNow = window.__akOpenOverride !== undefined ? window.__akOpenOverride : isCurrentlyOpen(saveObj.openingHours);
+        const openNow = isCurrentlyOpen(saveObj.openingHours);
         const isOpen = openNow !== false; // null (no hours data) defaults to open
         if ($badgeText) { $badgeText.textContent = isOpen ? 'Open' : 'Closed'; $badgeText.style.color = isOpen ? '#2E7D32' : '#D0021B'; }
         $closedBadge.style.display = '';
@@ -1446,7 +1446,7 @@ function openMapPopup(title, editorialSummary, saveObj) {
   const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
   const $tipSection = $tipTitle?.closest('.map_card_title');
   console.log('[InsiderTips] placeId:', saveObj?.placeId, '| tip:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
-  const rawTip = insiderTipsData && saveObj?.placeId ? insiderTipsData[saveObj.placeId] : null;
+  const rawTip = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId]?.insider_tip ?? null) : null;
   if (rawTip) {
     const { title, desc } = parseInsiderTip(rawTip);
     if ($tipTitle) $tipTitle.textContent = title;
