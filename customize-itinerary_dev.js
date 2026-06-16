@@ -1423,8 +1423,8 @@ function openMapPopup(title, editorialSummary, saveObj) {
     const $closedBadge = $locationBlock.querySelector('.map_card_closed');
     if ($closedBadge) {
       const $badgeText = $closedBadge.querySelector('p');
-      const status = saveObj.businessStatus;
-      console.log('[BusinessStatus]', saveObj.displayName, '|', status);
+      const status = window.__akStatusOverride || saveObj.businessStatus;
+      console.log('[BusinessStatus]', saveObj.displayName, '|', status, window.__akStatusOverride ? '(overridden)' : '');
       if (status === 'TEMPORARILY_CLOSED') {
         if ($badgeText) { $badgeText.textContent = 'Temporarily Closed'; $badgeText.style.color = '#E07B00'; }
         $closedBadge.style.display = '';
@@ -1492,7 +1492,6 @@ function getTodayHours(openingHours) {
 }
 
 function isCurrentlyOpen(openingHours) {
-  console.log('[isCurrentlyOpen] openingHours:', openingHours);
   if (!openingHours?.periods?.length) return null;
   const now = new Date();
   const day = now.getDay();
