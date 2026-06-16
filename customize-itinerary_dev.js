@@ -1442,17 +1442,16 @@ function openMapPopup(title, editorialSummary, saveObj) {
     }
   }
 
-  const $tipTitle = $mapPopup.querySelector('[data-ak="insider-tip-title"]');
   const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
-  const $tipSection = $tipTitle?.closest('.map_card_title');
+  const $tipInsiders = $mapPopup.querySelectorAll('[data-ak-insider]');
   console.log('[InsiderTips] placeId:', saveObj?.placeId, '| raw entry:', insiderTipsData?.[saveObj?.placeId] ?? '(no match)');
   const rawTip = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
   if (rawTip) {
     const { desc } = parseInsiderTip(rawTip);
     if ($tipDesc) $tipDesc.textContent = desc;
-    if ($tipSection) $tipSection.style.display = '';
+    $tipInsiders.forEach($el => $el.style.display = '');
   } else {
-    if ($tipSection) $tipSection.style.display = 'none';
+    $tipInsiders.forEach($el => $el.style.display = 'none');
   }
 
   $mapPopup.removeAttribute('data-ak-hidden');
