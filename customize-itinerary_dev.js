@@ -1433,12 +1433,9 @@ function openMapPopup(title, editorialSummary, saveObj) {
         $closedBadge.style.display = '';
       } else if (status === 'OPERATIONAL') {
         const openNow = isCurrentlyOpen(saveObj.openingHours);
-        if (openNow === null) {
-          $closedBadge.style.display = 'none';
-        } else {
-          if ($badgeText) { $badgeText.textContent = openNow ? 'Open' : 'Closed'; $badgeText.style.color = openNow ? '#2E7D32' : '#D0021B'; }
-          $closedBadge.style.display = '';
-        }
+        const isOpen = openNow !== false; // null (no hours data) defaults to open
+        if ($badgeText) { $badgeText.textContent = isOpen ? 'Open' : 'Closed'; $badgeText.style.color = isOpen ? '#2E7D32' : '#D0021B'; }
+        $closedBadge.style.display = '';
       } else {
         $closedBadge.style.display = 'none';
       }
