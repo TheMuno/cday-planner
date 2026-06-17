@@ -1310,13 +1310,25 @@ function setupHotelNAirports(hotel, arrivalAirport, departureAirport) {
     let { displayName, location: { lat, lng }, editorialSummary, type } = locationDetails;
     if (!type) type = locationDetails.types;
 
+    const saveObj = {
+      ...locationDetails,
+      type: type || locationDetails.types,
+      placeId: locationDetails.placeId || locationDetails.id,
+      address: locationDetails.address || locationDetails.formattedAddress || '',
+      phone: locationDetails.phone || locationDetails.nationalPhoneNumber || '',
+      website: locationDetails.website || locationDetails.websiteURI || locationDetails.websiteUri || '',
+      openingHours: locationDetails.openingHours || locationDetails.regularOpeningHours || null,
+      reviewCount: locationDetails.reviewCount ?? locationDetails.userRatingCount ?? null,
+      businessStatus: locationDetails.businessStatus || null,
+    };
+
     let marker;
     if (location === hotel) {
-      marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl);
+      marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
       markerObj['hotel'] = marker;
     } else {
       const pin = getCorrectTransportationPinUrl(type);
-      marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin);
+      marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
       markerObj[location === arrivalAirport ? 'airport-arrival' : 'airport-departure'] = marker;
     }
 
@@ -1601,25 +1613,28 @@ function capitalize(str) {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['displayName', 'location', 'editorialSummary', 'formattedAddress'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
 
     map.panTo(place.viewport || place.location);
 
     const placeObj = place.toJSON();
     const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
     const $userInputWrap = res.target?.Zg;
     const $userInput = $userInputWrap?.querySelector('input');
     if ($userInput) $userInput.value = '';
 
-    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl);
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
     markerObj['hotel'] = marker;
 
     addLocationToResultWrap(displayName, marker, document.querySelector('[data-ak="hotel-search-result"]'));
     setUnsavedChangesFlag();
 
-    localStorage['ak-hotel'] = JSON.stringify(placeObj);
+    localStorage['ak-hotel'] = JSON.stringify(saveObj);
     localStorage['ak-update-hotel'] = true;
   });
 })();
@@ -1640,28 +1655,31 @@ function capitalize(str) {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['displayName', 'location', 'editorialSummary', 'types'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
 
       map.panTo(place.viewport || place.location);
 
       const placeObj = place.toJSON();
       const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+      const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
       const $userInputWrap = res.target?.Zg;
       const $userInput = $userInputWrap?.querySelector('input');
       if ($userInput) $userInput.value = '';
 
+      const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
+
       const pin = getCorrectTransportationPinUrl(type);
-      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin);
+      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
 
       const airportType = autocomplete.getAttribute('data-ak-airport');
       if (airportType.includes('arrival')) {
-        localStorage['ak-arrival-airport'] = JSON.stringify(placeObj);
+        localStorage['ak-arrival-airport'] = JSON.stringify(saveObj);
         localStorage['ak-update-arrival-airport'] = true;
         if (markerObj['airport-arrival']) markerObj['airport-arrival'].setMap(null);
         markerObj['airport-arrival'] = marker;
       } else {
-        localStorage['ak-departure-airport'] = JSON.stringify(placeObj);
+        localStorage['ak-departure-airport'] = JSON.stringify(saveObj);
         localStorage['ak-update-departure-airport'] = true;
         if (markerObj['airport-departure']) markerObj['airport-departure'].setMap(null);
         markerObj['airport-departure'] = marker;
