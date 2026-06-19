@@ -54,6 +54,7 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 
 let addedAttractions = 0;
 const markerObj = {};
+const chipMarkers = {};
 
 const locations = {
   new_york: { lat: 40.7580, lng: -73.9855 },
@@ -1141,7 +1142,6 @@ window.addEventListener('load', async () => {
 
 
   const $cuisineChipsWrap = document.querySelector('[data-ak="cuisine-chips"]');
-  const chipMarkers = {};
 
   $cuisineChipsWrap?.addEventListener('click', async e => {
     const $chip = e.target.closest('[data-ak-chip]');
@@ -1614,6 +1614,14 @@ function findItineraryMatch(saveObj) {
   ) || null;
 }
 
+function detachFromChipCache(marker) {
+  for (const slug in chipMarkers) {
+    const arr = chipMarkers[slug];
+    const idx = arr.indexOf(marker);
+    if (idx !== -1) arr.splice(idx, 1);
+  }
+}
+
 function addSearchResultToItinerary(saveObj, marker) {
   const displayName = saveObj.displayName;
   const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
@@ -1635,6 +1643,8 @@ function addSearchResultToItinerary(saveObj, marker) {
     updateAttractionsCount('+');
     localStorage['ak-update-merge-local'] = true;
   }
+
+  detachFromChipCache(marker);
 
   markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
   markerObj[`slide${slideIndex}`].push(marker);
