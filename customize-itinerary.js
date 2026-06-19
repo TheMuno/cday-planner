@@ -55,6 +55,8 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 let addedAttractions = 0;
 const markerObj = {};
 const chipMarkers = {};
+const attractionChipMarkers = {};
+const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 
 const locations = {
   new_york: { lat: 40.7580, lng: -73.9855 },
@@ -1141,38 +1143,8 @@ window.addEventListener('load', async () => {
   });
 
 
-  const $cuisineChipsWrap = document.querySelector('[data-ak="cuisine-chips"]');
-
-  $cuisineChipsWrap?.addEventListener('click', async e => {
-    const $chip = e.target.closest('[data-ak-chip]');
-    if (!$chip) return;
-
-    const slug = $chip.getAttribute('data-ak-chip');
-    const config = CHIP_CONFIG[slug];
-    if (!config) return;
-
-    if ($chip.getAttribute('data-ak-active') === 'true') {
-      $chip.removeAttribute('data-ak-active');
-      (chipMarkers[slug] || []).forEach(marker => marker.setMap(null));
-      return;
-    }
-
-    $chip.setAttribute('data-ak-active', 'true');
-
-    if (chipMarkers[slug]?.length) {
-      chipMarkers[slug].forEach(marker => marker.setMap(map));
-      return;
-    }
-
-    try {
-      const results = await config.search();
-      chipMarkers[slug] = results.map(({ title, position, saveObj }) =>
-        createSearchMarker(title, position, saveObj));
-    } catch (e) {
-      console.warn(`Chip search failed for "${slug}":`, e);
-      $chip.removeAttribute('data-ak-active');
-    }
-  });
+  wireChipWrap(document.querySelector('[data-ak="cuisine-chips"]'), CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+  wireChipWrap(document.querySelector('[data-ak="attraction-chips"]'), ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
 
 });
 // end window.addEventListener('load')
@@ -1421,9 +1393,42 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
 
 // ===== Cuisine/vibe chips: minimal-data search + lazy popup enrichment =====
 
-function createSearchMarker(title, position, saveObj = {}) {
+function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
+  $wrap?.addEventListener('click', async e => {
+    const $chip = e.target.closest('[data-ak-chip]');
+    if (!$chip) return;
+
+    const slug = $chip.getAttribute('data-ak-chip');
+    const config = configMap[slug];
+    if (!config) return;
+
+    if ($chip.getAttribute('data-ak-active') === 'true') {
+      $chip.removeAttribute('data-ak-active');
+      (markerCache[slug] || []).forEach(marker => marker.setMap(null));
+      return;
+    }
+
+    $chip.setAttribute('data-ak-active', 'true');
+
+    if (markerCache[slug]?.length) {
+      markerCache[slug].forEach(marker => marker.setMap(map));
+      return;
+    }
+
+    try {
+      const results = await config.search();
+      markerCache[slug] = results.map(({ title, position, saveObj }) =>
+        createSearchMarker(title, position, saveObj, pinUrl));
+    } catch (e) {
+      console.warn(`Chip search failed for "${slug}":`, e);
+      $chip.removeAttribute('data-ak-active');
+    }
+  });
+}
+
+function createSearchMarker(title, position, saveObj = {}, pinUrl = restaurantPreselectPinUrl) {
   const markerPinImg = document.createElement('img');
-  markerPinImg.src = restaurantPreselectPinUrl;
+  markerPinImg.src = pinUrl;
   markerPinImg.className = 'ak-marker-pin';
 
   const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -1524,14 +1529,14 @@ async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [] }) {
   return places;
 }
 
-function toMarkerInput(place) {
+function toMarkerInput(place, type = ['restaurant']) {
   return {
     title: place.displayName?.text || '',
     position: { lat: place.location.latitude, lng: place.location.longitude },
     saveObj: {
       placeId: place.id,
       displayName: place.displayName?.text || '',
-      type: ['restaurant'],
+      type,
       rating: place.rating ?? null,
       reviewCount: place.userRatingCount ?? null,
       _isSearchResult: true,
@@ -1544,7 +1549,7 @@ async function runTextSearchChip(config) {
   const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
   const places = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, fieldsExtra });
 
-  let results = places.map(toMarkerInput);
+  let results = places.map(place => toMarkerInput(place, config.markerType || ['restaurant']));
 
   if (config.minRating) {
     results = results.filter(r => (r.saveObj.rating ?? 0) >= config.minRating);
@@ -1598,6 +1603,18 @@ const CHIP_CONFIG = {
   'live-music': { textQuery: 'live music OR jazz club OR live band', includedType: 'bar', search() { return runTextSearchChip(this); } },
 };
 
+const ATTRACTION_CHIP_CONFIG = {
+  'tours': { curatedTag: 'Tours', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'museums': { curatedTag: 'Museums', textQuery: 'museum', includedType: 'museum', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'historic': { curatedTag: 'Historic', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'hidden-gems': { curatedTag: 'Hidden Gems', textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.4, markerType: [], search() { return runCuratedOrFallback(this); } },
+  'free': { curatedTag: 'Free', textQuery: 'free things to do OR free attractions OR free admission', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'retail-stores': { curatedTag: 'Retail Stores', textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'iconic': { curatedTag: 'Iconic', textQuery: 'iconic landmark OR famous attraction', includedType: 'tourist_attraction', sortBy: 'score', minReviewCount: 5000, markerType: [], search() { return runCuratedOrFallback(this); } },
+  'vintage-shopping': { curatedTag: 'Vintage Shopping', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], search() { return runCuratedOrFallback(this); } },
+};
+
 if (!document.getElementById('ak-tip-clamp-style')) {
   const s = document.createElement('style');
   s.id = 'ak-tip-clamp-style';
@@ -1615,10 +1632,12 @@ function findItineraryMatch(saveObj) {
 }
 
 function detachFromChipCache(marker) {
-  for (const slug in chipMarkers) {
-    const arr = chipMarkers[slug];
-    const idx = arr.indexOf(marker);
-    if (idx !== -1) arr.splice(idx, 1);
+  for (const cache of ALL_CHIP_MARKER_CACHES) {
+    for (const slug in cache) {
+      const arr = cache[slug];
+      const idx = arr.indexOf(marker);
+      if (idx !== -1) arr.splice(idx, 1);
+    }
   }
 }
 
@@ -1659,7 +1678,7 @@ function addSearchResultToItinerary(saveObj, marker) {
   $currentSlide.querySelector('[data-ak-timeslots].active')?.classList.remove('active');
   $timeslot.classList.add('active');
 
-  if (marker?.content) marker.content.src = foodForkPinUrl;
+  if (marker?.content) marker.content.src = isRestaurant ? foodForkPinUrl : cameraPinUrl;
 
   setUnsavedChangesFlag();
   return true;
