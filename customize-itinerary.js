@@ -192,20 +192,18 @@ window.addEventListener('load', async () => {
 
 
   const $toggleTransitWrap = document.querySelector('.ak-toggle-wrap.transit');
-  $toggleTransitWrap?.addEventListener('click', async e => {
+  let transitLayer = null;
+  $toggleTransitWrap?.addEventListener('click', e => {
     if (!e.target.classList.contains('ak-toggle')) return;
     if (!e.target.classList.contains('transit')) return;
     $toggleTransitWrap.n = ($toggleTransitWrap.n || 0) + 1;
 
     if ($toggleTransitWrap.n % 2 === 0) {
-      await initMap(mapCenter);
+      transitLayer?.setMap(null);
     } else {
-      const map = await initMap(mapCenter);
-      new google.maps.TransitLayer().setMap(map);
+      transitLayer = transitLayer || new google.maps.TransitLayer();
+      transitLayer.setMap(map);
     }
-
-    const checkedVal = document.querySelector('[name="View-Map-Pins"]:checked')?.value;
-    showHidePins(checkedVal);
   });
 
 
