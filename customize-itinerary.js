@@ -1506,7 +1506,7 @@ async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [] }) {
   const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
   const payload = {
     textQuery,
-    locationBias: { rectangle: boundsToRect(map.getBounds()) },
+    locationRestriction: { rectangle: boundsToRect(map.getBounds()) },
     ...(includedType ? { includedType } : {}),
   };
 
