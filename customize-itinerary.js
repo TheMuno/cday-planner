@@ -1415,7 +1415,7 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
   });
 
   marker.addListener('gmp-click', () => {
-    openMapPopup(title, editorialSummary, saveObj);
+    openMapPopup(title, editorialSummary, saveObj, marker);
   });
 
   return marker;
@@ -1440,7 +1440,7 @@ function createSearchMarker(title, position, saveObj = {}) {
     if (!saveObj._detailsLoaded) {
       await enrichPlaceDetails(saveObj);
     }
-    openMapPopup(saveObj.displayName || title, saveObj.editorialSummary, saveObj);
+    openMapPopup(saveObj.displayName || title, saveObj.editorialSummary, saveObj, marker);
   });
 
   return marker;
@@ -1536,6 +1536,7 @@ function toMarkerInput(place) {
       type: ['restaurant'],
       rating: place.rating ?? null,
       reviewCount: place.userRatingCount ?? null,
+      _isSearchResult: true,
     },
   };
 }
@@ -1571,7 +1572,7 @@ async function runCuratedOrFallback(config) {
     const resolved = await Promise.all(curated.map(async place => {
       const location = await resolveCuratedLocation(place);
       if (!location) return null;
-      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type } };
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
     }));
     const valid = resolved.filter(Boolean);
     if (valid.length) return valid;
@@ -1606,7 +1607,57 @@ if (!document.getElementById('ak-tip-clamp-style')) {
   document.head.appendChild(s);
 }
 
-function openMapPopup(title, editorialSummary, saveObj) {
+function findItineraryMatch(saveObj) {
+  if (!saveObj) return null;
+  const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)');
+  return [...$attractions].find(el =>
+    (saveObj.placeId && el.placeId === saveObj.placeId) ||
+    (saveObj.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
+  ) || null;
+}
+
+function addSearchResultToItinerary(saveObj, marker) {
+  const displayName = saveObj.displayName;
+  const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
+
+  const { $currentSlide, slideIndex } = getCurrentSlideInfo();
+  const $timeslot = $currentSlide.querySelector(`[data-ak-timeslot="${isRestaurant ? 'afternoon' : 'morning'}"]`);
+  const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
+
+  if (attractionExists($timeslotWrap, displayName)) {
+    alert('Sorry, Already Added!');
+    return false;
+  }
+
+  if (!auth.currentUser) {
+    if (addedAttractions >= attractionslimit) {
+      alert('Max Limit Reached. Login To Add More');
+      return false;
+    }
+    updateAttractionsCount('+');
+    localStorage['ak-update-merge-local'] = true;
+  }
+
+  markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
+  markerObj[`slide${slideIndex}`].push(marker);
+
+  if ($timeslot.querySelector('[data-ak-timeslot-content]').style.height === '0px') {
+    $timeslot.querySelector('[data-ak-timeslot-title]').click();
+  }
+
+  addAttractionToList(displayName, $timeslotWrap, marker, saveObj);
+  saveAttractionLocal();
+
+  $currentSlide.querySelector('[data-ak-timeslots].active')?.classList.remove('active');
+  $timeslot.classList.add('active');
+
+  if (marker?.content) marker.content.src = foodForkPinUrl;
+
+  setUnsavedChangesFlag();
+  return true;
+}
+
+function openMapPopup(title, editorialSummary, saveObj, marker = null) {
   const $mapPopup = document.querySelector('[data-ak="map-popup"]');
   if (!$mapPopup) return;
 
@@ -1698,23 +1749,30 @@ function openMapPopup(title, editorialSummary, saveObj) {
     $tipInsiders.forEach($el => $el.style.display = 'none');
   }
 
-  const $popupRemoveBtn = $mapPopup.querySelector('.map_card_btn_wrap');
-  if ($popupRemoveBtn) {
-    $popupRemoveBtn.onclick = () => {
-      alertify.confirm(
-        `Remove ${saveObj?.displayName || 'this location'}?`,
-        () => {
-          const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)');
-          const $match = [...$attractions].find(el =>
-            (saveObj?.placeId && el.placeId === saveObj.placeId) ||
-            (saveObj?.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
-          );
-          $match?.querySelector('[data-ak="remove-location"]')?.click();
-          $mapPopup.setAttribute('data-ak-hidden', 'true');
-        },
-        () => {}
-      );
-    };
+  const $popupActionBtn = $mapPopup.querySelector('.map_card_btn_wrap');
+  if ($popupActionBtn) {
+    const $existingMatch = findItineraryMatch(saveObj);
+    const $actionLabel = $popupActionBtn.querySelector('[data-ak="popup-action-label"]');
+
+    if (!$existingMatch && saveObj?._isSearchResult) {
+      if ($actionLabel) $actionLabel.textContent = 'Add Activity';
+      $popupActionBtn.onclick = () => {
+        const added = addSearchResultToItinerary(saveObj, marker);
+        if (added) $mapPopup.setAttribute('data-ak-hidden', 'true');
+      };
+    } else {
+      if ($actionLabel) $actionLabel.textContent = 'Remove';
+      $popupActionBtn.onclick = () => {
+        alertify.confirm(
+          `Remove ${saveObj?.displayName || 'this location'}?`,
+          () => {
+            $existingMatch?.querySelector('[data-ak="remove-location"]')?.click();
+            $mapPopup.setAttribute('data-ak-hidden', 'true');
+          },
+          () => {}
+        );
+      };
+    }
   }
 
   $mapPopup.removeAttribute('data-ak-hidden');
