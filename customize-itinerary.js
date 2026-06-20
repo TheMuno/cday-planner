@@ -1427,6 +1427,8 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
 }
 
 function createSearchMarker(title, position, saveObj = {}, pinUrl = restaurantPreselectPinUrl) {
+  saveObj.location = saveObj.location || position;
+
   const markerPinImg = document.createElement('img');
   markerPinImg.src = pinUrl;
   markerPinImg.className = 'ak-marker-pin';
