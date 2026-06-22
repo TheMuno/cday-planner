@@ -1622,12 +1622,6 @@ async function runCuratedOrFallback(config) {
   return runTextSearchChip(config);
 }
 
-// Console A/B toggle for the pizza chip: window.AK_PIZZA_MODE = 'nearby' (type-based Nearby Search)
-// or 'text' (broad text query, default — current Gemini-suggested fallback).
-// Caches per-chip results, so after switching modes, toggle the chip off then run
-// `delete chipMarkers.pizza` in the console before clicking it again to force a refetch.
-window.AK_PIZZA_MODE = window.AK_PIZZA_MODE || 'text';
-
 const CHIP_CONFIG = {
   'gluten-free': { curatedTag: 'Gluten Free', textQuery: 'restaurant gluten free menu OR gluten free options', includedType: 'restaurant', minRating: 4.2, search() { return runCuratedOrFallback(this); } },
   'jewish': { curatedTag: 'Jewish', textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', search() { return runCuratedOrFallback(this); } },
@@ -1637,15 +1631,18 @@ const CHIP_CONFIG = {
   'pre-theater': { curatedTag: 'Pre-Theater', textQuery: 'pre-theater menu OR prix fixe dinner', search() { return runCuratedOrFallback(this); } },
   'kid-friendly': { curatedTag: 'Kid Friendly', textQuery: 'kid friendly restaurant OR great for kids', search() { return runCuratedOrFallback(this); } },
 
-  'pizza': {
+  'pizza-gemini': {
     textQuery: 'best pizza slice OR pizzeria',
+    sortBy: 'score',
+    resultCap: 20,
+    search() { return runTextSearchChip(this); },
+  },
+  'pizza-claude': {
     nearbyType: 'pizza_restaurant',
     nearbyRadius: 3000,
     sortBy: 'score',
     resultCap: 20,
-    search() {
-      return window.AK_PIZZA_MODE === 'nearby' ? runNearbyTypeChip(this) : runTextSearchChip(this);
-    },
+    search() { return runNearbyTypeChip(this); },
   },
   'italian': { textQuery: 'italian restaurant', includedType: 'restaurant', sortBy: 'proximity', search() { return runTextSearchChip(this); } },
   'lunch-under-15': { textQuery: 'cheap eats OR lunch special OR counter service', search() { return runTextSearchChip(this); } },
