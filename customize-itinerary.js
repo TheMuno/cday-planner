@@ -58,6 +58,9 @@ const chipMarkers = {};
 const attractionChipMarkers = {};
 const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 
+// Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
+window.chipMarkers = chipMarkers;
+
 const locations = {
   new_york: { lat: 40.7580, lng: -73.9855 },
   washington_dc: { lat: 38.89511, lng: -77.03637 },
