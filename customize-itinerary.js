@@ -1503,6 +1503,15 @@ async function resolveCuratedLocation(place) {
   return place.location;
 }
 
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function boundsToRect(bounds) {
   const ne = bounds.getNorthEast();
   const sw = bounds.getSouthWest();
@@ -1576,13 +1585,18 @@ async function runTextSearchChip(config) {
   return applyChipPostProcessing(config, results);
 }
 
-async function nearbySearchByType({ includedType, radius = 3000, fieldsExtra = [] }) {
+async function nearbySearchByType({ includedType, radius, fieldsExtra = [] }) {
+  const bounds = map.getBounds();
   const center = map.getCenter();
+  const ne = bounds.getNorthEast();
+  // Circle must fully cover the viewport rectangle, so search out to the farthest corner.
+  const viewportRadius = distanceMeters(center.lat(), center.lng(), ne.lat(), ne.lng());
+  const searchRadius = Math.min(radius ?? viewportRadius, viewportRadius, 50000);
   const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
   const payload = {
     includedTypes: [includedType],
     locationRestriction: {
-      circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius },
+      circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius: searchRadius },
     },
   };
 
@@ -1597,7 +1611,8 @@ async function nearbySearchByType({ includedType, radius = 3000, fieldsExtra = [
   });
 
   const { places = [] } = await res.json();
-  return places;
+  // The search circle is wider than the viewport at its edges (to cover the corners) — trim back to what's actually on-screen.
+  return places.filter(p => p.location && bounds.contains(new google.maps.LatLng(p.location.latitude, p.location.longitude)));
 }
 
 async function runNearbyTypeChip(config) {
@@ -1639,7 +1654,6 @@ const CHIP_CONFIG = {
   },
   'pizza-claude': {
     nearbyType: 'pizza_restaurant',
-    nearbyRadius: 3000,
     sortBy: 'score',
     resultCap: 20,
     search() { return runNearbyTypeChip(this); },
