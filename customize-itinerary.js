@@ -1627,6 +1627,9 @@ async function nearbySearchByType({ includedType, radius, fieldsExtra = [] }) {
     locationRestriction: {
       circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius: searchRadius },
     },
+    // Default rankPreference (POPULARITY) lets one famous spot dominate the top 20 regardless of
+    // where it sits in the circle; DISTANCE ranks/selects by proximity to the circle's center instead.
+    rankPreference: 'DISTANCE',
   };
 
   const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
