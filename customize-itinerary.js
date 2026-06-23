@@ -1680,6 +1680,13 @@ const CHIP_CONFIG = {
     resultCap: 20,
     search() { return runTextSearchChip(this); },
   },
+  'pizza-gemini-live': {
+    textQuery: 'best pizza slice OR pizzeria',
+    viewportAware: true,
+    sortBy: 'score',
+    resultCap: 20,
+    search() { return runTextSearchChip(this); },
+  },
   'pizza-claude': {
     nearbyType: 'pizza_restaurant',
     refetchOnActivate: true,
