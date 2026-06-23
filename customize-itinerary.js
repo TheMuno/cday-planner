@@ -1146,8 +1146,17 @@ window.addEventListener('load', async () => {
   });
 
 
-  wireChipWrap(document.querySelector('[data-ak="cuisine-chips"]'), CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
-  wireChipWrap(document.querySelector('[data-ak="attraction-chips"]'), ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+  const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
+  const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
+  wireChipWrap($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+  wireChipWrap($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+
+  // 'idle' fires once after the user stops panning/zooming (not on every drag frame) — refetch any
+  // active chip whose results are tied to the current viewport.
+  map.addListener('idle', () => {
+    refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+    refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+  });
 
 });
 // end window.addEventListener('load')
@@ -1395,6 +1404,23 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
 }
 
 // ===== Cuisine/vibe chips: minimal-data search + lazy popup enrichment =====
+
+function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
+  $wrap?.querySelectorAll('[data-ak-chip][data-ak-active="true"]').forEach(async $chip => {
+    const slug = $chip.getAttribute('data-ak-chip');
+    const config = configMap[slug];
+    if (!config?.viewportAware) return;
+
+    try {
+      const results = await config.search();
+      (markerCache[slug] || []).forEach(marker => marker.setMap(null));
+      markerCache[slug] = results.map(({ title, position, saveObj }) =>
+        createSearchMarker(title, position, saveObj, pinUrl));
+    } catch (e) {
+      console.warn(`Viewport refresh failed for "${slug}":`, e);
+    }
+  });
+}
 
 function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
   $wrap?.addEventListener('click', async e => {
@@ -1654,6 +1680,7 @@ const CHIP_CONFIG = {
   },
   'pizza-claude': {
     nearbyType: 'pizza_restaurant',
+    viewportAware: true,
     sortBy: 'score',
     resultCap: 20,
     search() { return runNearbyTypeChip(this); },
