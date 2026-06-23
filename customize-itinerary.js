@@ -1439,13 +1439,15 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
 
     $chip.setAttribute('data-ak-active', 'true');
 
-    if (markerCache[slug]?.length) {
+    if (markerCache[slug]?.length && !config.refetchOnActivate) {
       markerCache[slug].forEach(marker => marker.setMap(map));
       return;
     }
 
     try {
       const results = await config.search();
+      // refetchOnActivate chips drop any stale cache from a previous viewport before showing fresh results.
+      (markerCache[slug] || []).forEach(marker => marker.setMap(null));
       markerCache[slug] = results.map(({ title, position, saveObj }) =>
         createSearchMarker(title, position, saveObj, pinUrl));
     } catch (e) {
@@ -1679,6 +1681,13 @@ const CHIP_CONFIG = {
     search() { return runTextSearchChip(this); },
   },
   'pizza-claude': {
+    nearbyType: 'pizza_restaurant',
+    refetchOnActivate: true,
+    sortBy: 'score',
+    resultCap: 20,
+    search() { return runNearbyTypeChip(this); },
+  },
+  'pizza-claude-live': {
     nearbyType: 'pizza_restaurant',
     viewportAware: true,
     sortBy: 'score',
