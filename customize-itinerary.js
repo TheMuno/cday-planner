@@ -1676,6 +1676,7 @@ const CHIP_CONFIG = {
 
   'pizza-gemini': {
     textQuery: 'best pizza slice OR pizzeria',
+    refetchOnActivate: true,
     sortBy: 'score',
     resultCap: 20,
     search() { return runTextSearchChip(this); },
