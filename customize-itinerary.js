@@ -1506,11 +1506,12 @@ async function enrichPlaceDetails(saveObj) {
   }
 }
 
-function getCuratedByTag(tagLabel) {
+function getCuratedByTag(tagLabel, expectedType) {
   if (!insiderTipsData) return [];
   const wanted = tagLabel.toLowerCase();
   return Object.entries(insiderTipsData)
     .filter(([, entry]) => entry.tags?.some(t => t.toLowerCase() === wanted))
+    .filter(([, entry]) => !expectedType || entry.type === expectedType)
     .map(([placeId, entry]) => ({
       placeId,
       displayName: entry.placeName || '',
@@ -1652,7 +1653,7 @@ async function runNearbyTypeChip(config) {
 }
 
 async function runCuratedOrFallback(config) {
-  const curated = getCuratedByTag(config.curatedTag);
+  const curated = getCuratedByTag(config.curatedTag, config.curatedType);
   if (curated.length) {
     const resolved = await Promise.all(curated.map(async place => {
       const location = await resolveCuratedLocation(place);
@@ -1666,13 +1667,13 @@ async function runCuratedOrFallback(config) {
 }
 
 const CHIP_CONFIG = {
-  'gluten-free': { curatedTag: 'Gluten Free', textQuery: 'restaurant gluten free menu OR gluten free options', includedType: 'restaurant', minRating: 4.2, search() { return runCuratedOrFallback(this); } },
-  'jewish': { curatedTag: 'Jewish', textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', search() { return runCuratedOrFallback(this); } },
-  'classic-ny': { curatedTag: 'Classic NY', textQuery: 'iconic classic new york restaurant', sortBy: 'score', minReviewCount: 10000, search() { return runCuratedOrFallback(this); } },
-  'solo-dining': { curatedTag: 'Solo Dining', textQuery: 'restaurant cafe bar seating OR eat at the bar OR solo dining OR counter stools', search() { return runCuratedOrFallback(this); } },
-  'big-groups': { curatedTag: 'Big Groups', textQuery: 'restaurants good for groups OR large party dining', search() { return runCuratedOrFallback(this); } },
-  'pre-theater': { curatedTag: 'Pre-Theater', textQuery: 'pre-theater menu OR prix fixe dinner', search() { return runCuratedOrFallback(this); } },
-  'kid-friendly': { curatedTag: 'Kid Friendly', textQuery: 'kid friendly restaurant OR great for kids', search() { return runCuratedOrFallback(this); } },
+  'gluten-free': { curatedTag: 'Gluten Free', curatedType: 'EAT', textQuery: 'restaurant gluten free menu OR gluten free options', includedType: 'restaurant', minRating: 4.2, search() { return runCuratedOrFallback(this); } },
+  'jewish': { curatedTag: 'Jewish', curatedType: 'EAT', textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', search() { return runCuratedOrFallback(this); } },
+  'classic-ny': { curatedTag: 'Classic NY', curatedType: 'EAT', textQuery: 'iconic classic new york restaurant', sortBy: 'score', minReviewCount: 10000, search() { return runCuratedOrFallback(this); } },
+  'solo-dining': { curatedTag: 'Solo Dining', curatedType: 'EAT', textQuery: 'restaurant cafe bar seating OR eat at the bar OR solo dining OR counter stools', search() { return runCuratedOrFallback(this); } },
+  'big-groups': { curatedTag: 'Big Groups', curatedType: 'EAT', textQuery: 'restaurants good for groups OR large party dining', search() { return runCuratedOrFallback(this); } },
+  'pre-theater': { curatedTag: 'Pre-Theater', curatedType: 'EAT', textQuery: 'pre-theater menu OR prix fixe dinner', search() { return runCuratedOrFallback(this); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'EAT', textQuery: 'kid friendly restaurant OR great for kids', search() { return runCuratedOrFallback(this); } },
 
   'pizza-gemini': {
     textQuery: 'best pizza slice OR pizzeria',
@@ -1713,15 +1714,15 @@ const CHIP_CONFIG = {
 };
 
 const ATTRACTION_CHIP_CONFIG = {
-  'tours': { curatedTag: 'Tours', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'kid-friendly': { curatedTag: 'Kid Friendly', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'museums': { curatedTag: 'Museums', textQuery: 'museum', includedType: 'museum', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'historic': { curatedTag: 'Historic', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'hidden-gems': { curatedTag: 'Hidden Gems', textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.4, markerType: [], search() { return runCuratedOrFallback(this); } },
-  'free': { curatedTag: 'Free', textQuery: 'free things to do OR free attractions OR free admission', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'retail-stores': { curatedTag: 'Retail Stores', textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], search() { return runCuratedOrFallback(this); } },
-  'iconic': { curatedTag: 'Iconic', textQuery: 'iconic landmark OR famous attraction', includedType: 'tourist_attraction', sortBy: 'score', minReviewCount: 5000, markerType: [], search() { return runCuratedOrFallback(this); } },
-  'vintage-shopping': { curatedTag: 'Vintage Shopping', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'tours': { curatedTag: 'Tours', curatedType: 'SEE', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'SEE', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'museums': { curatedTag: 'Museums', curatedType: 'SEE', textQuery: 'museum', includedType: 'museum', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'historic': { curatedTag: 'Historic', curatedType: 'SEE', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'hidden-gems': { curatedTag: 'Hidden Gems', curatedType: 'SEE', textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.4, markerType: [], search() { return runCuratedOrFallback(this); } },
+  'free': { curatedTag: 'Free', curatedType: 'SEE', textQuery: 'free things to do OR free attractions OR free admission', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'retail-stores': { curatedTag: 'Retail Stores', curatedType: 'SEE', textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], search() { return runCuratedOrFallback(this); } },
+  'iconic': { curatedTag: 'Iconic', curatedType: 'SEE', textQuery: 'iconic landmark OR famous attraction', includedType: 'tourist_attraction', sortBy: 'score', minReviewCount: 5000, markerType: [], search() { return runCuratedOrFallback(this); } },
+  'vintage-shopping': { curatedTag: 'Vintage Shopping', curatedType: 'SEE', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], search() { return runCuratedOrFallback(this); } },
 };
 
 if (!document.getElementById('ak-tip-clamp-style')) {
