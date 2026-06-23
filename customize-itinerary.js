@@ -1532,15 +1532,6 @@ async function resolveCuratedLocation(place) {
   return place.location;
 }
 
-function distanceMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 function boundsToRect(bounds) {
   const ne = bounds.getNorthEast();
   const sw = bounds.getSouthWest();
@@ -1617,10 +1608,12 @@ async function runTextSearchChip(config) {
 async function nearbySearchByType({ includedType, radius, fieldsExtra = [] }) {
   const bounds = map.getBounds();
   const center = map.getCenter();
-  const ne = bounds.getNorthEast();
-  // Circle must fully cover the viewport rectangle, so search out to the farthest corner.
-  const viewportRadius = distanceMeters(center.lat(), center.lng(), ne.lat(), ne.lng());
-  const searchRadius = Math.min(radius ?? viewportRadius, viewportRadius, 50000);
+  // With rankPreference DISTANCE, the API always returns the nearest-to-center results first
+  // regardless of how large the circle is — scaling the radius to the full viewport just meant
+  // the same handful of central results kept winning at every zoom. Use a fixed radius instead,
+  // so "nearby" stays a sensible walkable distance rather than shrinking to nothing when zoomed in
+  // or growing to 50km (with no effect on which results win) when zoomed out.
+  const searchRadius = Math.min(radius ?? 1500, 50000);
   const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
   const payload = {
     includedTypes: [includedType],
