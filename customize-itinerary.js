@@ -1405,14 +1405,39 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
 
 // ===== Cuisine/vibe chips: minimal-data search + lazy popup enrichment =====
 
+const chipRequestSeq = {};
+const chipFetchInFlight = new Set();
+const chipDebounceTimers = {};
+
+// Collapses a burst of calls for the same slug into one: each call resets the timer, so only the
+// last call within `delay` ms actually runs fn(). Earlier calls' promises are left pending forever
+// (harmless — nothing awaits them past their own caller, which never proceeds).
+function debounced(slug, delay, fn) {
+  return new Promise(resolve => {
+    if (chipDebounceTimers[slug]) clearTimeout(chipDebounceTimers[slug]);
+    chipDebounceTimers[slug] = setTimeout(() => {
+      delete chipDebounceTimers[slug];
+      resolve(fn());
+    }, delay);
+  });
+}
+
 function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
   $wrap?.querySelectorAll('[data-ak-chip][data-ak-active="true"]').forEach(async $chip => {
     const slug = $chip.getAttribute('data-ak-chip');
     const config = configMap[slug];
     if (!config?.viewportAware) return;
 
+    const seq = (chipRequestSeq[slug] = (chipRequestSeq[slug] || 0) + 1);
+
     try {
-      const results = await config.search();
+      const results = config.debounceMs
+        ? await debounced(slug, config.debounceMs, () => config.search())
+        : await config.search();
+
+      // A later pan/zoom may have started a fresher request while this one was in flight — drop stale results.
+      if (chipRequestSeq[slug] !== seq) return;
+
       (markerCache[slug] || []).forEach(marker => marker.setMap(null));
       markerCache[slug] = results.map(({ title, position, saveObj }) =>
         createSearchMarker(title, position, saveObj, pinUrl));
@@ -1444,6 +1469,11 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
       return;
     }
 
+    // Ignore a repeat click while a fetch for this slug is already in flight, rather than firing a
+    // second overlapping request that could resolve out of order and overwrite the newer one.
+    if (chipFetchInFlight.has(slug)) return;
+    chipFetchInFlight.add(slug);
+
     try {
       const results = await config.search();
       // refetchOnActivate chips drop any stale cache from a previous viewport before showing fresh results.
@@ -1453,6 +1483,8 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
     } catch (e) {
       console.warn(`Chip search failed for "${slug}":`, e);
       $chip.removeAttribute('data-ak-active');
+    } finally {
+      chipFetchInFlight.delete(slug);
     }
   });
 }
@@ -1696,6 +1728,7 @@ const CHIP_CONFIG = {
   'pizza-gemini-live': {
     textQuery: 'best pizza slice OR pizzeria',
     viewportAware: true,
+    debounceMs: 600,
     sortBy: 'score',
     minRating: 4.2,
     minReviewCount: 50,
