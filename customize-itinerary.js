@@ -1541,12 +1541,13 @@ function boundsToRect(bounds) {
   };
 }
 
-async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [] }) {
-  const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
+async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [], pageToken }) {
+  const fields = ['places.id', 'places.displayName', 'places.location', 'nextPageToken', ...fieldsExtra];
   const payload = {
     textQuery,
     locationRestriction: { rectangle: boundsToRect(map.getBounds()) },
     ...(includedType ? { includedType } : {}),
+    ...(pageToken ? { pageToken } : {}),
   };
 
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
@@ -1559,8 +1560,8 @@ async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [] }) {
     body: JSON.stringify(payload),
   });
 
-  const { places = [] } = await res.json();
-  return places;
+  const { places = [], nextPageToken } = await res.json();
+  return { places, nextPageToken };
 }
 
 function toMarkerInput(place, type = ['restaurant']) {
@@ -1600,8 +1601,20 @@ function applyChipPostProcessing(config, results) {
 async function runTextSearchChip(config) {
   const needsScore = config.sortBy === 'score';
   const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
-  const places = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, fieldsExtra });
-  const results = places.map(place => toMarkerInput(place, config.markerType || ['restaurant']));
+  const cap = config.resultCap ?? 20;
+
+  let allPlaces = [];
+  let pageToken;
+  do {
+    const page = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, fieldsExtra, pageToken });
+    allPlaces = allPlaces.concat(page.places);
+    pageToken = page.nextPageToken;
+    const passingCount = applyChipPostProcessing(config, allPlaces.map(p => toMarkerInput(p, config.markerType || ['restaurant']))).length;
+    if (passingCount >= cap) break;
+    // Only chips that opt in via allowPagination pay for extra pages when the quality filters thin out page 1.
+  } while (config.allowPagination && pageToken && allPlaces.length < 60);
+
+  const results = allPlaces.map(place => toMarkerInput(place, config.markerType || ['restaurant']));
   return applyChipPostProcessing(config, results);
 }
 
@@ -1678,6 +1691,7 @@ const CHIP_CONFIG = {
     minRating: 4.2,
     minReviewCount: 50,
     resultCap: 20,
+    allowPagination: true,
     search() { return runTextSearchChip(this); },
   },
   'pizza-gemini-live': {
@@ -1687,6 +1701,7 @@ const CHIP_CONFIG = {
     minRating: 4.2,
     minReviewCount: 50,
     resultCap: 20,
+    allowPagination: true,
     search() { return runTextSearchChip(this); },
   },
   'pizza-claude': {
