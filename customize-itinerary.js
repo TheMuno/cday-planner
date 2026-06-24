@@ -1601,7 +1601,6 @@ function applyChipPostProcessing(config, results) {
 async function runTextSearchChip(config) {
   const needsScore = config.sortBy === 'score';
   const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
-  const cap = config.resultCap ?? 20;
 
   let allPlaces = [];
   let pageToken;
@@ -1609,9 +1608,9 @@ async function runTextSearchChip(config) {
     const page = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, fieldsExtra, pageToken });
     allPlaces = allPlaces.concat(page.places);
     pageToken = page.nextPageToken;
-    const passingCount = applyChipPostProcessing(config, allPlaces.map(p => toMarkerInput(p, config.markerType || ['restaurant']))).length;
-    if (passingCount >= cap) break;
-    // Only chips that opt in via allowPagination pay for extra pages when the quality filters thin out page 1.
+    // Always exhaust pagination (when allowed) before scoring — Text Search ranks page 1 by keyword
+    // relevance, not popularity, so the true top-scoring place can land on a later page. Stopping early
+    // once we merely had "enough" results risked missing it entirely.
   } while (config.allowPagination && pageToken && allPlaces.length < 60);
 
   const results = allPlaces.map(place => toMarkerInput(place, config.markerType || ['restaurant']));
@@ -1689,7 +1688,7 @@ const CHIP_CONFIG = {
     refetchOnActivate: true,
     sortBy: 'score',
     minRating: 4.2,
-    minReviewCount: 50,
+    minReviewCount: 200,
     resultCap: 20,
     allowPagination: true,
     search() { return runTextSearchChip(this); },
@@ -1699,7 +1698,7 @@ const CHIP_CONFIG = {
     viewportAware: true,
     sortBy: 'score',
     minRating: 4.2,
-    minReviewCount: 50,
+    minReviewCount: 200,
     resultCap: 20,
     allowPagination: true,
     search() { return runTextSearchChip(this); },
