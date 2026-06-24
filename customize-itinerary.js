@@ -1809,7 +1809,7 @@ const CHIP_CONFIG = {
   'lgbtq': { textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', search(signal) { return runTextSearchChip(this, signal); } },
   'desserts': { textQuery: 'dessert shop OR pastries', includedType: 'bakery', search(signal) { return runTextSearchChip(this, signal); } },
   'coffee': { textQuery: 'coffee shop cafe', includedType: 'cafe', minRating: 4.3, search(signal) { return runTextSearchChip(this, signal); } },
-  'coffee-live': { textQuery: 'coffee shop cafe', includedType: 'cafe', minRating: 4.3, viewportAware: true, debounceMs: 600, search(signal) { return runTextSearchChip(this, signal); } },
+  'coffee-live': { textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'steak': { textQuery: 'steakhouse OR chophouse', includedType: 'restaurant', search(signal) { return runTextSearchChip(this, signal); } },
   'meatless': { textQuery: 'vegan restaurant OR vegetarian options OR plant-based menu', includedType: 'restaurant', search(signal) { return runTextSearchChip(this, signal); } },
   'live-music': { textQuery: 'live music OR jazz club OR live band', includedType: 'bar', search(signal) { return runTextSearchChip(this, signal); } },
