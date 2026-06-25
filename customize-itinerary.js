@@ -907,8 +907,6 @@ window.addEventListener('load', async () => {
     await google.maps.importLibrary('places');
 
     const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
-      componentRestrictions: { country: ['us'] },
-      includedRegionCodes: ['us'],
       locationBias: { radius: 5000.0, center: mapCenter },
     });
 
