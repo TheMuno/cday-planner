@@ -1655,6 +1655,43 @@ async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [], pag
   return { places, nextPageToken };
 }
 
+async function nearbySearchPlaces({ includedTypes, fieldsExtra = [], signal }) {
+  const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
+  const bounds = map.getBounds();
+  const center = bounds.getCenter();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  // Nearby Search only accepts a circle (no rectangle like Text Search), so approximate the
+  // viewport with a circle of half its diagonal, capped at the API's 50km max radius.
+  const radius = Math.min(distanceMeters(sw.lat(), sw.lng(), ne.lat(), ne.lng()) / 2, 50000);
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': placesApiKey,
+      'X-Goog-FieldMask': fields.join(','),
+    },
+    body: JSON.stringify({
+      includedTypes,
+      maxResultCount: 20,
+      locationRestriction: { circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius } },
+    }),
+    signal,
+  });
+
+  const { places = [] } = await res.json();
+  return places;
+}
+
+async function runNearbyTypeChip(config, signal) {
+  const needsScore = config.sortBy === 'score';
+  const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
+  const places = await nearbySearchPlaces({ includedTypes: config.includedTypes, fieldsExtra, signal });
+  const results = places.map(place => toMarkerInput(place, config.markerType || []));
+  return applyChipPostProcessing(config, results);
+}
+
 function toMarkerInput(place, type = ['restaurant']) {
   return {
     title: place.displayName?.text || '',
@@ -1774,7 +1811,7 @@ const ATTRACTION_CHIP_CONFIG = {
   'hidden-gems': { textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.4, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'free': { textQuery: 'free admission attractions OR free entry things to do', bannedWords: ['pass', 'deck', 'sightseeing', 'card', 'ticket', 'admission fee'], markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'retail-stores': { textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'popular': { textQuery: 'iconic landmark OR famous attraction', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 5000, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'popular': { includedTypes: ['tourist_attraction', 'museum', 'park', 'amusement_center'], markerType: [], viewportAware: true, debounceMs: 600, minRating: 4.0, minReviewCount: 150, sortBy: 'score', resultCap: 20, search(signal) { return runNearbyTypeChip(this, signal); } },
   'vintage-shopping': { textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
 };
 
