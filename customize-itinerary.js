@@ -1631,12 +1631,13 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-async function textSearchPlaces({ textQuery, includedType, fieldsExtra = [], pageToken, signal }) {
+async function textSearchPlaces({ textQuery, includedType, priceLevels, fieldsExtra = [], pageToken, signal }) {
   const fields = ['places.id', 'places.displayName', 'places.location', 'nextPageToken', ...fieldsExtra];
   const payload = {
     textQuery,
     locationRestriction: { rectangle: boundsToRect(map.getBounds()) },
     ...(includedType ? { includedType } : {}),
+    ...(priceLevels?.length ? { priceLevels } : {}),
     ...(pageToken ? { pageToken } : {}),
   };
 
@@ -1747,7 +1748,7 @@ async function runTextSearchChip(config, signal) {
   let allPlaces = [];
   let pageToken;
   do {
-    const page = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, fieldsExtra, pageToken, signal });
+    const page = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, priceLevels: config.priceLevels, fieldsExtra, pageToken, signal });
     allPlaces = allPlaces.concat(page.places);
     pageToken = page.nextPageToken;
     // Always exhaust pagination (when allowed) before scoring — Text Search ranks page 1 by keyword
@@ -1794,7 +1795,7 @@ const CHIP_CONFIG = {
   'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'EAT', textQuery: 'kid friendly restaurant OR great for kids', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'pizza': { textQuery: 'best pizza slice OR pizzeria', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'italian': { textQuery: 'italian restaurant', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'proximity', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'lunch-under-15': { textQuery: 'cheap eats OR lunch special OR counter service', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'lunch-under-15': { textQuery: 'cheap eats OR budget restaurant OR street food', priceLevels: ['PRICE_LEVEL_INEXPENSIVE'], viewportAware: true, debounceMs: 600, sortBy: 'score', resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'lgbtq': { textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'desserts': { textQuery: 'dessert shop OR pastries OR ice cream', includedType: 'bakery', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'coffee': { textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
