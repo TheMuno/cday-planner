@@ -1673,6 +1673,12 @@ function toMarkerInput(place, type = ['restaurant']) {
 }
 
 function applyChipPostProcessing(config, results) {
+  if (config.bannedWords?.length) {
+    results = results.filter(r => {
+      const placeName = (r.title || '').toLowerCase();
+      return !config.bannedWords.some(word => placeName.includes(word.toLowerCase()));
+    });
+  }
   if (config.minRating) {
     results = results.filter(r => (r.saveObj.rating ?? 0) >= config.minRating);
   }
@@ -1768,7 +1774,7 @@ const ATTRACTION_CHIP_CONFIG = {
   'museums': { textQuery: 'museum', includedType: 'museum', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'historic': { textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'hidden-gems': { textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.4, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'free': { textQuery: 'free admission attractions OR free entry things to do -pass -"free fridays" -sightseeing -deck -card', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'free': { textQuery: 'free admission attractions OR free entry things to do', bannedWords: ['pass', 'deck', 'sightseeing', 'card', 'ticket', 'admission fee'], markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'retail-stores': { textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'iconic': { textQuery: 'iconic landmark OR famous attraction', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 5000, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'vintage-shopping': { textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
