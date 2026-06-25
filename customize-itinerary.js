@@ -1693,18 +1693,23 @@ async function runNearbyTypeChip(config, signal) {
   return applyChipPostProcessing(config, results);
 }
 
-function toMarkerInput(place, type = ['restaurant']) {
+function toMarkerInput(place, type = ['restaurant'], extraFields = []) {
+  const saveObj = {
+    placeId: place.id,
+    displayName: place.displayName?.text || '',
+    type,
+    rating: place.rating ?? null,
+    reviewCount: place.userRatingCount ?? null,
+    _isSearchResult: true,
+  };
+  extraFields.forEach(f => {
+    const key = f.replace(/^places\./, '');
+    saveObj[key] = place[key] ?? null;
+  });
   return {
     title: place.displayName?.text || '',
     position: { lat: place.location.latitude, lng: place.location.longitude },
-    saveObj: {
-      placeId: place.id,
-      displayName: place.displayName?.text || '',
-      type,
-      rating: place.rating ?? null,
-      reviewCount: place.userRatingCount ?? null,
-      _isSearchResult: true,
-    },
+    saveObj,
   };
 }
 
@@ -1723,7 +1728,9 @@ function applyChipPostProcessing(config, results) {
   }
 
   if (config.sortBy === 'score') {
-    results.sort((a, b) => (b.saveObj.reviewCount || 0) * (b.saveObj.rating || 0) - (a.saveObj.reviewCount || 0) * (a.saveObj.rating || 0));
+    const boostFactor = config.scoreBoostField ? (config.scoreBoostFactor ?? 1.25) : 1;
+    const score = r => (r.saveObj.reviewCount || 0) * (r.saveObj.rating || 0) * (config.scoreBoostField && r.saveObj[config.scoreBoostField] ? boostFactor : 1);
+    results.sort((a, b) => score(b) - score(a));
   } else if (config.sortBy === 'proximity') {
     const center = map.getCenter();
     const distSq = pos => (pos.lat - center.lat()) ** 2 + (pos.lng - center.lng()) ** 2;
@@ -1735,7 +1742,10 @@ function applyChipPostProcessing(config, results) {
 
 async function runTextSearchChip(config, signal) {
   const needsScore = config.sortBy === 'score';
-  const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
+  const fieldsExtra = [
+    ...((config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : []),
+    ...(config.fetchExtraFields || []),
+  ];
 
   const bounds = map.getBounds();
   const ne = bounds.getNorthEast();
@@ -1756,7 +1766,7 @@ async function runTextSearchChip(config, signal) {
     // once we merely had "enough" results risked missing it entirely.
   } while (shouldPaginate && pageToken && allPlaces.length < 60);
 
-  const results = allPlaces.map(place => toMarkerInput(place, config.markerType || ['restaurant']));
+  const results = allPlaces.map(place => toMarkerInput(place, config.markerType || ['restaurant'], config.fetchExtraFields));
   return applyChipPostProcessing(config, results);
 }
 
@@ -1797,7 +1807,7 @@ const CHIP_CONFIG = {
   'italian': { textQuery: 'italian restaurant', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'proximity', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'lunch-under-15': { textQuery: 'cheap eats OR budget restaurant OR street food', priceLevels: ['PRICE_LEVEL_INEXPENSIVE'], viewportAware: true, debounceMs: 600, sortBy: 'score', resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'lgbtq': { textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'desserts': { textQuery: 'dessert shop OR pastries OR ice cream', includedType: 'bakery', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'desserts': { textQuery: 'desserts OR cake OR pastry OR sweet shop OR ice cream OR gelateria', fetchExtraFields: ['places.servesDessert'], scoreBoostField: 'servesDessert', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'coffee': { textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'steak': { textQuery: 'steakhouse OR chophouse', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
   'meatless': { textQuery: 'vegan restaurant OR vegetarian options OR plant-based menu', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
