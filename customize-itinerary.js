@@ -1726,6 +1726,9 @@ function applyChipPostProcessing(config, results) {
   if (config.minReviewCount) {
     results = results.filter(r => (r.saveObj.reviewCount ?? 0) > config.minReviewCount);
   }
+  if (config.maxReviewCount) {
+    results = results.filter(r => (r.saveObj.reviewCount ?? Infinity) <= config.maxReviewCount);
+  }
 
   if (config.sortBy === 'score') {
     const boostFactor = config.scoreBoostField ? (config.scoreBoostFactor ?? 1.25) : 1;
@@ -1770,6 +1773,24 @@ async function runTextSearchChip(config, signal) {
   return applyChipPostProcessing(config, results);
 }
 
+async function runCuratedOrNearbyFallback(config, signal) {
+  const curated = getCuratedByTag(config.curatedTag, config.curatedType);
+  if (curated.length) {
+    const resolved = await Promise.all(curated.map(async place => {
+      const location = await resolveCuratedLocation(place);
+      if (!location) return null;
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
+    }));
+    const valid = resolved.filter(Boolean);
+    if (valid.length) {
+      config._curatedResolved = true;
+      return valid;
+    }
+  }
+  config._curatedResolved = false;
+  return runNearbyTypeChip(config, signal);
+}
+
 async function runCuratedOrFallback(config, signal) {
   const curated = getCuratedByTag(config.curatedTag, config.curatedType);
   if (curated.length) {
@@ -1797,33 +1818,34 @@ async function runCuratedOrFallback(config, signal) {
 // short-circuits it.
 const CHIP_CONFIG = {
   'gluten-free': { curatedTag: 'Gluten Free', curatedType: 'EAT', textQuery: 'restaurant gluten free menu OR gluten free options', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
-  'jewish': { textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'jewish': { curatedTag: 'Jewish', curatedType: 'EAT', textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'classic-ny': { curatedTag: 'Classic NY', curatedType: 'EAT', textQuery: 'iconic classic new york restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 10000, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'solo-dining': { curatedTag: 'Solo Dining', curatedType: 'EAT', textQuery: 'restaurant cafe bar seating OR eat at the bar OR solo dining OR counter stools', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'big-groups': { curatedTag: 'Big Groups', curatedType: 'EAT', textQuery: 'restaurants good for groups OR large party dining', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'pre-theater': { curatedTag: 'Pre-Theater', curatedType: 'EAT', textQuery: 'pre-theater menu OR prix fixe dinner', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'EAT', textQuery: 'kid friendly restaurant OR great for kids', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
-  'pizza': { textQuery: 'best pizza slice OR pizzeria', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'italian': { textQuery: 'italian restaurant', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'proximity', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'lunch-under-15': { textQuery: 'cheap eats OR budget restaurant OR street food', priceLevels: ['PRICE_LEVEL_INEXPENSIVE'], viewportAware: true, debounceMs: 600, sortBy: 'score', resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'lgbtq': { textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'desserts': { textQuery: 'desserts OR cake OR pastry OR sweet shop OR ice cream OR gelateria', fetchExtraFields: ['places.servesDessert'], scoreBoostField: 'servesDessert', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'coffee': { textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'steak': { textQuery: 'steakhouse OR chophouse', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'meatless': { textQuery: 'vegan restaurant OR vegetarian options OR plant-based menu', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'live-music': { textQuery: 'live music OR jazz club OR live band', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'pizza': { curatedTag: 'Pizza', curatedType: 'EAT', textQuery: 'best pizza slice OR pizzeria', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'italian': { curatedTag: 'Italian', curatedType: 'EAT', textQuery: 'italian restaurant', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'proximity', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'lunch-under-15': { curatedTag: 'Lunch Under 15', curatedType: 'EAT', textQuery: 'cheap eats OR budget restaurant OR street food', priceLevels: ['PRICE_LEVEL_INEXPENSIVE'], viewportAware: true, debounceMs: 600, sortBy: 'score', resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'lgbtq': { curatedTag: 'LGBTQ', curatedType: 'EAT', textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'desserts': { curatedTag: 'Desserts', curatedType: 'EAT', textQuery: 'desserts OR cake OR pastry OR sweet shop OR ice cream OR gelateria', fetchExtraFields: ['places.servesDessert'], scoreBoostField: 'servesDessert', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'coffee': { curatedTag: 'Coffee', curatedType: 'EAT', textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'steak': { curatedTag: 'Steak', curatedType: 'EAT', textQuery: 'steakhouse OR chophouse', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'meatless': { curatedTag: 'Meatless', curatedType: 'EAT', textQuery: 'vegan restaurant OR vegetarian options OR plant-based menu', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'live-music': { curatedTag: 'Live Music', curatedType: 'EAT', textQuery: 'live music OR jazz club OR live band', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
 };
 
 const ATTRACTION_CHIP_CONFIG = {
-  'tours': { textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'tours': { curatedTag: 'Tours', curatedType: 'SEE', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'SEE', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
-  'museums': { textQuery: 'museum', includedType: 'museum', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'historic': { textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'hidden-gems': { textQuery: 'hidden gem OR off the beaten path attraction', minRating: 4.2, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'free': { textQuery: 'free admission attractions OR free entry things to do', bannedWords: ['pass', 'deck', 'sightseeing', 'card', 'ticket', 'admission fee'], markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'retail-stores': { textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
-  'popular': { includedTypes: ['tourist_attraction', 'museum', 'park', 'amusement_center'], markerType: [], viewportAware: true, debounceMs: 600, minRating: 4.0, minReviewCount: 150, sortBy: 'score', resultCap: 20, search(signal) { return runNearbyTypeChip(this, signal); } },
-  'vintage-shopping': { textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runTextSearchChip(this, signal); } },
+  'museums': { curatedTag: 'Museums', curatedType: 'SEE', textQuery: 'museum', includedType: 'museum', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'historic': { curatedTag: 'Historic', curatedType: 'SEE', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'hidden-gems': { curatedTag: 'Hidden Gems', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'historical_place', 'cultural_landmark'], textQuery: 'hidden gem OR unusual attraction OR secret spot OR off the beaten path', minRating: 4.2, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 30, maxReviewCount: 1500, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'observation-decks': { curatedTag: 'Observation Decks', curatedType: 'SEE', textQuery: 'observation deck OR rooftop view OR sky deck OR viewpoint', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'free': { curatedTag: 'Free', curatedType: 'SEE', textQuery: 'free admission attractions OR free entry things to do', bannedWords: ['pass', 'deck', 'sightseeing', 'card', 'ticket', 'admission fee'], markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'retail-stores': { curatedTag: 'Retail Stores', curatedType: 'SEE', textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'popular': { curatedTag: 'Popular', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'amusement_center'], markerType: [], viewportAware: true, debounceMs: 600, minRating: 4.0, minReviewCount: 150, sortBy: 'score', resultCap: 20, search(signal) { return runCuratedOrNearbyFallback(this, signal); } },
+  'vintage-shopping': { curatedTag: 'Vintage Shopping', curatedType: 'SEE', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
 };
 
 if (!document.getElementById('ak-tip-clamp-style')) {
