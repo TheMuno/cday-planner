@@ -1773,42 +1773,66 @@ async function runTextSearchChip(config, signal) {
   return applyChipPostProcessing(config, results);
 }
 
+async function runCuratedThenGoogle(config, signal) {
+  const entries = getCuratedByTag(config.curatedTag, config.curatedType);
+  const [curatedResolved, googleResults] = await Promise.all([
+    Promise.all(entries.map(async place => {
+      const location = await resolveCuratedLocation(place);
+      if (!location) return null;
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
+    })),
+    runTextSearchChip(config, signal),
+  ]);
+  const curated = curatedResolved.filter(Boolean);
+  const curatedIds = new Set(curated.map(r => r.saveObj.placeId));
+  const fresh = googleResults.filter(r => !curatedIds.has(r.saveObj.placeId));
+  // Sheet results lead; Google fills in the rest up to the cap.
+  return [...curated, ...fresh].slice(0, config.resultCap ?? 20);
+}
+
 async function runCuratedOrNearbyFallback(config, signal) {
   const curated = getCuratedByTag(config.curatedTag, config.curatedType);
   if (curated.length) {
+    // Mark resolved early — before the async location lookups — so any map-idle that fires
+    // during resolution doesn't see a falsy flag and race us to Google.
+    config._curatedResolved = true;
     const resolved = await Promise.all(curated.map(async place => {
       const location = await resolveCuratedLocation(place);
       if (!location) return null;
       return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
     }));
     const valid = resolved.filter(Boolean);
-    if (valid.length) {
-      config._curatedResolved = true;
-      return valid;
-    }
+    if (valid.length) return valid;
+    // All locations failed to resolve — fall through to nearby search.
+    config._curatedResolved = false;
+  } else if (insiderTipsData) {
+    // Sheet is loaded but genuinely has no entry for this tag — safe to mark false permanently.
+    config._curatedResolved = false;
   }
-  config._curatedResolved = false;
+  // insiderTipsData still null: leave _curatedResolved unset so the next call retries the sheet.
   return runNearbyTypeChip(config, signal);
 }
 
 async function runCuratedOrFallback(config, signal) {
   const curated = getCuratedByTag(config.curatedTag, config.curatedType);
   if (curated.length) {
+    // Mark resolved early — before the async location lookups — so any map-idle that fires
+    // during resolution doesn't see a falsy flag and race us to Google.
+    config._curatedResolved = true;
     const resolved = await Promise.all(curated.map(async place => {
       const location = await resolveCuratedLocation(place);
       if (!location) return null;
       return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
     }));
     const valid = resolved.filter(Boolean);
-    if (valid.length) {
-      // Sheet data is loaded once at page load and isn't viewport-bound — once a tag resolves to
-      // curated results, panning/zooming can never change them, so flag this chip to skip future
-      // viewport refreshes entirely instead of redoing the same lookup on every map idle.
-      config._curatedResolved = true;
-      return valid;
-    }
+    if (valid.length) return valid;
+    // All locations failed to resolve — fall through to text search.
+    config._curatedResolved = false;
+  } else if (insiderTipsData) {
+    // Sheet is loaded but genuinely has no entry for this tag — safe to mark false permanently.
+    config._curatedResolved = false;
   }
-  config._curatedResolved = false;
+  // insiderTipsData still null: leave _curatedResolved unset so the next call retries the sheet.
   return runTextSearchChip(config, signal);
 }
 
@@ -1837,7 +1861,7 @@ const CHIP_CONFIG = {
 
 const ATTRACTION_CHIP_CONFIG = {
   'tours': { curatedTag: 'Tours', curatedType: 'SEE', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
-  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'SEE', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'SEE', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedThenGoogle(this, signal); } },
   'museums': { curatedTag: 'Museums', curatedType: 'SEE', textQuery: 'museum', includedType: 'museum', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'historic': { curatedTag: 'Historic', curatedType: 'SEE', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'hidden-gems': { curatedTag: 'Hidden Gems', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'historical_place', 'cultural_landmark'], textQuery: 'hidden gem OR unusual attraction OR secret spot OR off the beaten path', minRating: 4.2, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 30, maxReviewCount: 1500, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
