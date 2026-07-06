@@ -159,6 +159,7 @@ if (_fbIsFB) {
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
         isSigningIn = false;
+        onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
       } catch (err) {
         isSigningIn = false;
@@ -220,6 +221,7 @@ getRedirectResult(auth).then(async (result) => {
     await saveUserProvider(result.user, email || undefined);
     if (email) localStorage.setItem("ak-userMail", email);
     localStorage.removeItem('ak-redirect-destination');
+    onUserLoginSuccess(result.user);
     window.location.replace(storedRedirectDest || REDIRECT_AFTER_LOGIN);
   } catch (err) {
     isSigningIn = false;
@@ -499,6 +501,19 @@ async function linkPendingCredential(user) {
   return null;
 }
 
+// Called once per genuine sign-in (Google/Facebook popup, Facebook mobile
+// redirect, getRedirectResult, email/password) right before we navigate away
+// from /log-in. Header avatar rendering happens separately, on the
+// destination page, via firebase-nav.js's onAuthStateChanged listener.
+function onUserLoginSuccess(user) {
+  if (typeof gtag === 'function') {
+    gtag('event', 'guest_auth_success', {
+      'event_category': 'Funnel',
+      'event_label': 'Successful Sign-In',
+    });
+  }
+}
+
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
 if (googleBtn) {
   googleBtn.addEventListener("click", async () => {
@@ -509,6 +524,7 @@ if (googleBtn) {
       showLoader();
       await linkPendingCredential(result.user);
       await saveUserProvider(result.user);
+      onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
       isSigningIn = false;
@@ -517,6 +533,7 @@ if (googleBtn) {
         // On mobile the popup opens as a new tab with no window.opener, so auth
         // can succeed before postMessage fails. Redirect if we're already signed in.
         if (auth.currentUser) {
+          onUserLoginSuccess(auth.currentUser);
           showLoader();
           window.location.replace(REDIRECT_AFTER_LOGIN);
         }
@@ -600,6 +617,7 @@ if (facebookBtn) {
         }
       } catch (_) {}
       localStorage.setItem("ak-userMail", email);
+      onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
 
     } catch (err) {
@@ -607,6 +625,7 @@ if (facebookBtn) {
         isSigningIn = false;
         hideLoader();
         if (auth.currentUser) {
+          onUserLoginSuccess(auth.currentUser);
           showLoader();
           window.location.replace(REDIRECT_AFTER_LOGIN);
         }
@@ -670,6 +689,7 @@ if (submitBtn) {
         showSuccess(`Your ${linkedProvider} account has been linked! Going forward, you can sign in with either ${linkedProvider} or your email and password.`);
         await new Promise(r => setTimeout(r, 4000));
       }
+      onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     }
     catch (err) {
@@ -785,6 +805,7 @@ onAuthStateChanged(auth, async (user) => {
     redirectHandled = true;
     isSigningIn = false;
     try { await saveUserProvider(user); } catch (_) {}
+    onUserLoginSuccess(user);
     hideLoader();
     window.location.replace(storedRedirectDest);
     return;
@@ -794,8 +815,13 @@ onAuthStateChanged(auth, async (user) => {
   // - Already logged in on page load
   // - Popup-as-new-tab on mobile: auth completes in another tab, BroadcastChannel
   //   fires here before signInWithPopup resolves (it may never resolve)
+  //
+  // isSigningIn is only true in the second case (a button click started a flow
+  // in this same tab), so gate the analytics event on it — otherwise every
+  // plain page load for an already-logged-in user would fire "sign-in success".
   if (!redirectHandled) {
     redirectHandled = true;
+    if (isSigningIn) onUserLoginSuccess(user);
     saveUserProvider(user).catch(() => {});
     showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
