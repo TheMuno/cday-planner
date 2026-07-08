@@ -109,7 +109,7 @@ async function setupAutocompleteInp() {
     locationBias: { radius: 5000.0, center: mapCenter },
   });
 
-  placeAutocomplete.placeholder = 'Search for a place...';
+  placeAutocomplete.placeholder = 'Add an activity...';
   document.querySelector('[data-ak="map-autocomplete"]').appendChild(placeAutocomplete);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
@@ -150,6 +150,8 @@ async function setupAutocompleteInp() {
 
     const marker = createSearchMarker(displayName, { lat, lng }, saveObj, isRestaurant ? restaurantPreselectPinUrl : cameraPreselectPinUrl);
     openMapPopup(displayName, editorialSummary, saveObj, marker);
+
+    placeAutocomplete.value = '';
   });
 }
 
