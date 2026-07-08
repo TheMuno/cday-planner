@@ -98,6 +98,8 @@ window.addEventListener('load', async () => {
     refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
     refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
   });
+
+  document.body.addEventListener('click', handleRemoveLocation);
 });
 
 
@@ -120,6 +122,24 @@ async function setupAutocompleteInp() {
     const placeObj = place.toJSON();
     const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    const isRestaurant = type.includes('restaurant') || type.includes('food');
+    const $typeWrap = document.querySelector(`[data-ak-type-wrap="${isRestaurant ? 'eat' : 'visit'}"]`);
+
+    if ($typeWrap && attractionExists($typeWrap, displayName)) {
+      alert('Sorry, Already Added!');
+      placeAutocomplete.value = '';
+      return;
+    }
+
+    if (!auth.currentUser) {
+      if (addedAttractions >= attractionslimit) {
+        alert('Max Limit Reached. Login To Add More');
+        placeAutocomplete.value = '';
+        return;
+      }
+      updateAttractionsCount('+');
+      localStorage['ak-update-merge-local'] = true;
+    }
 
     const saveObj = {
       location: { lat, lng },
@@ -148,6 +168,11 @@ async function setupAutocompleteInp() {
     map.setZoom(15);
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
+    if ($typeWrap) {
+      addAttractionToList(displayName, $typeWrap, marker, saveObj);
+      setUnsavedChangesFlag();
+    }
+
     openMapPopup(displayName, editorialSummary, saveObj, marker);
 
     placeAutocomplete.value = '';
@@ -382,6 +407,31 @@ function getCurrentSlideInfo() {
 function attractionExists(wrap, name) {
   return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden) [data-ak="location-title"]')]
     .some(el => el.textContent.toLowerCase().trim() === name.toLowerCase().trim());
+}
+
+function handleRemoveLocation(e) {
+  if (!e.target.closest('[data-ak="remove-location"]')) return;
+  const $attraction = e.target.closest('[data-ak="attraction-location"]');
+  if (!$attraction) return;
+
+  if ($attraction.marker) $attraction.marker.setMap(null);
+
+  if ($attraction.placeId) {
+    const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
+    const idIndex = placeIds.indexOf($attraction.placeId);
+    if (idIndex !== -1) placeIds.splice(idIndex, 1);
+    localStorage['ak-place-ids'] = JSON.stringify(placeIds);
+  }
+
+  // Day-timeslot attractions persist to localStorage; type-wrap (eat/visit) ones don't have an
+  // equivalent saved format yet, so there's nothing to resync for those.
+  const $timeslotWrap = $attraction.closest('[data-ak-timeslot-wrap]');
+
+  $attraction.remove();
+
+  if ($timeslotWrap) saveAttractionLocal();
+  if (!auth.currentUser) updateAttractionsCount('-');
+  setUnsavedChangesFlag();
 }
 
 function updateAttractionsCount(sign) {
