@@ -64,7 +64,8 @@ async function initMap(center) {
   map = new Map($map, {
     zoom: 12,
     center,
-    mapId: 'd604d19d3ee253cb9ac6f7f8',
+    // mapId: 'd604d19d3ee253cb9ac6f7f8',
+    mapId: 'DEMO_MAP_ID',
     mapTypeControl: false,
   });
   infoWindow = new InfoWindow();
@@ -78,6 +79,8 @@ window.addEventListener('load', async () => {
   });
 
   loadInsiderTips();
+
+  setupAutocompleteInp();
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
@@ -97,6 +100,58 @@ window.addEventListener('load', async () => {
   });
 });
 
+
+// Main map search autocomplete
+async function setupAutocompleteInp() {
+  await google.maps.importLibrary('places');
+
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    locationBias: { radius: 5000.0, center: mapCenter },
+  });
+
+  placeAutocomplete.placeholder = 'Search for a place...';
+  document.querySelector('[data-ak="map-autocomplete"]').appendChild(placeAutocomplete);
+
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
+
+    const placeObj = place.toJSON();
+    const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    const isRestaurant = type.includes('restaurant') || type.includes('food');
+
+    const saveObj = {
+      location: { lat, lng },
+      displayName,
+      address: placeObj.formattedAddress || '',
+      editorialSummary,
+      type,
+      placeId: id,
+      rating: placeObj.rating ?? null,
+      website: placeObj.websiteURI || placeObj.websiteUri || '',
+      phone: placeObj.nationalPhoneNumber || '',
+      reviewCount: placeObj.userRatingCount ?? null,
+      photoUrl,
+      openingHours: placeObj.regularOpeningHours || null,
+      priceRange: placeObj.priceRange || null,
+      businessStatus: placeObj.businessStatus || null,
+      _isSearchResult: true,
+      _detailsLoaded: true,
+    };
+
+    if (place.viewport) {
+      map.panTo(place.viewport);
+    } else {
+      map.panTo(place.location);
+    }
+    map.setZoom(15);
+
+    const marker = createSearchMarker(displayName, { lat, lng }, saveObj, isRestaurant ? restaurantPreselectPinUrl : cameraPreselectPinUrl);
+    openMapPopup(displayName, editorialSummary, saveObj, marker);
+  });
+}
 
 function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
   const markerPinImg = document.createElement('img');
