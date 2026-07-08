@@ -87,6 +87,8 @@ window.addEventListener('load', async () => {
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
+  restoreTypeWrapAttractions();
+
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
   wireChipWrap($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
@@ -170,6 +172,7 @@ async function setupAutocompleteInp() {
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
     if ($typeWrap) {
       addAttractionToList(displayName, $typeWrap, marker, saveObj);
+      saveTypeWrapAttractionsLocal();
       setUnsavedChangesFlag();
     }
 
@@ -425,15 +428,43 @@ function handleRemoveLocation(e) {
     localStorage['ak-place-ids'] = JSON.stringify(placeIds);
   }
 
-  // Day-timeslot attractions persist to localStorage; type-wrap (eat/visit) ones don't have an
-  // equivalent saved format yet, so there's nothing to resync for those.
   const $timeslotWrap = $attraction.closest('[data-ak-timeslot-wrap]');
+  const $typeWrap = $attraction.closest('[data-ak-type-wrap]');
 
   $attraction.remove();
 
   if ($timeslotWrap) saveAttractionLocal();
+  if ($typeWrap) saveTypeWrapAttractionsLocal();
   if (!auth.currentUser) updateAttractionsCount('-');
   setUnsavedChangesFlag();
+}
+
+function getCurrentTypeWrapAttractions() {
+  const saved = {};
+  ['eat', 'visit'].forEach(key => {
+    const $wrap = document.querySelector(`[data-ak-type-wrap="${key}"]`);
+    saved[key] = $wrap
+      ? [...$wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])')].map(el => el.saveObj)
+      : [];
+  });
+  return saved;
+}
+
+function saveTypeWrapAttractionsLocal() {
+  localStorage['ak-visit-eat-saved'] = JSON.stringify(getCurrentTypeWrapAttractions());
+}
+
+function restoreTypeWrapAttractions() {
+  const saved = JSON.parse(localStorage['ak-visit-eat-saved'] || '{}');
+  ['eat', 'visit'].forEach(key => {
+    const $wrap = document.querySelector(`[data-ak-type-wrap="${key}"]`);
+    if (!$wrap) return;
+
+    (saved[key] || []).forEach(saveObj => {
+      const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+      addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
+    });
+  });
 }
 
 function updateAttractionsCount(sign) {
