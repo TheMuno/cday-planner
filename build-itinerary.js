@@ -162,12 +162,7 @@ async function setupAutocompleteInp() {
       _detailsLoaded: true,
     };
 
-    if (place.viewport) {
-      map.panTo(place.viewport);
-    } else {
-      map.panTo(place.location);
-    }
-    map.setZoom(15);
+    map.panTo({ lat, lng });
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
     if ($typeWrap) {
@@ -175,8 +170,6 @@ async function setupAutocompleteInp() {
       saveTypeWrapAttractionsLocal();
       setUnsavedChangesFlag();
     }
-
-    openMapPopup(displayName, editorialSummary, saveObj, marker);
 
     placeAutocomplete.value = '';
   });
