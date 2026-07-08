@@ -326,7 +326,7 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
 
 function findItineraryMatch(saveObj) {
   if (!saveObj) return null;
-  const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)');
+  const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])');
   return [...$attractions].find(el =>
     (saveObj.placeId && el.placeId === saveObj.placeId) ||
     (saveObj.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
@@ -407,7 +407,7 @@ function getCurrentSlideInfo() {
 }
 
 function attractionExists(wrap, name) {
-  return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden) [data-ak="location-title"]')]
+  return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden]) [data-ak="location-title"]')]
     .some(el => el.textContent.toLowerCase().trim() === name.toLowerCase().trim());
 }
 
@@ -457,7 +457,7 @@ function getCurrentUserAttractions() {
       const timeslot = timeslotKeyMap[timeslotContent.querySelector('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap')];
       slideObj[timeslot] = [];
 
-      timeslotContent.querySelectorAll('[data-ak="attraction-location"]:not(.hidden)').forEach(attraction => {
+      timeslotContent.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])').forEach(attraction => {
         slideObj[timeslot].push(attraction.saveObj);
       });
 
