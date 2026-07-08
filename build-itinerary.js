@@ -126,14 +126,14 @@ async function setupAutocompleteInp() {
     const $typeWrap = document.querySelector(`[data-ak-type-wrap="${isRestaurant ? 'eat' : 'visit'}"]`);
 
     if ($typeWrap && attractionExists($typeWrap, displayName)) {
-      alert('Sorry, Already Added!');
+      alertify.alert('Sorry, Already Added!');
       placeAutocomplete.value = '';
       return;
     }
 
     if (!auth.currentUser) {
       if (addedAttractions >= attractionslimit) {
-        alert('Max Limit Reached. Login To Add More');
+        alertify.alert('Max Limit Reached. Login To Add More');
         placeAutocomplete.value = '';
         return;
       }
@@ -342,13 +342,13 @@ function addSearchResultToItinerary(saveObj, marker) {
   const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
 
   if (attractionExists($timeslotWrap, displayName)) {
-    alert('Sorry, Already Added!');
+    alertify.alert('Sorry, Already Added!');
     return false;
   }
 
   if (!auth.currentUser) {
     if (addedAttractions >= attractionslimit) {
-      alert('Max Limit Reached. Login To Add More');
+      alertify.alert('Max Limit Reached. Login To Add More');
       return false;
     }
     updateAttractionsCount('+');
