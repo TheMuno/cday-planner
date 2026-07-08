@@ -120,7 +120,6 @@ async function setupAutocompleteInp() {
     const placeObj = place.toJSON();
     const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
-    const isRestaurant = type.includes('restaurant') || type.includes('food');
 
     const saveObj = {
       location: { lat, lng },
@@ -148,7 +147,7 @@ async function setupAutocompleteInp() {
     }
     map.setZoom(15);
 
-    const marker = createSearchMarker(displayName, { lat, lng }, saveObj, isRestaurant ? restaurantPreselectPinUrl : cameraPreselectPinUrl);
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
     openMapPopup(displayName, editorialSummary, saveObj, marker);
 
     placeAutocomplete.value = '';
