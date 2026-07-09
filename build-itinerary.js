@@ -90,6 +90,7 @@ window.addEventListener('load', async () => {
 
   restoreTypeWrapAttractions();
   restoreTripNotes();
+  if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
