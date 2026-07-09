@@ -100,6 +100,11 @@ window.addEventListener('load', async () => {
     document.querySelector('[data-ak="sign-in-to-save"]')?.removeAttribute('data-ak-hidden');
   }
 
+  document.querySelector('[data-ak="back-to-homepage"]')?.addEventListener('click', e => {
+    e.preventDefault();
+    window.location.href = '/';
+  });
+
   document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
