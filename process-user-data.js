@@ -7,7 +7,10 @@ function sendTrackingDataToMake() {
   const ref = params.get('ref');
   const conf = params.get('conf');
 
-  if (!ref && !conf) return;
+  if (!ref && !conf) {
+    console.log('No ref or conf value');
+    return;
+  }
 
   fetch(MAKE_WEBHOOK_URL, {
     method: 'POST',
