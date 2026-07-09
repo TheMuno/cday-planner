@@ -19,6 +19,10 @@ const db   = getFirestore(app);
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
 const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
+const hotelMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879b831dec5947617d34e3__hotel.png';
+const airportMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879bb7f77423763223d449__airport.png';
+const busPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/68b9c734dec75c736ea75eaa_bus.png';
+const trainPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/68b9c7346b2a3e350322617a_train.png';
 const restaurantPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAMAAACfWMssAAAACXBIWXMAAAAcAAAAHAAPAbmPAAAAulBMVEUAAAAAAAAAAAD///8AAAD////r6+sAAADQ0NBxcXFdXV2UlJT///////8AAAD///////98fHz7+/v///////////////////8AAADMzMz7+/v39/fz8/MZGRnn5+f///////////////+wsLDMzMyIiIj////7wC373Ij///v/67z/99//++/7wDH7xD37yEn7xDn70Gn/++v7zFX756z/45z72Hj/9+v71G3/46T7xDX/78j/89j/89DtKlaHAAAAJnRSTlMATT33DJDYLLRxaIAmTBPjaHXzvDDQx+shsPfz51TQ3zwINJSASBwWgW4AAAMLSURBVHja7f3FovMqFAZQxGP1eu34F6nXK//7v9YlREgoleGd7NEphxVgZ0MYSv+TKNX05kdXVbsfTb1Wele19CoKUdVbb7Byh3TdhP56uZjPF8u1H25IQ6f8gn0TNjtvvUJszzNCv5+wLx04+hfvLi7+EdC/HrlSG8FewCjdB2g/SNNnA9Ot9zC2UzQ+Ra6sIlx5T2IVQhXk6FPFbu49jfkO6t2YpQZ23svYocGt86uNcP4azkO0i7nVMV15b8RqCj3vvhE8y6fvH9K3tA2Qr4QO9sk/dncPOEyjep2dkp97dJgr45g88YRZUZJMxpFO6XJEOTegn/S7gpNhtkfCpMVnQ7YwS5cwQ1H6bHPNkqbLDK0spee0Y4CCXM0YDNLGc5bYKrKeUxTkIbedp2mfLaqxK2GTTW0fd9os45+7HGSFtUFcPrVs3Z63SOZ2jOU1B9nKQ9SSJfpZm7cO8jIUDUgyFi+yibX3QLKk3nIbfI0mhR9Y5qB3SuSVTPyWuusi12OJDwq7yLemcrpkbuMXds4CXQoDcBsqkokLTqTC19z/5wgoVHnoHQKywhV1niDmUCkcclONxowdjgsRXGBI4aiYnDhW/+jqpiK5xIjCSeF1xHEhLiBHKW4CucaEQitfAIkjJRMc6DsVSB8Whb+5kis474EM8UvhX67IM4cD/fMkkhv8UdjLbaso5swlsngAkm3Vo1Drs43MO5E8o6/FG9JmRwc9c1HIViT/5SQ5OuzYSabBet65qI5IkbMn+zDMBGpudjzSw4J/O5HM2sjx6CYzlSTFyA5kcnjcvVUi2Tbew1BSJ1Xs3CfgvozybeQTYFcyKCnW+x8diw1Ihhy//5kb5wYkiXXe/bA6plQIpT5451M+qCtFJ2myO3h9eRi4ssZBqSLXX19X6jJZ4L10Xl2QHJGL5Nh6diWzxmJH1qnItvHoEmjYsqJJj8KUZdeA4NppuLJsSk+iosiy3ecvun1blpWK9DwiKjs/1mQ0VNXhaGL9OPIbLAqNTLgYpia9GVrPVGKjmD2x+g8/BE5ERFWgyAAAAABJRU5ErkJggg==';
 const cameraPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAMAAACfWMssAAAACXBIWXMAAAAcAAAAHAAPAbmPAAAAtFBMVEUAAAAAAAAAAAD///8AAAD///8AAADQ0NBxcXHr6+tdXV2UlJTz8/P///////8AAAD39/f///98fHz////////7+/v////////////7+/sAAADMzMz39/cZGRnn5+f///////////+wsLDMzMyIiIj////73Ij///v/67z7wDH7wC37zFX7yEn735T70Gn756z/++//46T/89z/+/P/9+v/45z/++v7xD37xDX7xDn/78z/99+JjJk3AAAAJXRSTlMATT33DJAstHHYaIDnJkwT62h1vDDz0Mfr9yGw81TQPAg0lIBINOsfYwAAAtZJREFUeNrt/ce2qkoQhgGQlGg2qztXB6LZ9P7vdRqEBklyZ3fyz2DVV6mrw1D4n6gzaI2suSzPrVFr0GlKjVt9eFG/NW6AdWfM9EyQ714ovbg+Imf2Y9Z9g30zbLtz7Bc5uy1Dv2uwrxbAEV3tgq7oCND6quI6U8CnEixCTximFW36nMDDsSvlPGDyWcZ1ZSA3u0Y3AnJJjz5lCKhdKxqAXIjZmUBgv1UAk1ydX1Mg9D1ICUxfe9uCx81uoNsDWlnuG7BjN5KDITsJMzjlDbxYeYcnmKVcF465dXe2yYQfcuT1CN1MQFTFFUmUhhzDNgl43R0PTDi7q3D457jjJlsY85buEncBVIov8443tg88m201uOV1QP/JdeDMC4AacaMzPMdnAKQU3BOyLwUJDOISUQkYuOG3G5SAKC5yBH4BxKEvGk4vwgXQh1EEWuAWQMb5d4zvfug/D7pgReAcLnlwTxN7ZNN9HrzAPAIx0DyIbDfOELs8JDeigCNQLoKO7SUJemzdCqAcgetiqm46QgErqZDquqo59RGT5nwUlwNxa+ajUKMPHxGoFgfgHo5yJDb+9zyIQI3A35KRYzl4B7YXvdB/HiTwG4F/JUMe7l7qOKzdzqEAnuEvApeZbQWcRNEaUcQ5DrJttYxAZZVuZEh1IJ5HDpkfic0OVspzQ2rp0QE1ik3Y0aE9OaGt877uq7l9bIJAb8egYvLj0cdVHI4Xmx2PZpypIEg6P5Bd5JUKJdN1Al1KOKGn/ZcrQOtxUJDU5peOmgZkITfNr7lNJiBrrNH0YjXawouk4aLJVb4YSq+coIjm4v3jYWGKSg4UeuLw/XNlKLICi6Tx7oFklHEhuVHrnmTqppxjdUqiplc9AnVNlBShSm1RNBlafHbqpii2hRr1JFHUVvmH7koTRakn1CtEReNH/bDWsry2PtQfQ2yAhVJYwq9qK0JDKcu29GSk9rKc+gfdFlLeciqJYQAAAABJRU5ErkJggg==';
 const insiderTipsUrl = 'https://us-central1-askkhonsu-map.cloudfunctions.net/getInsiderTips';
@@ -84,6 +88,8 @@ window.addEventListener('load', async () => {
   loadInsiderTips();
 
   setupAutocompleteInp();
+  setupHotelAutocomplete();
+  setupAirportAutocomplete();
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
@@ -232,6 +238,119 @@ async function setupAutocompleteInp() {
 
     placeAutocomplete.value = '';
   });
+}
+
+async function setupHotelAutocomplete() {
+  await google.maps.importLibrary('places');
+
+  const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
+  if (!$wrap) return;
+
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    componentRestrictions: { country: ['us'] },
+    includedRegionCodes: ['us'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    includedPrimaryTypes: ['lodging', 'hotel'],
+  });
+
+  $wrap.appendChild(placeAutocomplete);
+
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+
+    map.panTo(place.viewport || place.location);
+
+    const placeObj = place.toJSON();
+    const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+    placeAutocomplete.value = '';
+
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+    if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+    markerObj['hotel'] = marker;
+
+    const $resultWrap = document.querySelector('[data-ak="hotel-search-result"]');
+    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+    localStorage['ak-hotel'] = JSON.stringify(saveObj);
+    localStorage['ak-update-hotel'] = true;
+    setUnsavedChangesFlag();
+  });
+}
+
+async function setupAirportAutocomplete() {
+  await google.maps.importLibrary('places');
+
+  const AIRPORT_FIELDS = [
+    { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport' },
+    { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport' },
+  ];
+
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey }) => {
+    const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
+    if (!$wrap) return;
+
+    const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+      componentRestrictions: { country: ['us'] },
+      includedRegionCodes: ['us'],
+      locationBias: { radius: 5000.0, center: mapCenter },
+      includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
+    });
+
+    $wrap.appendChild(placeAutocomplete);
+
+    placeAutocomplete.addEventListener('gmp-select', async res => {
+      const { placePrediction } = res;
+      const place = placePrediction.toPlace();
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
+
+      map.panTo(place.viewport || place.location);
+
+      const placeObj = place.toJSON();
+      const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+      const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+      placeAutocomplete.value = '';
+
+      const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
+
+      const pin = getCorrectTransportationPinUrl(type);
+      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
+      if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
+      markerObj[markerKey] = marker;
+
+      const $resultWrap = $wrap.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
+      if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+      localStorage[storageKey] = JSON.stringify(saveObj);
+      localStorage[updateKey] = true;
+      setUnsavedChangesFlag();
+    });
+  });
+}
+
+function getCorrectTransportationPinUrl(type) {
+  if (!type) return airportMarkerPinUrl;
+  if (type.includes('bus_station')) return busPinUrl;
+  if (type.includes('train_station')) return trainPinUrl;
+  return airportMarkerPinUrl;
+}
+
+function addLocationToResultWrap(name, marker, $resultWrap) {
+  const $template = document.querySelector('[data-ak="attraction-location"]');
+  if (!$template) return;
+  const $location = $template.cloneNode(true);
+  $location.classList.remove('hidden');
+  $location.querySelector('[data-ak="location-title"]').textContent = name;
+  $location.querySelector('[data-ak="location-link-text"]').textContent = name;
+  $location.marker = marker;
+  $resultWrap.innerHTML = '';
+  $resultWrap.append($location);
 }
 
 function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
