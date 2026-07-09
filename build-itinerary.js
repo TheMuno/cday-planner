@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -13,6 +14,7 @@ const firebaseConfig = {
 
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db   = getFirestore(app);
 
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
@@ -91,6 +93,36 @@ window.addEventListener('load', async () => {
   restoreTypeWrapAttractions();
   restoreTripNotes();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
+
+  if (auth.currentUser) {
+    document.querySelector('[data-ak="continue-to-step2"]')?.classList.remove('hide');
+  } else {
+    document.querySelector('[data-ak="sign-in-to-save"]')?.classList.remove('hide');
+  }
+
+  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
+    e.preventDefault();
+    const $btn = e.currentTarget;
+    if ($btn.classList.contains('ak-saving')) return;
+
+    const originalHTML = $btn.innerHTML;
+    $btn.classList.add('ak-saving');
+    $btn.disabled = true;
+    $btn.style.opacity = '0.8';
+    $btn.textContent = 'Saving...';
+
+    try {
+      await saveAttractionsDB();
+      window.location.href = '/pass-calculator';
+    } catch (err) {
+      console.error(err);
+      $btn.classList.remove('ak-saving');
+      $btn.disabled = false;
+      $btn.style.opacity = '';
+      $btn.innerHTML = 'Failed, try again!';
+      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
+    }
+  });
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
@@ -584,6 +616,39 @@ function getCurrentUserAttractions() {
 function setUnsavedChangesFlag() {
   $unsavedChanges.classList.remove('hide');
   localStorage['ak-unsaved-changes'] = true;
+}
+
+function removeUnsavedChangesFlag() {
+  $unsavedChanges.classList.add('hide');
+  localStorage.removeItem('ak-unsaved-changes');
+}
+
+async function saveAttractionsDB() {
+  if (!localStorage['ak-userMail']) return;
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+
+  const saveObj = {
+    hotel: localStorage['ak-hotel'] || '',
+    arrivalAirport: localStorage['ak-arrival-airport'] || '',
+    departureAirport: localStorage['ak-departure-airport'] || '',
+    tripName: localStorage['ak-user-name'] || '',
+    travelDates: localStorage['ak-travel-days'] || '',
+    savedAttractions: getCurrentUserAttractions(),
+  };
+
+  saveObj.adultNum = localStorage['ak-adult-num'] ?? null;
+  saveObj.childrenNum = localStorage['ak-children-num'] ?? null;
+  saveObj.ModifiedAt = serverTimestamp();
+
+  await setDoc(userRef, saveObj, { merge: true });
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('ak-update')) continue;
+    localStorage.removeItem(key);
+  }
+
+  removeUnsavedChangesFlag();
 }
 
 function format(str) {
