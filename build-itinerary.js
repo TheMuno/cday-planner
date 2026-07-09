@@ -42,6 +42,7 @@ let map;
 let infoWindow;
 let insiderTipsData = null;
 let addedAttractions = 0;
+let notesSaveTimer = null;
 const markerObj = {};
 const chipMarkers = {};
 const attractionChipMarkers = {};
@@ -88,6 +89,7 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   restoreTypeWrapAttractions();
+  restoreDayNotes();
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
@@ -110,6 +112,13 @@ window.addEventListener('load', async () => {
   });
   document.body.addEventListener('drop', handleDrop);
   document.body.addEventListener('dragend', () => { $draggedAttraction = null; });
+
+  document.body.addEventListener('input', e => {
+    if (e.target.tagName !== 'TEXTAREA' || !e.target.closest('[data-ak-timeslot-content]')) return;
+    setUnsavedChangesFlag();
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(saveAttractionLocal, 500);
+  });
 });
 
 
@@ -520,6 +529,22 @@ function restoreTypeWrapAttractions() {
       const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
       addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
     });
+  });
+}
+
+function restoreDayNotes() {
+  const savedAttractions = JSON.parse(localStorage['ak-attractions-saved'] || '{}');
+  const $slides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+
+  Object.entries(savedAttractions).forEach(([slide, slots]) => {
+    if (slots.dayNotes == null) return;
+    const slideNum = Number(slide.match(/\d+/)[0]);
+    const $currentSlide = $slides[slideNum - 1];
+    const $textarea = $currentSlide
+      ?.querySelector('[data-ak-timeslot-wrap="evening"]')
+      ?.closest('[data-ak-timeslot-content]')
+      ?.querySelector('textarea');
+    if ($textarea) $textarea.value = slots.dayNotes;
   });
 }
 
