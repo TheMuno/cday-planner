@@ -102,6 +102,14 @@ window.addEventListener('load', async () => {
   });
 
   document.body.addEventListener('click', handleRemoveLocation);
+
+  document.body.addEventListener('dragstart', handleDragStart);
+  document.body.addEventListener('dragover', e => {
+    handleDragOver(e);
+    expandContentWrapOnDrag(e);
+  });
+  document.body.addEventListener('drop', handleDrop);
+  document.body.addEventListener('dragend', () => { $draggedAttraction = null; });
 });
 
 
@@ -439,6 +447,51 @@ function removeAttractionLocation($attraction) {
   if ($timeslotWrap) saveAttractionLocal();
   if ($typeWrap) saveTypeWrapAttractionsLocal();
   if (!auth.currentUser) updateAttractionsCount('-');
+  setUnsavedChangesFlag();
+}
+
+let $draggedAttraction = null;
+
+function handleDragStart(e) {
+  const $dragEl = e.target.closest('[data-ak="attraction-location"]');
+  if (!$dragEl) return;
+  $draggedAttraction = $dragEl;
+  e.dataTransfer.setData('text/plain', $dragEl.querySelector('[data-ak="location-title"]')?.textContent || '');
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleDragOver(e) {
+  if (!e.target.closest('[data-ak="allow-drop"]')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function expandContentWrapOnDrag(e) {
+  if (!e.target.closest('[data-ak-timeslot-title]')) return;
+  const $title = e.target.closest('[data-ak-timeslot-title]');
+  const $contentWrap = $title.closest('[data-ak-timeslots]').querySelector('[data-ak-timeslot-content]');
+  if ($contentWrap.style.height !== '0px') return;
+  $title.click();
+}
+
+function handleDrop(e) {
+  if (!e.target.closest('[data-ak="allow-drop"]')) return;
+  const $dropZone = e.target.closest('[data-ak="allow-drop"]');
+  e.preventDefault();
+
+  if (!$draggedAttraction) return;
+
+  const $fromTimeslotWrap = $draggedAttraction.closest('[data-ak-timeslot-wrap]');
+  const $fromTypeWrap = $draggedAttraction.closest('[data-ak-type-wrap]');
+
+  $dropZone.appendChild($draggedAttraction);
+  $draggedAttraction = null;
+
+  const $toTimeslotWrap = $dropZone.closest('[data-ak-timeslot-wrap]');
+  const $toTypeWrap = $dropZone.closest('[data-ak-type-wrap]');
+
+  if ($fromTimeslotWrap || $toTimeslotWrap) saveAttractionLocal();
+  if ($fromTypeWrap || $toTypeWrap) saveTypeWrapAttractionsLocal();
   setUnsavedChangesFlag();
 }
 
