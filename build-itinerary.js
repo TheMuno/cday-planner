@@ -89,7 +89,7 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   restoreTypeWrapAttractions();
-  restoreDayNotes();
+  restoreTripNotes();
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
@@ -114,10 +114,14 @@ window.addEventListener('load', async () => {
   document.body.addEventListener('dragend', () => { $draggedAttraction = null; });
 
   document.body.addEventListener('input', e => {
-    if (e.target.tagName !== 'TEXTAREA' || !e.target.closest('[data-ak-timeslot-content]')) return;
+    if (!e.target.matches('.ak-notes')) return;
     setUnsavedChangesFlag();
     clearTimeout(notesSaveTimer);
-    notesSaveTimer = setTimeout(saveAttractionLocal, 500);
+    notesSaveTimer = setTimeout(() => saveTripNotesLocal(e.target.value), 500);
+  });
+
+  document.body.addEventListener('submit', e => {
+    if (e.target.querySelector('.ak-notes')) e.preventDefault();
   });
 });
 
@@ -532,20 +536,13 @@ function restoreTypeWrapAttractions() {
   });
 }
 
-function restoreDayNotes() {
-  const savedAttractions = JSON.parse(localStorage['ak-attractions-saved'] || '{}');
-  const $slides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+function saveTripNotesLocal(value) {
+  localStorage['ak-trip-notes'] = value;
+}
 
-  Object.entries(savedAttractions).forEach(([slide, slots]) => {
-    if (slots.dayNotes == null) return;
-    const slideNum = Number(slide.match(/\d+/)[0]);
-    const $currentSlide = $slides[slideNum - 1];
-    const $textarea = $currentSlide
-      ?.querySelector('[data-ak-timeslot-wrap="evening"]')
-      ?.closest('[data-ak-timeslot-content]')
-      ?.querySelector('textarea');
-    if ($textarea) $textarea.value = slots.dayNotes;
-  });
+function restoreTripNotes() {
+  const $notes = document.querySelector('.ak-notes');
+  if ($notes && localStorage['ak-trip-notes'] != null) $notes.value = localStorage['ak-trip-notes'];
 }
 
 function updateAttractionsCount(sign) {
