@@ -95,9 +95,9 @@ window.addEventListener('load', async () => {
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   if (auth.currentUser) {
-    document.querySelector('[data-ak="continue-to-step2"]')?.classList.remove('hide');
+    document.querySelector('[data-ak="continue-to-step2"]')?.removeAttribute('data-ak-hidden');
   } else {
-    document.querySelector('[data-ak="sign-in-to-save"]')?.classList.remove('hide');
+    document.querySelector('[data-ak="sign-in-to-save"]')?.removeAttribute('data-ak-hidden');
   }
 
   document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
