@@ -305,7 +305,7 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
         alertify.confirm(
           `Remove ${saveObj?.displayName || 'this location'}?`,
           () => {
-            $existingMatch?.querySelector('[data-ak="remove-location"]')?.click();
+            if ($existingMatch) removeAttractionLocation($existingMatch);
             $mapPopup.setAttribute('data-ak-hidden', 'true');
           },
           () => {}
@@ -412,6 +412,16 @@ function handleRemoveLocation(e) {
   const $attraction = e.target.closest('[data-ak="attraction-location"]');
   if (!$attraction) return;
 
+  const name = $attraction.querySelector('[data-ak="location-title"]')?.textContent?.trim() || 'this location';
+
+  alertify.confirm(
+    `Remove ${name}?`,
+    () => removeAttractionLocation($attraction),
+    () => {}
+  );
+}
+
+function removeAttractionLocation($attraction) {
   if ($attraction.marker) $attraction.marker.setMap(null);
 
   if ($attraction.placeId) {
