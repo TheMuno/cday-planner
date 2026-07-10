@@ -260,14 +260,37 @@ function getOffscreenWidgetHolder() {
   return $holder;
 }
 
-function unclipNearestOverflowAncestor($el) {
+function findNearestClippingAncestor($el) {
   for (let node = $el.parentElement; node; node = node.parentElement) {
     const cs = getComputedStyle(node);
     if (cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
-      node.style.overflow = 'visible';
-      return;
+      return node;
     }
   }
+  return null;
+}
+
+// itinerary_ui_fields_drop grows its own inline height via a Webflow/JS hover
+// interaction, and forcing its overflow to visible at placement time (before
+// that interaction has run) stops it from ever setting that height — it stays
+// collapsed and nothing renders. So don't touch it up front; only relax the
+// clip once the widget actually has focus (by then the panel has already
+// grown normally), and restore it on blur so the next hover-open cycle is
+// undisturbed.
+function wireOverflowEscapeOnFocus($el) {
+  let $clippingAncestor = null;
+  let originalOverflow = '';
+  $el.addEventListener('focusin', () => {
+    $clippingAncestor = findNearestClippingAncestor($el);
+    if (!$clippingAncestor) return;
+    originalOverflow = $clippingAncestor.style.overflow;
+    $clippingAncestor.style.overflow = 'visible';
+  });
+  $el.addEventListener('focusout', () => {
+    if (!$clippingAncestor) return;
+    $clippingAncestor.style.overflow = originalOverflow;
+    $clippingAncestor = null;
+  });
 }
 
 function moveWhenVisible($wrap, $el) {
@@ -284,7 +307,6 @@ function moveWhenVisible($wrap, $el) {
   const $hiddenAncestor = findHiddenAncestor($wrap);
   if (!$hiddenAncestor) {
     $wrap.appendChild($el);
-    unclipNearestOverflowAncestor($el);
     return;
   }
 
@@ -292,7 +314,6 @@ function moveWhenVisible($wrap, $el) {
     if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
     observer.disconnect();
     $wrap.appendChild($el);
-    unclipNearestOverflowAncestor($el);
   });
   observer.observe($hiddenAncestor);
 }
@@ -346,6 +367,7 @@ async function setupHotelAutocomplete() {
     setUnsavedChangesFlag();
   });
 
+  wireOverflowEscapeOnFocus(placeAutocomplete);
   moveWhenVisible($wrap, placeAutocomplete);
 }
 
@@ -403,6 +425,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
     setUnsavedChangesFlag();
   });
 
+  wireOverflowEscapeOnFocus(placeAutocomplete);
   moveWhenVisible($wrap, placeAutocomplete);
 }
 
