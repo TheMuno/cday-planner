@@ -243,17 +243,29 @@ async function setupAutocompleteInp() {
 // gmp-place-autocomplete computes its internal (closed-shadow-root) layout at creation time.
 // If it's created while an ancestor is display:none (e.g. a hover dropdown that starts hidden),
 // it renders once visible but its input never becomes clickable. Deferring creation until the
-// wrap actually has size sidesteps this regardless of what mechanism reveals the dropdown.
+// dropdown is actually open sidesteps this regardless of what mechanism reveals it.
+// Watches the hidden ANCESTOR, not $wrap itself — $wrap is an empty div until we append into
+// it, so it collapses to 0 height (no content) even once its hidden ancestor is shown.
 function whenVisible($el, callback) {
-  let done = false;
+  const $hiddenAncestor = findHiddenAncestor($el);
+  if (!$hiddenAncestor) {
+    callback();
+    return;
+  }
+
   const observer = new ResizeObserver(entries => {
-    if (done) return;
     if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
-    done = true;
     observer.disconnect();
     callback();
   });
-  observer.observe($el);
+  observer.observe($hiddenAncestor);
+}
+
+function findHiddenAncestor($el) {
+  for (let node = $el.parentElement; node; node = node.parentElement) {
+    if (getComputedStyle(node).display === 'none') return node;
+  }
+  return null;
 }
 
 async function setupHotelAutocomplete() {
