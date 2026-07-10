@@ -268,16 +268,25 @@ function findHiddenAncestor($el) {
   return null;
 }
 
-// The Webflow field skeleton keeps its own native <input> alongside [data-ak="..."] purely for
-// layout/styling — it isn't wired to anything. It sits stacked such that it intercepts clicks/
-// keystrokes meant for the gmp-place-autocomplete widget, so neutralize it once the real widget
-// is in place.
-function neutralizeDecoyInput($wrap) {
+// The Webflow field skeleton keeps its own native <input> stacked over [data-ak="..."] (likely
+// invisible, just there to satisfy the form's "required" styling/behavior) — it isn't wired to
+// anything but still intercepts clicks. Disabling its pointer-events broke the hover-open dropdown
+// entirely, so instead leave it fully interactive and just redirect focus away from it at the last
+// moment: prevent its default mousedown-focus, then focus the widget itself, which delegates focus
+// into its shadow-root input via shadowrootdelegatesfocus.
+function redirectFocusToWidget($wrap, placeAutocomplete) {
   const $decoy = $wrap.parentElement?.querySelector('input.w-input');
   if (!$decoy) return;
-  $decoy.style.pointerEvents = 'none';
-  $decoy.tabIndex = -1;
-  $decoy.removeAttribute('required');
+
+  $decoy.addEventListener('mousedown', e => {
+    e.preventDefault();
+    placeAutocomplete.focus();
+  });
+
+  $decoy.addEventListener('focus', () => {
+    $decoy.blur();
+    placeAutocomplete.focus();
+  });
 }
 
 async function setupHotelAutocomplete() {
@@ -298,7 +307,7 @@ function initHotelAutocomplete($wrap) {
   });
 
   $wrap.appendChild(placeAutocomplete);
-  neutralizeDecoyInput($wrap);
+  redirectFocusToWidget($wrap, placeAutocomplete);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
@@ -353,7 +362,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
   });
 
   $wrap.appendChild(placeAutocomplete);
-  neutralizeDecoyInput($wrap);
+  redirectFocusToWidget($wrap, placeAutocomplete);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
