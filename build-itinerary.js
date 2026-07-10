@@ -261,6 +261,16 @@ function getOffscreenWidgetHolder() {
 }
 
 function moveWhenVisible($wrap, $el) {
+  // The Webflow-authored ancestor chain around these dropdown fields sets
+  // pointer-events: none (it's meant as a non-interactive preview box); only
+  // the absolutely-positioned .itinerary_ui_fields_drop panel re-enables it.
+  // The bare custom element has no Webflow class to pick up an override, so
+  // it silently inherits none and swallows nothing — every click passes
+  // through it. Re-enable explicitly; a descendant's pointer-events: auto
+  // wins over an ancestor's none.
+  $wrap.style.pointerEvents = 'auto';
+  $el.style.pointerEvents = 'auto';
+
   const $hiddenAncestor = findHiddenAncestor($wrap);
   if (!$hiddenAncestor) {
     $wrap.appendChild($el);
