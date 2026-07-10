@@ -240,12 +240,32 @@ async function setupAutocompleteInp() {
   });
 }
 
+// gmp-place-autocomplete computes its internal (closed-shadow-root) layout at creation time.
+// If it's created while an ancestor is display:none (e.g. a hover dropdown that starts hidden),
+// it renders once visible but its input never becomes clickable. Deferring creation until the
+// wrap actually has size sidesteps this regardless of what mechanism reveals the dropdown.
+function whenVisible($el, callback) {
+  let done = false;
+  const observer = new ResizeObserver(entries => {
+    if (done) return;
+    if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
+    done = true;
+    observer.disconnect();
+    callback();
+  });
+  observer.observe($el);
+}
+
 async function setupHotelAutocomplete() {
   await google.maps.importLibrary('places');
 
   const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
   if (!$wrap) return;
 
+  whenVisible($wrap, () => initHotelAutocomplete($wrap));
+}
+
+function initHotelAutocomplete($wrap) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
@@ -295,42 +315,46 @@ async function setupAirportAutocomplete() {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
-      componentRestrictions: { country: ['us'] },
-      includedRegionCodes: ['us'],
-      locationBias: { radius: 5000.0, center: mapCenter },
-      includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
-    });
+    whenVisible($wrap, () => initAirportAutocomplete($wrap, markerKey, storageKey, updateKey));
+  });
+}
 
-    $wrap.appendChild(placeAutocomplete);
+function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    componentRestrictions: { country: ['us'] },
+    includedRegionCodes: ['us'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
+  });
 
-    placeAutocomplete.addEventListener('gmp-select', async res => {
-      const { placePrediction } = res;
-      const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
+  $wrap.appendChild(placeAutocomplete);
 
-      map.panTo(place.viewport || place.location);
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
 
-      const placeObj = place.toJSON();
-      const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
-      const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    map.panTo(place.viewport || place.location);
 
-      placeAutocomplete.value = '';
+    const placeObj = place.toJSON();
+    const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-      const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
+    placeAutocomplete.value = '';
 
-      const pin = getCorrectTransportationPinUrl(type);
-      const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
-      if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
-      markerObj[markerKey] = marker;
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
 
-      const $resultWrap = $wrap.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
-      if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+    const pin = getCorrectTransportationPinUrl(type);
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
+    if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
+    markerObj[markerKey] = marker;
 
-      localStorage[storageKey] = JSON.stringify(saveObj);
-      localStorage[updateKey] = true;
-      setUnsavedChangesFlag();
-    });
+    const $resultWrap = $wrap.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
+    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+    localStorage[storageKey] = JSON.stringify(saveObj);
+    localStorage[updateKey] = true;
+    setUnsavedChangesFlag();
   });
 }
 
