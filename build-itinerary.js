@@ -279,7 +279,12 @@ function findHiddenAncestor($el) {
 function redirectFocusToWidget($wrap, placeAutocomplete) {
   // Capture phase: fires top-down before the event reaches the widget's internal shadow DOM, so
   // it can't be blocked by a stopPropagation() the widget's own (broken) handling might call.
-  $wrap.addEventListener('mousedown', () => placeAutocomplete.focus(), true);
+  // preventDefault suppresses whatever the widget's own (broken) mousedown handling would
+  // otherwise do — without it, that internal default action fights our explicit focus() call.
+  $wrap.addEventListener('mousedown', e => {
+    e.preventDefault();
+    placeAutocomplete.focus();
+  }, true);
 
   const $decoy = $wrap.parentElement?.querySelector('input.w-input');
   if (!$decoy) return;
