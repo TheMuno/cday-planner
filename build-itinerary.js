@@ -277,7 +277,9 @@ function findHiddenAncestor($el) {
 // (likely invisible, just there for the form's "required" styling/behavior) — without disabling
 // its pointer-events, since that broke the hover-open dropdown entirely.
 function redirectFocusToWidget($wrap, placeAutocomplete) {
-  $wrap.addEventListener('mousedown', () => placeAutocomplete.focus());
+  // Capture phase: fires top-down before the event reaches the widget's internal shadow DOM, so
+  // it can't be blocked by a stopPropagation() the widget's own (broken) handling might call.
+  $wrap.addEventListener('mousedown', () => placeAutocomplete.focus(), true);
 
   const $decoy = $wrap.parentElement?.querySelector('input.w-input');
   if (!$decoy) return;
