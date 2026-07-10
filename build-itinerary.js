@@ -240,23 +240,37 @@ async function setupAutocompleteInp() {
   });
 }
 
-// gmp-place-autocomplete computes its internal (closed-shadow-root) layout at creation time.
-// If it's created while an ancestor is display:none (e.g. a hover dropdown that starts hidden),
-// it renders once visible but its input never becomes clickable. Deferring creation until the
-// dropdown is actually open sidesteps this regardless of what mechanism reveals it.
-// Watches the hidden ANCESTOR, not $wrap itself — $wrap is an empty div until we append into
-// it, so it collapses to 0 height (no content) even once its hidden ancestor is shown.
-function whenVisible($el, callback) {
-  const $hiddenAncestor = findHiddenAncestor($el);
+// gmp-place-autocomplete computes its internal (closed-shadow-root) click/focus handling at the
+// moment it's connected to the document. If that happens while an ancestor is display:none (e.g.
+// a hover dropdown that starts hidden), that internal handling never recovers — it renders fine
+// once visible but stays permanently unclickable, and there's no way to patch a closed shadow
+// root from outside. So never let it connect while hidden: create + connect it inside a tiny
+// offscreen-but-genuinely-laid-out holder (NOT display:none, so it initializes correctly), wire
+// its listener there, then just MOVE (not recreate) the already-working element into the real
+// slot once that slot becomes visible. Reparenting an initialized custom element preserves its
+// working internal state.
+function getOffscreenWidgetHolder() {
+  let $holder = document.getElementById('ak-offscreen-widget-holder');
+  if (!$holder) {
+    $holder = document.createElement('div');
+    $holder.id = 'ak-offscreen-widget-holder';
+    $holder.style.cssText = 'position:fixed; top:0; left:-99999px; width:300px; height:44px;';
+    document.body.appendChild($holder);
+  }
+  return $holder;
+}
+
+function moveWhenVisible($wrap, $el) {
+  const $hiddenAncestor = findHiddenAncestor($wrap);
   if (!$hiddenAncestor) {
-    callback();
+    $wrap.appendChild($el);
     return;
   }
 
   const observer = new ResizeObserver(entries => {
     if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
     observer.disconnect();
-    callback();
+    $wrap.appendChild($el);
   });
   observer.observe($hiddenAncestor);
 }
@@ -268,48 +282,12 @@ function findHiddenAncestor($el) {
   return null;
 }
 
-// gmp-place-autocomplete was created while its ancestor was display:none (see whenVisible above),
-// which leaves its OWN internal click-to-focus handling permanently broken even after it becomes
-// visible — clicking directly on the widget does nothing. Calling .focus() on the host element
-// still works though, since shadowrootdelegatesfocus routes that straight to its shadow-root
-// input, bypassing whatever stale internal click logic is stuck. So force focus explicitly on any
-// mousedown within the wrap, and also redirect the decoy Webflow <input> stacked on top of it
-// (likely invisible, just there for the form's "required" styling/behavior) — without disabling
-// its pointer-events, since that broke the hover-open dropdown entirely.
-function redirectFocusToWidget($wrap, placeAutocomplete) {
-  // Capture phase: fires top-down before the event reaches the widget's internal shadow DOM, so
-  // it can't be blocked by a stopPropagation() the widget's own (broken) handling might call.
-  // preventDefault suppresses whatever the widget's own (broken) mousedown handling would
-  // otherwise do — without it, that internal default action fights our explicit focus() call.
-  $wrap.addEventListener('mousedown', e => {
-    e.preventDefault();
-    placeAutocomplete.focus();
-  }, true);
-
-  const $decoy = $wrap.parentElement?.querySelector('input.w-input');
-  if (!$decoy) return;
-
-  $decoy.addEventListener('mousedown', e => {
-    e.preventDefault();
-    placeAutocomplete.focus();
-  });
-
-  $decoy.addEventListener('focus', () => {
-    $decoy.blur();
-    placeAutocomplete.focus();
-  });
-}
-
 async function setupHotelAutocomplete() {
   await google.maps.importLibrary('places');
 
   const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
   if (!$wrap) return;
 
-  whenVisible($wrap, () => initHotelAutocomplete($wrap));
-}
-
-function initHotelAutocomplete($wrap) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
@@ -317,8 +295,7 @@ function initHotelAutocomplete($wrap) {
     includedPrimaryTypes: ['lodging', 'hotel'],
   });
 
-  $wrap.appendChild(placeAutocomplete);
-  redirectFocusToWidget($wrap, placeAutocomplete);
+  getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
@@ -346,6 +323,8 @@ function initHotelAutocomplete($wrap) {
     localStorage['ak-update-hotel'] = true;
     setUnsavedChangesFlag();
   });
+
+  moveWhenVisible($wrap, placeAutocomplete);
 }
 
 async function setupAirportAutocomplete() {
@@ -360,7 +339,7 @@ async function setupAirportAutocomplete() {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    whenVisible($wrap, () => initAirportAutocomplete($wrap, markerKey, storageKey, updateKey));
+    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey);
   });
 }
 
@@ -372,8 +351,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
     includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
   });
 
-  $wrap.appendChild(placeAutocomplete);
-  redirectFocusToWidget($wrap, placeAutocomplete);
+  getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
@@ -402,6 +380,8 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
     localStorage[updateKey] = true;
     setUnsavedChangesFlag();
   });
+
+  moveWhenVisible($wrap, placeAutocomplete);
 }
 
 function getCorrectTransportationPinUrl(type) {
