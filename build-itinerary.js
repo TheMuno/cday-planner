@@ -165,7 +165,7 @@ window.addEventListener('load', async () => {
   });
 
   document.body.addEventListener('submit', e => {
-    if (e.target.querySelector('.ak-notes')) e.preventDefault();
+    if (e.target.querySelector('.ak-notes, gmp-place-autocomplete')) e.preventDefault();
   });
 });
 
@@ -268,6 +268,18 @@ function findHiddenAncestor($el) {
   return null;
 }
 
+// The Webflow field skeleton keeps its own native <input> alongside [data-ak="..."] purely for
+// layout/styling — it isn't wired to anything. It sits stacked such that it intercepts clicks/
+// keystrokes meant for the gmp-place-autocomplete widget, so neutralize it once the real widget
+// is in place.
+function neutralizeDecoyInput($wrap) {
+  const $decoy = $wrap.parentElement?.querySelector('input.w-input');
+  if (!$decoy) return;
+  $decoy.style.pointerEvents = 'none';
+  $decoy.tabIndex = -1;
+  $decoy.removeAttribute('required');
+}
+
 async function setupHotelAutocomplete() {
   await google.maps.importLibrary('places');
 
@@ -286,6 +298,7 @@ function initHotelAutocomplete($wrap) {
   });
 
   $wrap.appendChild(placeAutocomplete);
+  neutralizeDecoyInput($wrap);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
@@ -340,6 +353,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
   });
 
   $wrap.appendChild(placeAutocomplete);
+  neutralizeDecoyInput($wrap);
 
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
