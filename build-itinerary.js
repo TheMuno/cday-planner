@@ -260,6 +260,16 @@ function getOffscreenWidgetHolder() {
   return $holder;
 }
 
+function unclipNearestOverflowAncestor($el) {
+  for (let node = $el.parentElement; node; node = node.parentElement) {
+    const cs = getComputedStyle(node);
+    if (cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+      node.style.overflow = 'visible';
+      return;
+    }
+  }
+}
+
 function moveWhenVisible($wrap, $el) {
   // The Webflow-authored ancestor chain around these dropdown fields sets
   // pointer-events: none (it's meant as a non-interactive preview box); only
@@ -274,6 +284,7 @@ function moveWhenVisible($wrap, $el) {
   const $hiddenAncestor = findHiddenAncestor($wrap);
   if (!$hiddenAncestor) {
     $wrap.appendChild($el);
+    unclipNearestOverflowAncestor($el);
     return;
   }
 
@@ -281,6 +292,7 @@ function moveWhenVisible($wrap, $el) {
     if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
     observer.disconnect();
     $wrap.appendChild($el);
+    unclipNearestOverflowAncestor($el);
   });
   observer.observe($hiddenAncestor);
 }
