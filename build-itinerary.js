@@ -268,13 +268,17 @@ function findHiddenAncestor($el) {
   return null;
 }
 
-// The Webflow field skeleton keeps its own native <input> stacked over [data-ak="..."] (likely
-// invisible, just there to satisfy the form's "required" styling/behavior) — it isn't wired to
-// anything but still intercepts clicks. Disabling its pointer-events broke the hover-open dropdown
-// entirely, so instead leave it fully interactive and just redirect focus away from it at the last
-// moment: prevent its default mousedown-focus, then focus the widget itself, which delegates focus
-// into its shadow-root input via shadowrootdelegatesfocus.
+// gmp-place-autocomplete was created while its ancestor was display:none (see whenVisible above),
+// which leaves its OWN internal click-to-focus handling permanently broken even after it becomes
+// visible — clicking directly on the widget does nothing. Calling .focus() on the host element
+// still works though, since shadowrootdelegatesfocus routes that straight to its shadow-root
+// input, bypassing whatever stale internal click logic is stuck. So force focus explicitly on any
+// mousedown within the wrap, and also redirect the decoy Webflow <input> stacked on top of it
+// (likely invisible, just there for the form's "required" styling/behavior) — without disabling
+// its pointer-events, since that broke the hover-open dropdown entirely.
 function redirectFocusToWidget($wrap, placeAutocomplete) {
+  $wrap.addEventListener('mousedown', () => placeAutocomplete.focus());
+
   const $decoy = $wrap.parentElement?.querySelector('input.w-input');
   if (!$decoy) return;
 
