@@ -572,6 +572,7 @@ window.addEventListener('load', async () => {
     e.preventDefault();
     $saveItineraryBtn.disabled = true;
     $saveItineraryBtn.style.opacity = '0.8';
+    // const isFirstSave = await hasNoDBRecord(); // TODO: re-enable to gate sendToMake on first-save-only
     await saveAttractionsDB();
     sendToMake();
     removeUnsavedChangesFlag();
@@ -2268,6 +2269,14 @@ function addLocationToResultWrap(name, marker, $resultWrap) {
 }
 
 const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd02um';
+
+async function hasNoDBRecord() {
+  if (!localStorage['ak-userMail']) return false;
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+  const docSnap = await getDoc(userRef);
+  return !docSnap.exists();
+}
 
 function sendToMake() {
   const ref = localStorage['ak-ref'];
