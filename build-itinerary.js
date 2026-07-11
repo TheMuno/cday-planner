@@ -62,7 +62,7 @@ if (localStorage['ak-user-destination']) {
   mapCenter = locations[localStorage['ak-user-destination']];
 }
 
-initMap(mapCenter);
+const mapReady = initMap(mapCenter);
 async function initMap(center) {
   const $map = document.querySelector('[data-ak="map"]');
   const { Map, InfoWindow } = await google.maps.importLibrary('maps');
@@ -92,6 +92,7 @@ window.addEventListener('load', async () => {
   setupAirportAutocomplete();
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  await mapReady;
 
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
