@@ -362,6 +362,9 @@ async function setupHotelAutocomplete() {
     const $resultWrap = document.querySelector('[data-ak="hotel-search-result"]');
     if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
 
+    const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+    if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+
     localStorage['ak-hotel'] = JSON.stringify(saveObj);
     localStorage['ak-update-hotel'] = true;
     setUnsavedChangesFlag();
