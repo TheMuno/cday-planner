@@ -110,6 +110,7 @@ window.addEventListener('load', async () => {
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
+  restoreTripHeading();
   restoreTypeWrapAttractions();
   restoreHotel();
   restoreAirports();
@@ -933,6 +934,42 @@ function saveTripNotesLocal(value) {
 function restoreTripNotes() {
   const $notes = document.querySelector('.ak-notes');
   if ($notes && localStorage['ak-trip-notes'] != null) $notes.value = localStorage['ak-trip-notes'];
+}
+
+function restoreTripHeading() {
+  if (!auth.currentUser) return;
+
+  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+  if ($headingH2) {
+    let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+    if (tripName) {
+      tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+      $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+    }
+  }
+
+  const $dateWrap = document.querySelector('[data-ak="trip-heading-date"]');
+  if (!$dateWrap || !localStorage['ak-travel-days']) return;
+
+  let flatpickrDate;
+  try {
+    ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
+  } catch (e) {
+    return;
+  }
+  if (!flatpickrDate) return;
+
+  const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
+
+  const $children = $dateWrap.children;
+  if ($children.length < 2) return;
+
+  const $firstP = $children[0].querySelector('p');
+  const $lastP = $children[$children.length - 1].querySelector('p');
+  if ($firstP) $firstP.textContent = fmt(new Date(startRaw));
+  if ($lastP) $lastP.textContent = fmt(new Date(endRaw || startRaw));
 }
 
 function updateAttractionsCount(sign) {
