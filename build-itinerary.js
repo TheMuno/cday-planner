@@ -97,6 +97,7 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   restoreTypeWrapAttractions();
+  restoreHotel();
   restoreTripNotes();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
@@ -789,6 +790,27 @@ function restoreTypeWrapAttractions() {
       addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
     });
   });
+}
+
+function restoreHotel() {
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage['ak-hotel'] || 'null');
+  } catch (e) {
+    return;
+  }
+  if (!saveObj?.location) return;
+
+  const { displayName, location, editorialSummary, type } = saveObj;
+  const marker = createMarker(displayName, location, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+  markerObj['hotel'] = marker;
+
+  const $resultWrap = document.querySelector('[data-ak="hotel-search-result"]');
+  if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
 }
 
 function saveTripNotesLocal(value) {
