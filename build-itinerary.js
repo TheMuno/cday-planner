@@ -41,8 +41,8 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure' },
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
 ];
 
 const AIRPORT_FLIGHT_FIELDS = [
@@ -184,14 +184,14 @@ window.addEventListener('load', async () => {
     const dataAk = e.target.getAttribute?.('data-ak');
     if (!dataAk) return;
 
-    for (const { storageKey, updateKey, prefix } of AIRPORT_FIELDS) {
+    for (const { storageKey, updateKey, prefix, draftKey } of AIRPORT_FIELDS) {
       const field = AIRPORT_FLIGHT_FIELDS.find(({ suffix }) => dataAk === `${prefix}-${suffix}`);
       if (!field) continue;
 
       setUnsavedChangesFlag();
       clearTimeout(flightFieldSaveTimers[dataAk]);
       flightFieldSaveTimers[dataAk] = setTimeout(() => {
-        saveAirportFlightFieldLocal(storageKey, updateKey, field.key, e.target.value);
+        saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, field.key, e.target.value);
       }, 500);
       return;
     }
@@ -411,15 +411,15 @@ async function setupHotelAutocomplete() {
 async function setupAirportAutocomplete() {
   await google.maps.importLibrary('places');
 
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey }) => {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix);
+    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey);
   });
 }
 
-function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix) {
+function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
@@ -463,6 +463,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
 
     localStorage[storageKey] = JSON.stringify(saveObj);
     localStorage[updateKey] = true;
+    localStorage.removeItem(draftKey);
     setUnsavedChangesFlag();
   });
 
@@ -851,14 +852,18 @@ function restoreHotel() {
 }
 
 function restoreAirports() {
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector, prefix }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector, prefix, draftKey }) => {
     let saveObj;
     try {
       saveObj = JSON.parse(localStorage[storageKey] || 'null');
     } catch (e) {
+      saveObj = null;
+    }
+
+    if (!saveObj?.location) {
+      restoreAirportFlightDraft(prefix, draftKey);
       return;
     }
-    if (!saveObj?.location) return;
 
     const { displayName, location, editorialSummary, type } = saveObj;
     const pin = getCorrectTransportationPinUrl(type);
@@ -880,18 +885,45 @@ function restoreAirports() {
   });
 }
 
-function saveAirportFlightFieldLocal(storageKey, updateKey, key, value) {
+function restoreAirportFlightDraft(prefix, draftKey) {
+  let draft;
+  try {
+    draft = JSON.parse(localStorage[draftKey] || 'null');
+  } catch (e) {
+    return;
+  }
+  if (!draft) return;
+
+  AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+    const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
+    if ($field && draft[key]) $field.value = draft[key];
+  });
+}
+
+function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value) {
   let saveObj;
   try {
     saveObj = JSON.parse(localStorage[storageKey] || 'null');
   } catch (e) {
     saveObj = null;
   }
-  if (!saveObj) return;
 
-  saveObj[key] = value;
-  localStorage[storageKey] = JSON.stringify(saveObj);
-  localStorage[updateKey] = true;
+  if (saveObj) {
+    saveObj[key] = value;
+    localStorage[storageKey] = JSON.stringify(saveObj);
+    localStorage[updateKey] = true;
+    return;
+  }
+
+  let draft;
+  try {
+    draft = JSON.parse(localStorage[draftKey] || 'null');
+  } catch (e) {
+    draft = null;
+  }
+  draft = draft || {};
+  draft[key] = value;
+  localStorage[draftKey] = JSON.stringify(draft);
 }
 
 function saveTripNotesLocal(value) {
