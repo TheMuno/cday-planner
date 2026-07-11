@@ -966,10 +966,10 @@ function restoreTripHeading() {
   const $children = $dateWrap.children;
   if ($children.length < 2) return;
 
-  const $firstP = $children[0].querySelector('p');
-  const $lastP = $children[$children.length - 1].querySelector('p');
-  if ($firstP) $firstP.textContent = fmt(new Date(startRaw));
-  if ($lastP) $lastP.textContent = fmt(new Date(endRaw || startRaw));
+  const $firstEm = $children[0].querySelector('p em');
+  const $lastEm = $children[$children.length - 1].querySelector('p em');
+  if ($firstEm) $firstEm.textContent = fmt(new Date(startRaw));
+  if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
 }
 
 function updateAttractionsCount(sign) {
