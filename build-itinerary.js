@@ -41,9 +41,17 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...' },
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure' },
 ];
+
+const AIRPORT_FLIGHT_FIELDS = [
+  { suffix: 'time', key: 'flightTime' },
+  { suffix: 'carrier-name', key: 'carrierName' },
+  { suffix: 'flight-number', key: 'flightNumber' },
+];
+
+const flightFieldSaveTimers = {};
 
 const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
@@ -170,6 +178,23 @@ window.addEventListener('load', async () => {
     setUnsavedChangesFlag();
     clearTimeout(notesSaveTimer);
     notesSaveTimer = setTimeout(() => saveTripNotesLocal(e.target.value), 500);
+  });
+
+  document.body.addEventListener('input', e => {
+    const dataAk = e.target.getAttribute?.('data-ak');
+    if (!dataAk) return;
+
+    for (const { storageKey, updateKey, prefix } of AIRPORT_FIELDS) {
+      const field = AIRPORT_FLIGHT_FIELDS.find(({ suffix }) => dataAk === `${prefix}-${suffix}`);
+      if (!field) continue;
+
+      setUnsavedChangesFlag();
+      clearTimeout(flightFieldSaveTimers[dataAk]);
+      flightFieldSaveTimers[dataAk] = setTimeout(() => {
+        saveAirportFlightFieldLocal(storageKey, updateKey, field.key, e.target.value);
+      }, 500);
+      return;
+    }
   });
 
   document.body.addEventListener('submit', e => {
@@ -386,15 +411,15 @@ async function setupHotelAutocomplete() {
 async function setupAirportAutocomplete() {
   await google.maps.importLibrary('places');
 
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix }) => {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder);
+    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix);
   });
 }
 
-function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder) {
+function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
@@ -418,7 +443,12 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
 
     placeAutocomplete.value = '';
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
+    const flightFields = {};
+    AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+      flightFields[key] = document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value || '';
+    });
+
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, ...flightFields };
 
     const pin = getCorrectTransportationPinUrl(type);
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
@@ -821,7 +851,7 @@ function restoreHotel() {
 }
 
 function restoreAirports() {
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector, prefix }) => {
     let saveObj;
     try {
       saveObj = JSON.parse(localStorage[storageKey] || 'null');
@@ -842,7 +872,26 @@ function restoreAirports() {
 
     const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
     if ($nameEl) $nameEl.textContent = displayName;
+
+    AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+      const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
+      if ($field && saveObj[key]) $field.value = saveObj[key];
+    });
   });
+}
+
+function saveAirportFlightFieldLocal(storageKey, updateKey, key, value) {
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage[storageKey] || 'null');
+  } catch (e) {
+    saveObj = null;
+  }
+  if (!saveObj) return;
+
+  saveObj[key] = value;
+  localStorage[storageKey] = JSON.stringify(saveObj);
+  localStorage[updateKey] = true;
 }
 
 function saveTripNotesLocal(value) {
