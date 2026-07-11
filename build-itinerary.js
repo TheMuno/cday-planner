@@ -937,14 +937,14 @@ function restoreTripNotes() {
 }
 
 function restoreTripHeading() {
-  if (!auth.currentUser) return;
-
-  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-  if ($headingH2) {
-    let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-    if (tripName) {
-      tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-      $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+  if (auth.currentUser) {
+    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+    if ($headingH2) {
+      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+      if (tripName) {
+        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+      }
     }
   }
 
