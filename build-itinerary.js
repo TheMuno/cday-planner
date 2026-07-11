@@ -40,6 +40,11 @@ const locations = {
 const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', evening: 'notes' };
 const attractionslimit = 5;
 
+const AIRPORT_FIELDS = [
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"]' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"]' },
+];
+
 const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
@@ -99,6 +104,7 @@ window.addEventListener('load', async () => {
 
   restoreTypeWrapAttractions();
   restoreHotel();
+  restoreAirports();
   restoreTripNotes();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
@@ -379,20 +385,15 @@ async function setupHotelAutocomplete() {
 async function setupAirportAutocomplete() {
   await google.maps.importLibrary('places');
 
-  const AIRPORT_FIELDS = [
-    { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport' },
-    { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport' },
-  ];
-
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector }) => {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey);
+    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector);
   });
 }
 
-function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
+function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
@@ -424,6 +425,9 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey) {
 
     const $resultWrap = $wrap.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
     if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+    const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
+    if ($nameEl) $nameEl.textContent = displayName;
 
     localStorage[storageKey] = JSON.stringify(saveObj);
     localStorage[updateKey] = true;
@@ -812,6 +816,31 @@ function restoreHotel() {
 
   const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
   if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+}
+
+function restoreAirports() {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector }) => {
+    let saveObj;
+    try {
+      saveObj = JSON.parse(localStorage[storageKey] || 'null');
+    } catch (e) {
+      return;
+    }
+    if (!saveObj?.location) return;
+
+    const { displayName, location, editorialSummary, type } = saveObj;
+    const pin = getCorrectTransportationPinUrl(type);
+    const marker = createMarker(displayName, location, editorialSummary, type, pin, saveObj);
+    if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
+    markerObj[markerKey] = marker;
+
+    const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
+    const $resultWrap = $wrap?.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
+    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
+
+    const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
+    if ($nameEl) $nameEl.textContent = displayName;
+  });
 }
 
 function saveTripNotesLocal(value) {
