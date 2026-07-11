@@ -41,8 +41,8 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"]' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"]' },
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p' },
 ];
 
 const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
