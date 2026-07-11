@@ -41,8 +41,8 @@ const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', eveni
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p' },
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...' },
 ];
 
 const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
@@ -345,6 +345,7 @@ async function setupHotelAutocomplete() {
     locationBias: { radius: 5000.0, center: mapCenter },
     includedPrimaryTypes: ['lodging', 'hotel'],
   });
+  placeAutocomplete.placeholder = 'Add hotel...';
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
@@ -385,21 +386,22 @@ async function setupHotelAutocomplete() {
 async function setupAirportAutocomplete() {
   await google.maps.importLibrary('places');
 
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector }) => {
+  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder }) => {
     const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
     if (!$wrap) return;
 
-    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector);
+    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder);
   });
 }
 
-function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector) {
+function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder) {
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
     locationBias: { radius: 5000.0, center: mapCenter },
     includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
   });
+  if (placeholder) placeAutocomplete.placeholder = placeholder;
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
