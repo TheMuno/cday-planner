@@ -61,7 +61,6 @@ const $tripHeaderSection = closestCommonAncestor(
   document.querySelector('[data-ak="trip-heading"]'),
   document.querySelector('[data-ak="trip-heading-date"]')
 );
-$tripHeaderSection?.classList.add('ak-skeleton-pulse');
 
 function closestCommonAncestor(a, b) {
   if (!a || !b) return null;
@@ -127,7 +126,7 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   restoreTripHeading();
-  $tripHeaderSection?.classList.remove('ak-skeleton-pulse');
+  $tripHeaderSection?.removeAttribute('data-ak-skeleton-pulse');
   restoreTypeWrapAttractions();
   restoreHotel();
   restoreAirports();

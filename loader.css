@@ -1,9 +1,9 @@
-.ak-skeleton-pulse {
+[data-ak-skeleton-pulse] {
   position: relative;
   overflow: hidden;
 }
 
-.ak-skeleton-pulse::after {
+[data-ak-skeleton-pulse]::after {
   content: '';
   position: absolute;
   inset: 0;
