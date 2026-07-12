@@ -1,12 +1,22 @@
 [data-ak-skeleton-pulse] {
   position: relative;
-  overflow: hidden;
+  color: transparent !important;
+}
+
+[data-ak-skeleton-pulse] * {
+  color: transparent !important;
 }
 
 [data-ak-skeleton-pulse]::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 50%;
+  max-width: 200px;
+  height: 0.65em;
+  border-radius: 4px;
   background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite;
