@@ -10,9 +10,7 @@
 [data-ak-skeleton-pulse]::after {
   content: '';
   position: absolute;
-  top: 50%;
   left: 0;
-  transform: translateY(-50%);
   width: 50%;
   max-width: 200px;
   height: 0.65em;
@@ -20,6 +18,14 @@
   background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite;
+}
+
+[data-ak="trip-heading"][data-ak-skeleton-pulse]::after {
+  bottom: 0;
+}
+
+[data-ak="trip-heading-date"][data-ak-skeleton-pulse]::after {
+  top: 0;
 }
 
 @keyframes akSkeletonShimmer {
