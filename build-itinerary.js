@@ -57,7 +57,7 @@ const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]'
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 
-const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"] h2');
+const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
 let map;
