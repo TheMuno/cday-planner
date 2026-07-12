@@ -57,6 +57,22 @@ const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]'
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 
+const $tripHeaderSection = closestCommonAncestor(
+  document.querySelector('[data-ak="trip-heading"]'),
+  document.querySelector('[data-ak="trip-heading-date"]')
+);
+$tripHeaderSection?.classList.add('ak-skeleton-pulse');
+
+function closestCommonAncestor(a, b) {
+  if (!a || !b) return null;
+  let node = a;
+  while (node) {
+    if (node.contains(b)) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 let map;
 let infoWindow;
 let insiderTipsData = null;
@@ -111,6 +127,7 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   restoreTripHeading();
+  $tripHeaderSection?.classList.remove('ak-skeleton-pulse');
   restoreTypeWrapAttractions();
   restoreHotel();
   restoreAirports();
