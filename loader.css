@@ -1,5 +1,13 @@
 .ak-skeleton-pulse {
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0) 25%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0) 75%);
+  position: relative;
+  overflow: hidden;
+}
+
+.ak-skeleton-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite;
 }
