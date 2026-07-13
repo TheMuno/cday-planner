@@ -141,6 +141,7 @@ window.addEventListener('load', async () => {
     $continueBtn.classList.remove('ak-saving');
     $continueBtn.disabled = false;
     $continueBtn.style.opacity = '';
+    $continueBtn.style.minWidth = '';
     $continueBtn.innerHTML = continueBtnOriginalHTML;
   }
 
@@ -171,6 +172,7 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
+    $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Calculating Savings...</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
@@ -186,7 +188,7 @@ window.addEventListener('load', async () => {
       $btn.classList.remove('ak-saving');
       $btn.disabled = false;
       $btn.style.opacity = '';
-      setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; }, 1000);
+      setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; $btn.style.minWidth = ''; }, 1000);
     }
   });
 
