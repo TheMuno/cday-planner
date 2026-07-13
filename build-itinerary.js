@@ -133,27 +133,60 @@ window.addEventListener('load', async () => {
     window.location.href = '/';
   });
 
-  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
+  const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
+  const continueBtnOriginalHTML = $continueBtn?.innerHTML;
+
+  function resetContinueBtn() {
+    if (!$continueBtn) return;
+    $continueBtn.classList.remove('ak-saving');
+    $continueBtn.disabled = false;
+    $continueBtn.style.opacity = '';
+    $continueBtn.innerHTML = continueBtnOriginalHTML;
+  }
+
+  // Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated away,
+  // so without this the button can come back stuck mid-spinner if they hit back after clicking it.
+  window.addEventListener('pageshow', e => {
+    if (e.persisted) resetContinueBtn();
+  });
+
+  $continueBtn?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
     if ($btn.classList.contains('ak-saving')) return;
 
-    const originalHTML = $btn.innerHTML;
+    if (!document.getElementById('ak-step2-spinner-style')) {
+      const style = document.createElement('style');
+      style.id = 'ak-step2-spinner-style';
+      style.textContent = `
+        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+        .ak-step2-spinner {
+          display: inline-block; width: 14px; height: 14px;
+          border: 2px solid currentColor; border-top-color: transparent;
+          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+          opacity: 0.8; flex-shrink: 0;
+        }
+        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Calculating Savings...</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
-    $btn.textContent = 'Saving...';
 
+    const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
-      await saveAttractionsDB();
+      await Promise.race([saveAttractionsDB(), step2Timeout]);
       window.location.href = '/pass-calculator';
     } catch (err) {
       console.error(err);
+      $btn.innerHTML = 'Failed, try again!';
       $btn.classList.remove('ak-saving');
       $btn.disabled = false;
       $btn.style.opacity = '';
-      $btn.innerHTML = 'Failed, try again!';
-      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
+      setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; }, 1000);
     }
   });
 
