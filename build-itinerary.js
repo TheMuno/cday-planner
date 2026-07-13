@@ -45,6 +45,11 @@ const AIRPORT_FIELDS = [
   { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
 ];
 
+const MAP_POPUP_FIELDS = [
+  { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel' },
+  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey }) => ({ nameSelector, markerKey, storageKey })),
+];
+
 const AIRPORT_FLIGHT_FIELDS = [
   { suffix: 'time', key: 'flightTime' },
   { suffix: 'carrier-name', key: 'carrierName' },
@@ -210,6 +215,8 @@ window.addEventListener('load', async () => {
   });
 
   document.body.addEventListener('click', handleRemoveLocation);
+  document.body.addEventListener('click', handlePopupOpen);
+  document.body.addEventListener('click', handleFieldMapPopup);
 
   document.body.addEventListener('dragstart', handleDragStart);
   document.body.addEventListener('dragover', e => {
@@ -396,9 +403,6 @@ async function setupHotelAutocomplete() {
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
     markerObj['hotel'] = marker;
 
-    const $resultWrap = document.querySelector('[data-ak="hotel-search-result"]');
-    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
-
     const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
     if ($hotelNameEl) $hotelNameEl.textContent = displayName;
 
@@ -458,9 +462,6 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
     if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
     markerObj[markerKey] = marker;
 
-    const $resultWrap = $wrap.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
-    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
-
     const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
     if ($nameEl) $nameEl.textContent = displayName;
 
@@ -479,18 +480,6 @@ function getCorrectTransportationPinUrl(type) {
   if (type.includes('bus_station')) return busPinUrl;
   if (type.includes('train_station')) return trainPinUrl;
   return airportMarkerPinUrl;
-}
-
-function addLocationToResultWrap(name, marker, $resultWrap) {
-  const $template = document.querySelector('[data-ak="attraction-location"]');
-  if (!$template) return;
-  const $location = $template.cloneNode(true);
-  $location.classList.remove('hidden');
-  $location.querySelector('[data-ak="location-title"]').textContent = name;
-  $location.querySelector('[data-ak="location-link-text"]').textContent = name;
-  $location.marker = marker;
-  $resultWrap.innerHTML = '';
-  $resultWrap.append($location);
 }
 
 function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
@@ -844,6 +833,38 @@ function handleRemoveLocation(e) {
   );
 }
 
+function handlePopupOpen(e) {
+  if (!e.target.closest('[data-ak="popup-open"]')) return;
+  e.preventDefault();
+
+  const $attraction = e.target.closest('[data-ak="attraction-location"]');
+  if (!$attraction?.saveObj) return;
+
+  openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
+}
+
+function handleFieldMapPopup(e) {
+  const $trigger = e.target.closest('[data-ak-map-popup]');
+  if (!$trigger) return;
+  e.preventDefault();
+
+  const $item = $trigger.closest('.itinerary_ui_fields_item');
+  if (!$item) return;
+
+  const field = MAP_POPUP_FIELDS.find(({ nameSelector }) => $item.querySelector(nameSelector));
+  if (!field) return;
+
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage[field.storageKey] || 'null');
+  } catch (err) {
+    return;
+  }
+  if (!saveObj?.location) return;
+
+  openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
+}
+
 function removeAttractionLocation($attraction) {
   if ($attraction.marker) $attraction.marker.setMap(null);
 
@@ -948,15 +969,12 @@ function restoreHotel() {
   if (markerObj['hotel']) markerObj['hotel'].setMap(null);
   markerObj['hotel'] = marker;
 
-  const $resultWrap = document.querySelector('[data-ak="hotel-search-result"]');
-  if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
-
   const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
   if ($hotelNameEl) $hotelNameEl.textContent = displayName;
 }
 
 function restoreAirports() {
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, nameSelector, prefix, draftKey }) => {
+  AIRPORT_FIELDS.forEach(({ markerKey, storageKey, nameSelector, prefix, draftKey }) => {
     let saveObj;
     try {
       saveObj = JSON.parse(localStorage[storageKey] || 'null');
@@ -974,10 +992,6 @@ function restoreAirports() {
     const marker = createMarker(displayName, location, editorialSummary, type, pin, saveObj);
     if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
     markerObj[markerKey] = marker;
-
-    const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
-    const $resultWrap = $wrap?.closest('.form_row')?.querySelector('[data-ak="airport-search-result"]');
-    if ($resultWrap) addLocationToResultWrap(displayName, marker, $resultWrap);
 
     const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
     if ($nameEl) $nameEl.textContent = displayName;
