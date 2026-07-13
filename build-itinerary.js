@@ -37,7 +37,7 @@ const locations = {
   miami: { lat: 25.7743, lng: -80.1937 },
 };
 
-const timeslotKeyMap = { morning: 'attractions', afternoon: 'restaurants', evening: 'notes' };
+const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
@@ -116,7 +116,7 @@ window.addEventListener('load', async () => {
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
-  restoreTypeWrapAttractions();
+  restoreAttractions();
   restoreHotel();
   restoreAirports();
   restoreTripNotes();
@@ -223,7 +223,7 @@ window.addEventListener('load', async () => {
     if (!e.target.matches('.ak-notes')) return;
     setUnsavedChangesFlag();
     clearTimeout(notesSaveTimer);
-    notesSaveTimer = setTimeout(() => saveTripNotesLocal(e.target.value), 500);
+    notesSaveTimer = setTimeout(() => saveTripNotesLocal(e.target), 500);
   });
 
   document.body.addEventListener('input', e => {
@@ -265,55 +265,12 @@ async function setupAutocompleteInp() {
     const place = placePrediction.toPlace();
     await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
 
-    const placeObj = place.toJSON();
-    const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
-    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
-    const isRestaurant = type.includes('restaurant') || type.includes('food');
-    const $typeWrap = document.querySelector(`[data-ak-type-wrap="${isRestaurant ? 'eat' : 'visit'}"]`);
+    const saveObj = buildSaveObjFromPlace(place);
+    map.panTo(saveObj.location);
 
-    if ($typeWrap && attractionExists($typeWrap, displayName)) {
-      alertify.alert('Sorry, Already Added!');
-      placeAutocomplete.value = '';
-      return;
-    }
-
-    if (!auth.currentUser) {
-      if (addedAttractions >= attractionslimit) {
-        alertify.alert('Max Limit Reached. Login To Add More');
-        placeAutocomplete.value = '';
-        return;
-      }
-      updateAttractionsCount('+');
-      localStorage['ak-update-merge-local'] = true;
-    }
-
-    const saveObj = {
-      location: { lat, lng },
-      displayName,
-      address: placeObj.formattedAddress || '',
-      editorialSummary,
-      type,
-      placeId: id,
-      rating: placeObj.rating ?? null,
-      website: placeObj.websiteURI || placeObj.websiteUri || '',
-      phone: placeObj.nationalPhoneNumber || '',
-      reviewCount: placeObj.userRatingCount ?? null,
-      photoUrl,
-      openingHours: placeObj.regularOpeningHours || null,
-      priceRange: placeObj.priceRange || null,
-      businessStatus: placeObj.businessStatus || null,
-      _isSearchResult: true,
-      _detailsLoaded: true,
-    };
-
-    map.panTo({ lat, lng });
-
-    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, cameraPinUrl, saveObj);
-    if ($typeWrap) {
-      addAttractionToList(displayName, $typeWrap, marker, saveObj);
-      saveTypeWrapAttractionsLocal();
-      setUnsavedChangesFlag();
-    }
+    const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+    const status = addSearchResultToItinerary(saveObj, marker);
+    if (status !== 'added') marker.map = null;
 
     placeAutocomplete.value = '';
   });
@@ -695,10 +652,10 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
   const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
 
   const { $currentSlide, slideIndex } = getCurrentSlideInfo();
-  const $timeslot = $currentSlide.querySelector(`[data-ak-timeslot="${isRestaurant ? 'afternoon' : 'morning'}"]`);
-  const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
+  const $typeSection = $currentSlide.querySelector(`[data-ak-type="${isRestaurant ? 'eat' : 'visit'}"]`);
+  const $typeWrap = $typeSection.querySelector('[data-ak-type-wrap]');
 
-  if (attractionExists($timeslotWrap, displayName)) {
+  if (attractionExists($typeWrap, displayName)) {
     if (!silent) alertify.alert('Sorry, Already Added!');
     return 'duplicate';
   }
@@ -717,15 +674,16 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
   markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
   markerObj[`slide${slideIndex}`].push(marker);
 
-  if ($timeslot.querySelector('[data-ak-timeslot-content]').style.height === '0px') {
-    $timeslot.querySelector('[data-ak-timeslot-title]').click();
+  const $content = $typeSection.querySelector('[data-ak-type-content]');
+  if ($content && $content.style.height === '0px') {
+    $typeSection.querySelector('[data-ak-type-title]').click();
   }
 
-  addAttractionToList(displayName, $timeslotWrap, marker, saveObj);
+  addAttractionToList(displayName, $typeWrap, marker, saveObj);
   saveAttractionLocal();
 
-  $currentSlide.querySelector('[data-ak-timeslots].active')?.classList.remove('active');
-  $timeslot.classList.add('active');
+  $currentSlide.querySelector('[data-ak-types].active')?.classList.remove('active');
+  $typeSection.classList.add('active');
 
   if (marker?.content) marker.content.src = isRestaurant ? foodForkPinUrl : cameraPinUrl;
 
@@ -862,7 +820,7 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
 }
 
 function getCurrentSlideInfo() {
-  const $currentSlide = document.querySelector('.w-slide:not([aria-hidden="true"])');
+  const $currentSlide = $attractionsSliderMask.querySelector('.w-slide:not([aria-hidden="true"])');
   const slideIndex = [...$attractionsSliderMask.querySelectorAll('.w-slide')].indexOf($currentSlide) + 1;
   return { $currentSlide, slideIndex };
 }
@@ -896,13 +854,11 @@ function removeAttractionLocation($attraction) {
     localStorage['ak-place-ids'] = JSON.stringify(placeIds);
   }
 
-  const $timeslotWrap = $attraction.closest('[data-ak-timeslot-wrap]');
-  const $typeWrap = $attraction.closest('[data-ak-type-wrap]');
+  const $slide = $attraction.closest('.w-slide');
 
   $attraction.remove();
 
-  if ($timeslotWrap) saveAttractionLocal();
-  if ($typeWrap) saveTypeWrapAttractionsLocal();
+  if ($slide) saveAttractionLocal();
   if (!auth.currentUser) updateAttractionsCount('-');
   setUnsavedChangesFlag();
 }
@@ -924,10 +880,10 @@ function handleDragOver(e) {
 }
 
 function expandContentWrapOnDrag(e) {
-  if (!e.target.closest('[data-ak-timeslot-title]')) return;
-  const $title = e.target.closest('[data-ak-timeslot-title]');
-  const $contentWrap = $title.closest('[data-ak-timeslots]').querySelector('[data-ak-timeslot-content]');
-  if ($contentWrap.style.height !== '0px') return;
+  if (!e.target.closest('[data-ak-type-title]')) return;
+  const $title = e.target.closest('[data-ak-type-title]');
+  const $contentWrap = $title.closest('[data-ak-types]')?.querySelector('[data-ak-type-content]');
+  if (!$contentWrap || $contentWrap.style.height !== '0px') return;
   $title.click();
 }
 
@@ -938,44 +894,42 @@ function handleDrop(e) {
 
   if (!$draggedAttraction) return;
 
-  const $fromTimeslotWrap = $draggedAttraction.closest('[data-ak-timeslot-wrap]');
-  const $fromTypeWrap = $draggedAttraction.closest('[data-ak-type-wrap]');
+  const $fromSlide = $draggedAttraction.closest('.w-slide');
 
   $dropZone.appendChild($draggedAttraction);
   $draggedAttraction = null;
 
-  const $toTimeslotWrap = $dropZone.closest('[data-ak-timeslot-wrap]');
-  const $toTypeWrap = $dropZone.closest('[data-ak-type-wrap]');
+  const $toSlide = $dropZone.closest('.w-slide');
 
-  if ($fromTimeslotWrap || $toTimeslotWrap) saveAttractionLocal();
-  if ($fromTypeWrap || $toTypeWrap) saveTypeWrapAttractionsLocal();
+  if ($fromSlide || $toSlide) saveAttractionLocal();
   setUnsavedChangesFlag();
 }
 
-function getCurrentTypeWrapAttractions() {
-  const saved = {};
-  ['eat', 'visit'].forEach(key => {
-    const $wrap = document.querySelector(`[data-ak-type-wrap="${key}"]`);
-    saved[key] = $wrap
-      ? [...$wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])')].map(el => el.saveObj)
-      : [];
-  });
-  return saved;
-}
+// Single source of truth for per-day Visit/Eat state: reads the same ak-attractions-saved
+// snapshot that saveAttractionLocal() writes and saveAttractionsDB() sends to Firestore, so the
+// restored UI can never drift from what actually gets saved.
+function restoreAttractions() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-attractions-saved'] || '{}');
+  } catch (e) {
+    return;
+  }
 
-function saveTypeWrapAttractionsLocal() {
-  localStorage['ak-visit-eat-saved'] = JSON.stringify(getCurrentTypeWrapAttractions());
-}
+  const bucketToType = { attractions: 'visit', restaurants: 'eat' };
 
-function restoreTypeWrapAttractions() {
-  const saved = JSON.parse(localStorage['ak-visit-eat-saved'] || '{}');
-  ['eat', 'visit'].forEach(key => {
-    const $wrap = document.querySelector(`[data-ak-type-wrap="${key}"]`);
-    if (!$wrap) return;
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach((slide, n) => {
+    const slideSaved = saved[`slide${n + 1}`];
+    if (!slideSaved) return;
 
-    (saved[key] || []).forEach(saveObj => {
-      const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
-      addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
+    Object.entries(bucketToType).forEach(([bucket, key]) => {
+      const $wrap = slide.querySelector(`[data-ak-type-wrap="${key}"]`);
+      if (!$wrap) return;
+
+      (slideSaved[bucket] || []).forEach(saveObj => {
+        const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+        addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
+      });
     });
   });
 }
@@ -1076,13 +1030,34 @@ function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value
   localStorage[draftKey] = JSON.stringify(draft);
 }
 
-function saveTripNotesLocal(value) {
-  localStorage['ak-trip-notes'] = value;
+function saveTripNotesLocal($notes) {
+  const slideIndex = [...$attractionsSliderMask.querySelectorAll('.w-slide')].indexOf($notes.closest('.w-slide')) + 1;
+  if (!slideIndex) return;
+
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-trip-notes'] || '{}');
+  } catch (e) {
+    saved = {};
+  }
+  saved[`slide${slideIndex}`] = $notes.value;
+  localStorage['ak-trip-notes'] = JSON.stringify(saved);
 }
 
 function restoreTripNotes() {
-  const $notes = document.querySelector('.ak-notes');
-  if ($notes && localStorage['ak-trip-notes'] != null) $notes.value = localStorage['ak-trip-notes'];
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-trip-notes'] || '{}');
+  } catch (e) {
+    return;
+  }
+
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach((slide, n) => {
+    const value = saved[`slide${n + 1}`];
+    if (value == null) return;
+    const $notes = slide.querySelector('.ak-notes');
+    if ($notes) $notes.value = value;
+  });
 }
 
 function restoreTripHeading() {
@@ -1138,16 +1113,17 @@ function getCurrentUserAttractions() {
     savedAttractions[`slide${n + 1}`] = {};
     const slideObj = savedAttractions[`slide${n + 1}`];
 
-    slide.querySelectorAll('[data-ak-timeslots] [data-ak-timeslot-content]').forEach(timeslotContent => {
-      const timeslot = timeslotKeyMap[timeslotContent.querySelector('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap')];
-      slideObj[timeslot] = [];
+    slide.querySelectorAll('[data-ak-types]').forEach($typeSection => {
+      const type = typeKeyMap[$typeSection.getAttribute('data-ak-type')];
+      if (!type) return;
+      slideObj[type] = [];
 
-      timeslotContent.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])').forEach(attraction => {
-        slideObj[timeslot].push(attraction.saveObj);
+      $typeSection.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])').forEach(attraction => {
+        slideObj[type].push(attraction.saveObj);
       });
 
-      if (timeslot === 'notes') {
-        const $notes = timeslotContent.querySelector('textarea');
+      if (type === 'notes') {
+        const $notes = $typeSection.querySelector('textarea');
         slideObj.dayNotes = $notes ? $notes.value : '';
       }
     });
