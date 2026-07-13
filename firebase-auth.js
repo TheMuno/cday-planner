@@ -47,6 +47,9 @@ const firebaseConfig = {
 // ── 2. WHERE TO SEND THE USER AFTER LOGIN ───────────────────
 const REDIRECT_AFTER_LOGIN = localStorage.getItem('ak-login-redirect') || '/';
 
+// ── 2b. MAKE.COM WEBHOOK (fires once per genuine sign-in) ────
+const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd02um';
+
 // ── 3. INIT ─────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -512,6 +515,27 @@ function onUserLoginSuccess(user) {
       'event_label': 'Successful Sign-In',
     });
   }
+  sendToMake(user);
+}
+
+function sendToMake(user) {
+  const ref = localStorage.getItem('ak-ref');
+  const conf = localStorage.getItem('ak-conf');
+  if (!ref || !conf) return;
+
+  const adults = localStorage.getItem('ak-adult-num');
+  const children = localStorage.getItem('ak-children-num');
+  const email = user?.email || localStorage.getItem('ak-userMail') || '';
+
+  const payload = { ref, conf, email };
+  if (adults) payload.adults = adults;
+  if (children) payload.children = children;
+
+  fetch(MAKE_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch(err => console.error('Failed to send data to Make.com:', err));
 }
 
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────

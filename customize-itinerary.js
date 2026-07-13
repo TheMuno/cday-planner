@@ -572,9 +572,7 @@ window.addEventListener('load', async () => {
     e.preventDefault();
     $saveItineraryBtn.disabled = true;
     $saveItineraryBtn.style.opacity = '0.8';
-    // const isFirstSave = await hasNoDBRecord(); // TODO: re-enable to gate sendToMake on first-save-only
     await saveAttractionsDB();
-    sendToMake();
     removeUnsavedChangesFlag();
     $saveItineraryBtn.disabled = false;
     $saveItineraryBtn.style.opacity = '';
@@ -2266,36 +2264,6 @@ function addLocationToResultWrap(name, marker, $resultWrap) {
   $location.marker = marker;
   $resultWrap.innerHTML = '';
   $resultWrap.append($location);
-}
-
-const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd02um';
-
-async function hasNoDBRecord() {
-  if (!localStorage['ak-userMail']) return false;
-  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
-  const userRef = doc(db, 'locationsData', `user-${userMail}`);
-  const docSnap = await getDoc(userRef);
-  return !docSnap.exists();
-}
-
-function sendToMake() {
-  const ref = localStorage['ak-ref'];
-  const conf = localStorage['ak-conf'];
-  if (!ref || !conf) return;
-
-  const adults = localStorage['ak-adult-num'];
-  const children = localStorage['ak-children-num'];
-  const email = localStorage['ak-userMail'] || '';
-
-  const payload = { ref, conf, email };
-  if (adults) payload.adults = adults;
-  if (children) payload.children = children;
-
-  fetch(MAKE_WEBHOOK_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(err => console.error('Failed to send data to Make.com:', err));
 }
 
 async function saveAttractionsDB() {
