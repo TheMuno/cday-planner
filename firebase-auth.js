@@ -527,13 +527,20 @@ function sendToMake(user) {
   const children = localStorage.getItem('ak-children-num');
   const email = user?.email || localStorage.getItem('ak-userMail') || '';
 
+  let dateStr;
+  try {
+    dateStr = JSON.parse(localStorage.getItem('ak-travel-days'))?.dateStr;
+  } catch (_) {}
+
   const payload = { ref, conf, email };
   if (adults) payload.adults = adults;
   if (children) payload.children = children;
+  if (dateStr) payload.dateStr = dateStr;
 
   fetch(MAKE_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
     body: JSON.stringify(payload),
   }).catch(err => console.error('Failed to send data to Make.com:', err));
 }
