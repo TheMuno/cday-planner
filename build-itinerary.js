@@ -192,6 +192,11 @@ window.addEventListener('load', async () => {
     }
   });
 
+  document.querySelector('.itinerary_ui_bulk_finish')?.addEventListener('click', e => {
+    e.preventDefault();
+    handleBulkImport();
+  });
+
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
   const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
   wireChipWrap($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
@@ -652,7 +657,7 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
     if (!$existingMatch && saveObj?._isSearchResult) {
       if ($actionLabel) $actionLabel.textContent = 'Add Activity';
       $popupActionBtn.onclick = () => {
-        const added = addSearchResultToItinerary(saveObj, marker);
+        const added = addSearchResultToItinerary(saveObj, marker) === 'added';
         if (added) $mapPopup.setAttribute('data-ak-hidden', 'true');
       };
     } else {
@@ -685,7 +690,7 @@ function findItineraryMatch(saveObj) {
   ) || null;
 }
 
-function addSearchResultToItinerary(saveObj, marker) {
+function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
   const displayName = saveObj.displayName;
   const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
 
@@ -694,14 +699,14 @@ function addSearchResultToItinerary(saveObj, marker) {
   const $timeslotWrap = $timeslot.querySelector('[data-ak-timeslot-wrap]');
 
   if (attractionExists($timeslotWrap, displayName)) {
-    alertify.alert('Sorry, Already Added!');
-    return false;
+    if (!silent) alertify.alert('Sorry, Already Added!');
+    return 'duplicate';
   }
 
   if (!auth.currentUser) {
     if (addedAttractions >= attractionslimit) {
-      alertify.alert('Max Limit Reached. Login To Add More');
-      return false;
+      if (!silent) alertify.alert('Max Limit Reached. Login To Add More');
+      return 'limit';
     }
     updateAttractionsCount('+');
     localStorage['ak-update-merge-local'] = true;
@@ -725,7 +730,111 @@ function addSearchResultToItinerary(saveObj, marker) {
   if (marker?.content) marker.content.src = isRestaurant ? foodForkPinUrl : cameraPinUrl;
 
   setUnsavedChangesFlag();
-  return true;
+  return 'added';
+}
+
+// Bulk import gives us free-text lines instead of an autocomplete prediction, so each line has to be
+// resolved to a real place first. Text Search (New) does the search + field-fetch in one call, unlike
+// the autocomplete widget flow which needs a separate fetchFields() after a prediction is chosen.
+async function resolvePlaceFromText(query) {
+  const { places } = await google.maps.places.Place.searchByText({
+    textQuery: query,
+    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    maxResultCount: 1,
+  });
+  return places?.[0] || null;
+}
+
+function buildSaveObjFromPlace(place) {
+  const placeObj = place.toJSON();
+  const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
+  const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+  return {
+    location: { lat, lng },
+    displayName,
+    address: placeObj.formattedAddress || '',
+    editorialSummary,
+    type,
+    placeId: id,
+    rating: placeObj.rating ?? null,
+    website: placeObj.websiteURI || placeObj.websiteUri || '',
+    phone: placeObj.nationalPhoneNumber || '',
+    reviewCount: placeObj.userRatingCount ?? null,
+    photoUrl,
+    openingHours: placeObj.regularOpeningHours || null,
+    priceRange: placeObj.priceRange || null,
+    businessStatus: placeObj.businessStatus || null,
+    _isSearchResult: true,
+    _detailsLoaded: true,
+  };
+}
+
+// Bulk-import textarea: one location per line. "---" is reserved as a future day divider;
+// for now every line lands on the current day, same as picking "Add Activity" from the map popup.
+async function handleBulkImport() {
+  const $textarea = document.querySelector('.itinerary_ui_bulk_text');
+  const $finishBtn = document.querySelector('.itinerary_ui_bulk_finish');
+  const $bulkWrap = document.querySelector('.itinerary_ui_bulk_wrap');
+  if (!$textarea || $finishBtn?.classList.contains('ak-importing')) return;
+
+  const lines = $textarea.value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && line !== '---');
+
+  if (!lines.length) return;
+
+  const $label = $finishBtn?.querySelector('[data-ak="popup-action-label"]');
+  const originalLabel = $label?.textContent;
+
+  $finishBtn?.classList.add('ak-importing');
+  $finishBtn?.style.setProperty('pointer-events', 'none');
+  $finishBtn?.style.setProperty('opacity', '0.6');
+  if ($label) $label.textContent = 'Importing...';
+
+  let addedCount = 0;
+  const notFound = [];
+  const skipped = [];
+
+  for (const line of lines) {
+    try {
+      const place = await resolvePlaceFromText(line);
+      if (!place) { notFound.push(line); continue; }
+
+      const saveObj = buildSaveObjFromPlace(place);
+      const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+      const status = addSearchResultToItinerary(saveObj, marker, { silent: true });
+
+      if (status === 'added') {
+        addedCount++;
+      } else {
+        marker.map = null;
+        if (status === 'limit') { skipped.push(line); break; }
+        skipped.push(line);
+      }
+    } catch (err) {
+      console.error(err);
+      notFound.push(line);
+    }
+  }
+
+  $finishBtn?.classList.remove('ak-importing');
+  $finishBtn?.style.removeProperty('pointer-events');
+  $finishBtn?.style.removeProperty('opacity');
+  if ($label) $label.textContent = originalLabel;
+
+  const failed = [...notFound, ...skipped];
+  const summary = addedCount
+    ? `Added ${addedCount} location${addedCount === 1 ? '' : 's'}.${failed.length ? ` Couldn't add: ${failed.join(', ')}.` : ''}`
+    : `Couldn't add any locations: ${failed.join(', ')}.`;
+  alertify.alert(summary);
+
+  if (addedCount) {
+    $textarea.value = '';
+    if ($bulkWrap) $bulkWrap.style.display = 'none';
+  }
 }
 
 function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
