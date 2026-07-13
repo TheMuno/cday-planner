@@ -181,7 +181,7 @@ window.addEventListener('load', async () => {
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
-      window.location.href = '/pass-calculator';
+      window.location.href = '/itinerary-maker/pass-calculator';
     } catch (err) {
       console.error(err);
       $btn.innerHTML = 'Failed, try again!';
