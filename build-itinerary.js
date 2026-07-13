@@ -138,6 +138,11 @@ window.addEventListener('load', async () => {
     window.location.href = '/';
   });
 
+  document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
+    e.preventDefault();
+    window.location.href = '/log-in';
+  });
+
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
