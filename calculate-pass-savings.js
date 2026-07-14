@@ -53,6 +53,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/verify-itinerary';
   });
 
+  ['purchase-go-city', 'purchase-city-pass'].forEach(dataAk => {
+    document.querySelector(`[data-ak="${dataAk}"]`)?.addEventListener('click', e => {
+      const url = e.currentTarget.dataset.akPurchaseLink;
+      if (!url) return;
+      e.preventDefault();
+      window.location.href = url;
+    });
+  });
+
   // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
   // .finally() so Y still shows up even if the sheet fetch fails.
   populateOnPassTickets().catch(err => console.error(err)).finally(renderInitTickets);
@@ -126,7 +135,10 @@ async function populateOnPassTickets() {
   }
 
   if ($onPassCounter) $onPassCounter.textContent = X;
-  if ($attractionsOnPasses && X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
+  if ($attractionsOnPasses) {
+    if (X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
+    else $attractionsOnPasses.setAttribute('data-ak-hidden', 'true');
+  }
 }
 
 function restoreTripHeading() {
