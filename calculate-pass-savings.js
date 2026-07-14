@@ -53,8 +53,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/verify-itinerary';
   });
 
-  renderInitTickets();
-  populateOnPassTickets();
+  // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
+  // .finally() so Y still shows up even if the sheet fetch fails.
+  populateOnPassTickets().catch(err => console.error(err)).finally(renderInitTickets);
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
