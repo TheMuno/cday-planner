@@ -23,6 +23,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/itinerary-maker';
   });
 
+  document.querySelector('[data-ak="continue-to-step3"]')?.addEventListener('click', e => {
+    e.preventDefault();
+    window.location.href = '/itinerary-maker/verify-itinerary';
+  });
+
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   restoreTripHeading();
