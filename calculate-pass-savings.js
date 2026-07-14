@@ -14,6 +14,8 @@ const firebaseConfig = {
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
+const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
+
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
@@ -28,12 +30,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/verify-itinerary';
   });
 
+  populateTicketCounts();
+
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 });
+
+async function fetchSheetData() {
+  const res = await fetch(firebaseUrl);
+  return res.json();
+}
+
+// Mirrors the X/Y portion of preCalculatePassStats() in customize-itinerary_dev_pg2.js
+async function populateTicketCounts() {
+  const { Attractions } = await fetchSheetData();
+  localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
+
+  const Y = Number(localStorage['ak-y-total-attractions'] || 0);
+  document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
+
+  const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
+  const userAddedAttractions = Object.entries(JSON.parse(localStorage['ak-user-added-items'] || '{}'));
+
+  if (!Attractions || (!placeIds.length && !userAddedAttractions.length)) return;
+
+  const normalize = str => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  const seenNames = new Map();
+  let X = 0;
+
+  for (const [id, passInfo] of Object.entries(Attractions)) {
+    const { place_id, place_id_secondary, on_pass, attraction_name, passes } = passInfo;
+    const normalizedName = normalize(attraction_name);
+
+    const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
+    const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
+
+    if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
+    seenNames.set(normalizedName, true);
+
+    if (on_pass?.trim().toLowerCase() === 'true') {
+      const isOnGoCity   = passes?.toLowerCase().includes('go city');
+      const isOnCityPass = passes?.toLowerCase().includes('citypass');
+      if (isOnGoCity || isOnCityPass) X++;
+    }
+  }
+
+  const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
+  if ($onPassCounter) $onPassCounter.textContent = X;
+}
 
 function restoreTripHeading() {
   if (auth.currentUser) {
