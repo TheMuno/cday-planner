@@ -19,6 +19,21 @@ const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
+// Fallback: recover ak-place-ids from ak-attractions-saved when it was cleared (mirrors
+// customize-itinerary_dev_pg2.js) — on-pass-tickets matching depends entirely on ak-place-ids.
+if (!localStorage['ak-place-ids'] && localStorage['ak-attractions-saved']) {
+  try {
+    const saved = JSON.parse(localStorage['ak-attractions-saved']);
+    const placeIds = [];
+    Object.values(saved).forEach(day => {
+      [...(day.attractions || []), ...(day.restaurants || []), ...(day.notes || [])].forEach(attr => {
+        if (attr?.placeId && !placeIds.includes(attr.placeId)) placeIds.push(attr.placeId);
+      });
+    });
+    if (placeIds.length) localStorage['ak-place-ids'] = JSON.stringify(placeIds);
+  } catch (_) {}
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   document.querySelector('[data-ak="go-back-to-step1"]')?.addEventListener('click', e => {
     e.preventDefault();
@@ -44,12 +59,25 @@ async function fetchSheetData() {
   return res.json();
 }
 
+// build-itinerary.js's continue-to-step2 never sets ak-y-total-attractions (that's only written by
+// the old customize-itinerary.js flow), so derive Y from the actual saved itinerary data instead:
+// count of "visit" (attractions bucket) locations across all days.
+function getTotalAttractionsCount() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-attractions-saved'] || '{}');
+  } catch (e) {
+    return 0;
+  }
+  return Object.values(saved).reduce((count, slide) => count + (slide.attractions?.length || 0), 0);
+}
+
 // Mirrors the X/Y portion of preCalculatePassStats() in customize-itinerary_dev_pg2.js
 async function populateTicketCounts() {
   const { Attractions } = await fetchSheetData();
   localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
 
-  const Y = Number(localStorage['ak-y-total-attractions'] || 0);
+  const Y = getTotalAttractionsCount();
   document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
@@ -80,6 +108,9 @@ async function populateTicketCounts() {
 
   const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
   if ($onPassCounter) $onPassCounter.textContent = X;
+
+  const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
+  if ($attractionsOnPasses && X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
 }
 
 function restoreTripHeading() {
