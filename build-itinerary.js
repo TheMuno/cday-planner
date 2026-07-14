@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -14,7 +14,15 @@ const firebaseConfig = {
 
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+
+// Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+// connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+let db;
+try {
+  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+} catch (e) {
+  db = getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+}
 
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
@@ -199,6 +207,10 @@ window.addEventListener('load', async () => {
       $btn.disabled = false;
       $btn.style.opacity = '';
       setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; $btn.style.minWidth = ''; }, 1000);
+
+      alertify.alert(navigator.onLine
+        ? "We couldn't save your trip. Please try again in a moment."
+        : "You're offline — please check your internet connection and try again.");
     }
   });
 
