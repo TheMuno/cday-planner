@@ -1,16 +1,47 @@
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
+    authDomain: "askkhonsu-map.firebaseapp.com",
+    projectId: "askkhonsu-map",
+    storageBucket: "askkhonsu-map.appspot.com",
+    messagingSenderId: "266031876218",
+    appId: "1:266031876218:web:ec93411f1c13d9731e93c3",
+    measurementId: "G-Z7F4NJ4PHW"
+};
+
+const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
-document.addEventListener('DOMContentLoaded', () => {
-  restoreTripDate();
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
-
+document.addEventListener('DOMContentLoaded', async () => {
   document.querySelector('[data-ak="go-back-to-step1"]')?.addEventListener('click', e => {
     e.preventDefault();
     window.location.href = '/itinerary-maker/itinerary-maker';
   });
+
+  await new Promise(resolve => onAuthStateChanged(auth, resolve));
+
+  restoreTripHeading();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 });
 
-function restoreTripDate() {
+function restoreTripHeading() {
+  if (auth.currentUser) {
+    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+    if ($headingH2) {
+      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+      if (tripName) {
+        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+      }
+    }
+  }
+
   if (!$tripDateLine || !localStorage['ak-travel-days']) return;
 
   let flatpickrDate;
