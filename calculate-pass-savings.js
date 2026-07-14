@@ -19,9 +19,17 @@ const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
-// Fallback: recover ak-place-ids from ak-attractions-saved when it was cleared (mirrors
-// customize-itinerary_dev_pg2.js) — on-pass-tickets matching depends entirely on ak-place-ids.
-if (!localStorage['ak-place-ids'] && localStorage['ak-attractions-saved']) {
+function hasStoredPlaceIds() {
+  try {
+    return JSON.parse(localStorage['ak-place-ids'] || '[]').length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Fallback: recover ak-place-ids from ak-attractions-saved when it's missing or stuck empty
+// (mirrors customize-itinerary_dev_pg2.js) — on-pass-tickets matching depends entirely on ak-place-ids.
+if (!hasStoredPlaceIds() && localStorage['ak-attractions-saved']) {
   try {
     const saved = JSON.parse(localStorage['ak-attractions-saved']);
     const placeIds = [];
@@ -45,7 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/verify-itinerary';
   });
 
-  populateTicketCounts();
+  renderInitTickets();
+  populateOnPassTickets();
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
@@ -72,44 +81,50 @@ function getTotalAttractionsCount() {
   return Object.values(saved).reduce((count, slide) => count + (slide.attractions?.length || 0), 0);
 }
 
-// Mirrors the X/Y portion of preCalculatePassStats() in customize-itinerary_dev_pg2.js
-async function populateTicketCounts() {
-  const { Attractions } = await fetchSheetData();
-  localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
-
+// Y has no dependency on the sheet fetch, so render it immediately instead of behind it.
+function renderInitTickets() {
   const Y = getTotalAttractionsCount();
   document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
+}
+
+// Mirrors the X portion of preCalculatePassStats() in customize-itinerary_dev_pg2.js.
+// Always writes a value to on-pass-tickets (even 0) instead of bailing out silently, so the
+// element never gets stuck on its placeholder markup.
+async function populateOnPassTickets() {
+  const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
+  const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
+
+  const { Attractions } = await fetchSheetData();
+  localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
 
   const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
   const userAddedAttractions = Object.entries(JSON.parse(localStorage['ak-user-added-items'] || '{}'));
 
-  if (!Attractions || (!placeIds.length && !userAddedAttractions.length)) return;
-
-  const normalize = str => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-  const seenNames = new Map();
   let X = 0;
 
-  for (const [id, passInfo] of Object.entries(Attractions)) {
-    const { place_id, place_id_secondary, on_pass, attraction_name, passes } = passInfo;
-    const normalizedName = normalize(attraction_name);
+  if (Attractions && (placeIds.length || userAddedAttractions.length)) {
+    const normalize = str => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+    const seenNames = new Map();
 
-    const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
-    const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
+    for (const [id, passInfo] of Object.entries(Attractions)) {
+      const { place_id, place_id_secondary, on_pass, attraction_name, passes } = passInfo;
+      const normalizedName = normalize(attraction_name);
 
-    if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
-    seenNames.set(normalizedName, true);
+      const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
+      const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
 
-    if (on_pass?.trim().toLowerCase() === 'true') {
-      const isOnGoCity   = passes?.toLowerCase().includes('go city');
-      const isOnCityPass = passes?.toLowerCase().includes('citypass');
-      if (isOnGoCity || isOnCityPass) X++;
+      if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
+      seenNames.set(normalizedName, true);
+
+      if (on_pass?.trim().toLowerCase() === 'true') {
+        const isOnGoCity   = passes?.toLowerCase().includes('go city');
+        const isOnCityPass = passes?.toLowerCase().includes('citypass');
+        if (isOnGoCity || isOnCityPass) X++;
+      }
     }
   }
 
-  const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
   if ($onPassCounter) $onPassCounter.textContent = X;
-
-  const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
   if ($attractionsOnPasses && X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
 }
 
