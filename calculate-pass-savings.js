@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const url = e.currentTarget.dataset.akPurchaseLink;
       if (!url) return;
       e.preventDefault();
-      window.location.href = url;
+      window.open(url, '_blank', 'noopener');
     });
   });
 
