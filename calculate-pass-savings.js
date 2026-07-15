@@ -76,7 +76,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // .finally() so Y still shows up even if the sheet fetch fails.
   populateOnPassTickets().catch(err => console.error(err)).finally(renderInitTickets);
 
-  await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  if (!user) {
+    window.location.href = '/itinerary-maker/itinerary-maker';
+    return;
+  }
 
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
