@@ -42,7 +42,38 @@ if (!hasStoredPlaceIds() && localStorage['ak-attractions-saved']) {
   } catch (_) {}
 }
 
+// A purchased user with nothing added on step 1 has nothing for this page to calculate — send
+// them back to step 1 (mirrors customize-itinerary_dev_pg2.js's "No attractions added" redirect).
+// Not-purchased users always stay, regardless of attractions.
+function noAttractionsAdded() {
+  return !localStorage['ak-place-ids'] && !localStorage['ak-attractions-saved'];
+}
+
+function redirectToStep1(message) {
+  showRedirectLoader(message);
+  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  // Not-logged-in takes priority over everything else on this page — checked first, before any
+  // other wiring or the purchased/attractions check below (which would otherwise be able to fire
+  // off a stale cached purchase value ahead of confirming the user is even signed in).
+  const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  if (!user) {
+    redirectToStep1('User not logged in');
+    return;
+  }
+
+  if (localStorage['ak-has-purchased-plan'] === 'true') {
+    if (noAttractionsAdded()) { redirectToStep1('No attractions added'); return; }
+  } else {
+    // Cached value isn't confirmed purchased yet — listen for stripe-purchase.js's live check
+    // on this page load in case it resolves to purchased while the user is still here.
+    window.addEventListener('ak:purchase-status', e => {
+      if (e.detail?.purchased && noAttractionsAdded()) redirectToStep1('No attractions added');
+    }, { once: true });
+  }
+
   document.querySelector('[data-ak="go-back-to-step1"]')?.addEventListener('click', e => {
     e.preventDefault();
     window.location.href = '/itinerary-maker/itinerary-maker';
@@ -75,13 +106,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
   // .finally() so Y still shows up even if the sheet fetch fails.
   populateOnPassTickets().catch(err => console.error(err)).finally(renderInitTickets);
-
-  const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
-  if (!user) {
-    showRedirectLoader('User not logged in');
-    setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
-    return;
-  }
 
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');

@@ -9,6 +9,12 @@
  *   data-ak-download-guide   — download button(s) revealed after purchase
  *
  * All elements are queried after window.load so Webflow has fully rendered the page.
+ *
+ * Cross-script purchase status (for other scripts on the same page, e.g. calculate-pass-savings.js):
+ *   localStorage['ak-has-purchased-plan']  — 'true' | 'false', cached for future page loads
+ *   window event 'ak:purchase-status'      — { detail: { purchased } }, fired the moment status
+ *                                             is known during THIS page load (localStorage alone
+ *                                             can't tell you when the async check has finished)
  */
 
 import { initializeApp, getApps, getApp }
@@ -34,6 +40,17 @@ const auth      = getAuth(app);
 const db        = getFirestore(app);
 const functions = getFunctions(app);
 
+const PURCHASE_STORAGE_KEY = 'ak-has-purchased-plan';
+const PURCHASE_EVENT       = 'ak:purchase-status';
+
+// Lets other scripts on the same page (e.g. calculate-pass-savings.js) react to purchase
+// status without running their own Firestore read: localStorage for the cached value on
+// future loads, a custom event for the current load since it fires before any write lands.
+function broadcastPurchaseStatus(purchased, { persist = true } = {}) {
+  if (persist) localStorage.setItem(PURCHASE_STORAGE_KEY, purchased ? 'true' : 'false');
+  window.dispatchEvent(new CustomEvent(PURCHASE_EVENT, { detail: { purchased } }));
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const $buyButtons      = document.querySelectorAll('[data-ak="buy-plan"]');
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
@@ -55,6 +72,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       clearTimeout(spinnerTimeout);
       removeSpinners();
       setUI(false);
+      broadcastPurchaseStatus(false);
       wireBuyButtonsLoggedOut($buyButtons);
       return;
     }
@@ -74,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearTimeout(spinnerTimeout);
     removeSpinners();
     setUI(purchased);
+    broadcastPurchaseStatus(purchased);
 
     const isPurchaseReturn = new URLSearchParams(window.location.search).get('purchase') === 'success';
     if (isPurchaseReturn) {
@@ -104,7 +123,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Purchase check failed:', err);
     // Can't confirm purchase status (Firestore unreachable/timed out) — degrade to the
     // not-purchased UI instead of leaving buy-plan/pre-purchase stuck hidden forever.
+    // persist:false — don't clobber a previously cached "true" with an unconfirmed "false".
     setUI(false);
+    broadcastPurchaseStatus(false, { persist: false });
   }
 
   function withTimeout(promise, ms, message) {
@@ -376,6 +397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       fireConversionPixel(plan.amountPaid);
       setUI(true);
+      broadcastPurchaseStatus(true);
       wireDownloadButton(user, $downloadBtns);
       wireGoogleMapsButton($downloadMapsBtns);
       history.replaceState(null, '', window.location.pathname);
