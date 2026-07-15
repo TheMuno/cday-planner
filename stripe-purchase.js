@@ -4,6 +4,7 @@
  *
  * Webflow attributes managed by this script:
  *   data-ak="buy-plan"       — checkout trigger buttons (hidden after purchase)
+ *   data-ak-pre-purchase     — any non-interactive element shown before purchase, hidden after
  *   data-ak-post-purchase    — any element revealed after purchase
  *   data-ak-download-guide   — download button(s) revealed after purchase
  *
@@ -37,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const $buyButtons      = document.querySelectorAll('[data-ak="buy-plan"]');
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
   const $downloadMapsBtns = document.querySelectorAll('[data-ak="download-google-maps-btn"]');
+  const $prePurchaseEls  = document.querySelectorAll('[data-ak-pre-purchase]');
   const $postPurchaseEls = document.querySelectorAll('[data-ak-post-purchase]');
 
 
@@ -117,6 +119,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } else {
         btn.removeAttribute('data-ak-hidden');
+      }
+    });
+
+    $prePurchaseEls.forEach(el => {
+      if (purchased) {
+        el.setAttribute('data-ak-hidden', '');
+      } else {
+        el.removeAttribute('data-ak-hidden');
+        el.style.display = ''; // clear any Webflow inline display:none
       }
     });
 
