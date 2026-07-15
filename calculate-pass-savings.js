@@ -78,7 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
-    window.location.href = '/itinerary-maker/itinerary-maker';
+    showRedirectLoader('User not logged in');
+    setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
     return;
   }
 
@@ -86,6 +87,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 });
+
+// Mirrors customize-itinerary_dev_pg2.js's showRedirectLoader().
+function showRedirectLoader(message) {
+  if (!document.getElementById('pcs-spinner-style')) {
+    const style = document.createElement('style');
+    style.id = 'pcs-spinner-style';
+    style.textContent = "@keyframes pcs-spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(style);
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'pcs-loader-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0',
+    background: 'rgba(255,255,255,0.5)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    gap: '12px', zIndex: '9999',
+  });
+  const redirecting = document.createElement('p');
+  redirecting.textContent = 'Redirecting...';
+  Object.assign(redirecting.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(redirecting);
+  const label = document.createElement('p');
+  label.textContent = message;
+  Object.assign(label.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(label);
+  const spinner = document.createElement('div');
+  Object.assign(spinner.style, {
+    width: '40px', height: '40px',
+    border: '4px solid #e5e7eb', borderTopColor: '#111',
+    borderRadius: '50%', animation: 'pcs-spin 0.7s linear infinite',
+  });
+  overlay.appendChild(spinner);
+  document.body.appendChild(overlay);
+}
 
 async function fetchSheetData() {
   const res = await fetch(firebaseUrl);
