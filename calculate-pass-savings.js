@@ -56,7 +56,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.querySelectorAll('[data-ak="scroll-to-buy-btn"]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.preventDefault();
-      document.querySelector('[data-ak="buy-plan"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const $buyPlan = document.querySelector('[data-ak="buy-plan"]');
+      $buyPlan?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $buyPlan?.classList.add('active');
+      setTimeout(() => $buyPlan?.classList.remove('active'), 1500);
     });
   });
 
