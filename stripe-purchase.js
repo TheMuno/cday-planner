@@ -51,10 +51,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
-    if (!user) { clearTimeout(spinnerTimeout); removeSpinners(); return; }
+    if (!user) {
+      clearTimeout(spinnerTimeout);
+      removeSpinners();
+      setUI(false);
+      wireBuyButtonsLoggedOut($buyButtons);
+      return;
+    }
 
     const userRef   = doc(db, 'locationsData', `user-${user.email}`);
-    const userSnap  = await getDoc(userRef);
+    const userSnap  = await withTimeout(getDoc(userRef), 8000, 'Firestore purchase check timed out');
     const userData  = userSnap.exists() ? userSnap.data() : {};
     const purchased = userData.hasPurchasedPlan === true;
 
@@ -96,6 +102,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearTimeout(spinnerTimeout);
     removeSpinners();
     console.error('Purchase check failed:', err);
+    // Can't confirm purchase status (Firestore unreachable/timed out) — degrade to the
+    // not-purchased UI instead of leaving buy-plan/pre-purchase stuck hidden forever.
+    setUI(false);
+  }
+
+  function withTimeout(promise, ms, message) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+    ]);
+  }
+
+  function wireBuyButtonsLoggedOut($buyButtons) {
+    $buyButtons.forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        window.location.href = '/log-in';
+      });
+    });
   }
 
   function fireConversionPixel(value) {
