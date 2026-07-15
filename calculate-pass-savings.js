@@ -53,9 +53,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/itinerary-maker/verify-itinerary';
   });
 
-  document.querySelector('[data-ak="scroll-to-buy-btn"]')?.addEventListener('click', e => {
-    e.preventDefault();
-    document.querySelector('[data-ak="buy-plan"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.querySelectorAll('[data-ak="scroll-to-buy-btn"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelector('[data-ak="buy-plan"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   });
 
   ['purchase-go-city', 'purchase-city-pass'].forEach(dataAk => {
