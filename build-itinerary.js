@@ -70,6 +70,13 @@ const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]'
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 
+// [data-ak="attraction-location"] / [data-ak-type-title] / [data-ak="allow-drop"] etc. also exist
+// inside the itinerary_ui_slider duplicate markup (data-ak="locations-slider-2"), so delegated
+// document.body listeners need this guard — a bare closest() would happily match that slider too.
+function isInAttractionsSlider($el) {
+  return $el.closest('[data-ak="locations-slider"]') === $attractionsSlider;
+}
+
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
@@ -646,7 +653,7 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
 
 function findItineraryMatch(saveObj) {
   if (!saveObj) return null;
-  const $attractions = document.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])');
+  const $attractions = $attractionsSlider.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])');
   return [...$attractions].find(el =>
     (saveObj.placeId && el.placeId === saveObj.placeId) ||
     (saveObj.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
@@ -804,8 +811,6 @@ async function handleBulkImport() {
 function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
   name = format(name);
   const $location = $listName.querySelector('[data-ak="attraction-location"]').cloneNode(true);
-  $location.classList.remove('hidden');
-  $location.classList.remove('hide');
   $location.removeAttribute('data-ak-hidden');
   $location.querySelector('[data-ak="location-title"]').textContent = name;
   $location.querySelector('[data-ak="location-link-text"]').textContent = name;
@@ -832,14 +837,14 @@ function getCurrentSlideInfo() {
 }
 
 function attractionExists(wrap, name) {
-  return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden]) [data-ak="location-title"]')]
+  return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden]) [data-ak="location-title"]')]
     .some(el => el.textContent.toLowerCase().trim() === name.toLowerCase().trim());
 }
 
 function handleRemoveLocation(e) {
   if (!e.target.closest('[data-ak="remove-location"]')) return;
   const $attraction = e.target.closest('[data-ak="attraction-location"]');
-  if (!$attraction) return;
+  if (!$attraction || !isInAttractionsSlider($attraction)) return;
 
   const name = $attraction.querySelector('[data-ak="location-title"]')?.textContent?.trim() || 'this location';
 
@@ -855,7 +860,7 @@ function handlePopupOpen(e) {
   e.preventDefault();
 
   const $attraction = e.target.closest('[data-ak="attraction-location"]');
-  if (!$attraction?.saveObj) return;
+  if (!$attraction?.saveObj || !isInAttractionsSlider($attraction)) return;
 
   openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
 }
@@ -905,29 +910,30 @@ let $draggedAttraction = null;
 
 function handleDragStart(e) {
   const $dragEl = e.target.closest('[data-ak="attraction-location"]');
-  if (!$dragEl) return;
+  if (!$dragEl || !isInAttractionsSlider($dragEl)) return;
   $draggedAttraction = $dragEl;
   e.dataTransfer.setData('text/plain', $dragEl.querySelector('[data-ak="location-title"]')?.textContent || '');
   e.dataTransfer.dropEffect = 'move';
 }
 
 function handleDragOver(e) {
-  if (!e.target.closest('[data-ak="allow-drop"]')) return;
+  const $dropZone = e.target.closest('[data-ak="allow-drop"]');
+  if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
 }
 
 function expandContentWrapOnDrag(e) {
-  if (!e.target.closest('[data-ak-type-title]')) return;
   const $title = e.target.closest('[data-ak-type-title]');
+  if (!$title || !isInAttractionsSlider($title)) return;
   const $contentWrap = $title.closest('[data-ak-types]')?.querySelector('[data-ak-type-content]');
   if (!$contentWrap || $contentWrap.style.height !== '0px') return;
   $title.click();
 }
 
 function handleDrop(e) {
-  if (!e.target.closest('[data-ak="allow-drop"]')) return;
   const $dropZone = e.target.closest('[data-ak="allow-drop"]');
+  if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
   e.preventDefault();
 
   if (!$draggedAttraction) return;
@@ -1149,7 +1155,7 @@ function getCurrentUserAttractions() {
       if (!type) return;
       slideObj[type] = [];
 
-      $typeSection.querySelectorAll('[data-ak="attraction-location"]:not(.hidden):not([data-ak-hidden])').forEach(attraction => {
+      $typeSection.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach(attraction => {
         slideObj[type].push(attraction.saveObj);
       });
 
@@ -1164,12 +1170,12 @@ function getCurrentUserAttractions() {
 }
 
 function setUnsavedChangesFlag() {
-  $unsavedChanges.classList.remove('hide');
+  $unsavedChanges.removeAttribute('data-ak-hidden');
   localStorage['ak-unsaved-changes'] = true;
 }
 
 function removeUnsavedChangesFlag() {
-  $unsavedChanges.classList.add('hide');
+  $unsavedChanges.setAttribute('data-ak-hidden', 'true');
   localStorage.removeItem('ak-unsaved-changes');
 }
 
