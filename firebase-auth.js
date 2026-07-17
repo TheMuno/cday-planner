@@ -73,6 +73,7 @@ const forgotEmailInput     = document.getElementById("forgot-email");
 const forgotSubmitBtn      = document.getElementById("forgot-submit");
 const forgotBackLink       = document.getElementById("forgot-back");
 const successEl            = document.getElementById("auth-success");
+const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]');
 
 let isSignUpMode = false;
 let pendingCredential = null;
@@ -752,6 +753,7 @@ if (signupLink) {
   signupLink.addEventListener("click", (e) => {
     e.preventDefault();
     setMode(!isSignUpMode);
+    if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !isSignUpMode);
   });
 }
 
