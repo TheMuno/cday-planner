@@ -241,6 +241,8 @@ window.addEventListener('load', async () => {
   document.body.addEventListener('click', handleRemoveLocation);
   document.body.addEventListener('click', handlePopupOpen);
   document.body.addEventListener('click', handleFieldMapPopup);
+  document.body.addEventListener('click', handleSectionActivate);
+  document.body.addEventListener('click', handleSectionDeactivateOnClickAway);
 
   document.body.addEventListener('dragstart', handleDragStart);
   document.body.addEventListener('dragover', e => {
@@ -863,6 +865,20 @@ function handlePopupOpen(e) {
   if (!$attraction?.saveObj || !isInAttractionsSlider($attraction)) return;
 
   openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
+}
+
+function handleSectionActivate(e) {
+  const $title = e.target.closest('[data-ak-type-title]');
+  if (!$title || !isInAttractionsSlider($title)) return;
+
+  const $currentSlide = $title.closest('.w-slide');
+  $currentSlide.querySelector('[data-ak-types].active')?.classList.remove('active');
+  $title.closest('[data-ak-types]').classList.add('active');
+}
+
+function handleSectionDeactivateOnClickAway(e) {
+  if (isInAttractionsSlider(e.target)) return;
+  getCurrentSlideInfo().$currentSlide?.querySelector('[data-ak-types].active')?.classList.remove('active');
 }
 
 function handleFieldMapPopup(e) {
