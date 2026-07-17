@@ -70,7 +70,7 @@ const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]'
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
 
-// [data-ak="attraction-location"] / [data-ak-type-title] / [data-ak="allow-drop"] etc. also exist
+// [data-ak="attraction-location"] / [data-ak-type-title] / [data-ak-type-dropzone] etc. also exist
 // inside the itinerary_ui_slider duplicate markup (data-ak="locations-slider-2"), so delegated
 // document.body listeners need this guard — a bare closest() would happily match that slider too.
 function isInAttractionsSlider($el) {
@@ -140,6 +140,7 @@ window.addEventListener('load', async () => {
   restoreHotel();
   restoreAirports();
   restoreTripNotes();
+  unwrapSectionsWithContent();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   if (auth.currentUser) {
@@ -668,7 +669,7 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
 
   const { $currentSlide, slideIndex } = getCurrentSlideInfo();
   const $typeSection = $currentSlide.querySelector(`[data-ak-type="${isRestaurant ? 'eat' : 'visit'}"]`);
-  const $typeWrap = $typeSection.querySelector('[data-ak-type-wrap]');
+  const $typeWrap = $typeSection.querySelector('[data-ak-type-dropzone]');
 
   if (attractionExists($typeWrap, displayName)) {
     if (!silent) alertify.alert('Sorry, Already Added!');
@@ -689,7 +690,7 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
   markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
   markerObj[`slide${slideIndex}`].push(marker);
 
-  const $content = $typeSection.querySelector('[data-ak-type-content]');
+  const $content = $typeSection.querySelector('[data-ak-type-panel]');
   if ($content && $content.style.height === '0px') {
     $typeSection.querySelector('[data-ak-type-title]').click();
   }
@@ -933,7 +934,7 @@ function handleDragStart(e) {
 }
 
 function handleDragOver(e) {
-  const $dropZone = e.target.closest('[data-ak="allow-drop"]');
+  const $dropZone = e.target.closest('[data-ak-type-dropzone]');
   if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
@@ -942,13 +943,13 @@ function handleDragOver(e) {
 function expandContentWrapOnDrag(e) {
   const $title = e.target.closest('[data-ak-type-title]');
   if (!$title || !isInAttractionsSlider($title)) return;
-  const $contentWrap = $title.closest('[data-ak-types]')?.querySelector('[data-ak-type-content]');
+  const $contentWrap = $title.closest('[data-ak-types]')?.querySelector('[data-ak-type-panel]');
   if (!$contentWrap || $contentWrap.style.height !== '0px') return;
   $title.click();
 }
 
 function handleDrop(e) {
-  const $dropZone = e.target.closest('[data-ak="allow-drop"]');
+  const $dropZone = e.target.closest('[data-ak-type-dropzone]');
   if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
   e.preventDefault();
 
@@ -983,7 +984,7 @@ function restoreAttractions() {
     if (!slideSaved) return;
 
     Object.entries(bucketToType).forEach(([bucket, key]) => {
-      const $wrap = slide.querySelector(`[data-ak-type-wrap="${key}"]`);
+      const $wrap = slide.querySelector(`[data-ak-type-list="${key}"]`);
       if (!$wrap) return;
 
       (slideSaved[bucket] || []).forEach(saveObj => {
@@ -1110,6 +1111,26 @@ function restoreTripNotes() {
     if (value == null) return;
     const $notes = slide.querySelector('.ak-notes');
     if ($notes) $notes.value = value;
+  });
+}
+
+// Runs once after restoreAttractions()/restoreTripNotes() have populated the DOM, so a returning
+// user immediately sees any day/section that already has content instead of having to click each
+// header open manually.
+function unwrapSectionsWithContent() {
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach($slide => {
+    $slide.querySelectorAll('[data-ak-types]').forEach($typeSection => {
+      const type = $typeSection.getAttribute('data-ak-type');
+      const hasContent = type === 'notes'
+        ? !!$typeSection.querySelector('.ak-notes')?.value.trim()
+        : !!$typeSection.querySelector('[data-ak="attraction-location"]:not([data-ak-hidden])');
+      if (!hasContent) return;
+
+      const $content = $typeSection.querySelector('[data-ak-type-panel]');
+      if ($content?.style.height === '0px') {
+        $typeSection.querySelector('[data-ak-type-title]')?.click();
+      }
+    });
   });
 }
 
