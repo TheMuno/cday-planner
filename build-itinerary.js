@@ -663,11 +663,11 @@ function findItineraryMatch(saveObj) {
   ) || null;
 }
 
-function addSearchResultToItinerary(saveObj, marker, { silent = false } = {}) {
+function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = null } = {}) {
   const displayName = saveObj.displayName;
   const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
 
-  const { $currentSlide, slideIndex } = getCurrentSlideInfo();
+  const { $currentSlide, slideIndex } = slide || getCurrentSlideInfo();
   const $typeSection = $currentSlide.querySelector(`[data-ak-type="${isRestaurant ? 'eat' : 'visit'}"]`);
   const $typeWrap = $typeSection.querySelector('[data-ak-type-dropzone]');
 
@@ -745,20 +745,69 @@ function buildSaveObjFromPlace(place) {
   };
 }
 
-// Bulk-import textarea: one location per line. "---" is reserved as a future day divider;
-// for now every line lands on the current day, same as picking "Add Activity" from the map popup.
+// A day divider is a line made up of one or more characters that are all "not a word or number"
+// (letters/digits excluded, everything else — dashes, equals signs, underscores, mixed symbols — allowed).
+const DAY_DIVIDER = /^[^a-zA-Z0-9]+$/;
+
+// Splits the bulk-import textarea into one line-array per day: every DAY_DIVIDER line starts a new
+// group. Blank lines are dropped, and empty groups (leading/trailing/doubled dividers) are filtered out.
+function splitIntoDayGroups(text) {
+  const groups = [[]];
+  text.split('\n').forEach(rawLine => {
+    const line = rawLine.trim();
+    if (!line) return;
+    if (DAY_DIVIDER.test(line)) {
+      groups.push([]);
+      return;
+    }
+    groups[groups.length - 1].push(line);
+  });
+  return groups.filter(group => group.length);
+}
+
+// Bulk import can ask for more days than the trip currently has. When it does, clone the last slide
+// (same cloning approach used when a trip is first set up) as a fresh day dated one day later, keeping
+// the hidden [data-ak="attraction-location"] template item addAttractionToList() clones from.
+function createNextDaySlide() {
+  const $slides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+  const $lastSlide = $slides[$slides.length - 1];
+
+  const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const lastDate = new Date($lastSlide.querySelector('[data-ak="types-date"]').textContent);
+  lastDate.setDate(lastDate.getDate() + 1);
+  const label = `${monthArr[lastDate.getMonth()]} ${lastDate.getDate()}`;
+
+  const $newSlide = $lastSlide.cloneNode(true);
+  $newSlide.setAttribute('aria-hidden', 'true');
+  $newSlide.querySelector('[data-ak="types-day"]').textContent = daysArr[lastDate.getDay()];
+  $newSlide.querySelector('[data-ak="types-date"]').textContent = `${label}, ${lastDate.getFullYear()}`;
+
+  $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
+    $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
+  });
+  $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => { $panel.style.height = '0px'; });
+  $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
+  const $notes = $newSlide.querySelector('.ak-notes');
+  if ($notes) $notes.value = '';
+
+  $attractionsSliderMask.append($newSlide);
+
+  return { $currentSlide: $newSlide, slideIndex: $slides.length + 1, label };
+}
+
+// Bulk-import textarea: one location per line, days separated by a DAY_DIVIDER line. The first day's
+// group lands on the current day; each following group gets its own day, reusing existing day-slides
+// where available and creating new ones (dated off the last existing day) once those run out.
 async function handleBulkImport() {
   const $textarea = document.querySelector('.itinerary_ui_bulk_text');
   const $finishBtn = document.querySelector('.itinerary_ui_bulk_finish');
   const $bulkWrap = document.querySelector('.itinerary_ui_bulk_wrap');
   if (!$textarea || $finishBtn?.classList.contains('ak-importing')) return;
 
-  const lines = $textarea.value
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && line !== '---');
-
-  if (!lines.length) return;
+  const dayGroups = splitIntoDayGroups($textarea.value);
+  if (!dayGroups.length) return;
 
   const $label = $finishBtn?.querySelector('[data-ak="popup-action-label"]');
   const originalLabel = $label?.textContent;
@@ -771,27 +820,44 @@ async function handleBulkImport() {
   let addedCount = 0;
   const notFound = [];
   const skipped = [];
+  const newDayLabels = [];
 
-  for (const line of lines) {
-    try {
-      const place = await resolvePlaceFromText(line);
-      if (!place) { notFound.push(line); continue; }
+  outer:
+  for (let i = 0; i < dayGroups.length; i++) {
+    const slide = i === 0 ? getCurrentSlideInfo() : (() => {
+      const created = createNextDaySlide();
+      newDayLabels.push(created.label);
+      return { $currentSlide: created.$currentSlide, slideIndex: created.slideIndex };
+    })();
 
-      const saveObj = buildSaveObjFromPlace(place);
-      const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
-      const status = addSearchResultToItinerary(saveObj, marker, { silent: true });
+    for (const line of dayGroups[i]) {
+      try {
+        const place = await resolvePlaceFromText(line);
+        if (!place) { notFound.push(line); continue; }
 
-      if (status === 'added') {
-        addedCount++;
-      } else {
-        marker.map = null;
-        if (status === 'limit') { skipped.push(line); break; }
-        skipped.push(line);
+        const saveObj = buildSaveObjFromPlace(place);
+        const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+        const status = addSearchResultToItinerary(saveObj, marker, { silent: true, slide });
+
+        if (status === 'added') {
+          addedCount++;
+        } else {
+          marker.map = null;
+          if (status === 'limit') { skipped.push(line); break outer; }
+          skipped.push(line);
+        }
+      } catch (err) {
+        console.error(err);
+        notFound.push(line);
       }
-    } catch (err) {
-      console.error(err);
-      notFound.push(line);
     }
+  }
+
+  if (newDayLabels.length && window.Webflow) {
+    Webflow.destroy();
+    Webflow.ready();
+    Webflow.require('ix2').init();
+    Webflow.require('slider').redraw();
   }
 
   $finishBtn?.classList.remove('ak-importing');
@@ -800,10 +866,14 @@ async function handleBulkImport() {
   if ($label) $label.textContent = originalLabel;
 
   const failed = [...notFound, ...skipped];
-  const summary = addedCount
-    ? `Added ${addedCount} location${addedCount === 1 ? '' : 's'}.${failed.length ? ` Couldn't add: ${failed.join(', ')}.` : ''}`
-    : `Couldn't add any locations: ${failed.join(', ')}.`;
-  alertify.alert(summary);
+  const summaryParts = [
+    addedCount
+      ? `Added ${addedCount} location${addedCount === 1 ? '' : 's'}.`
+      : `Couldn't add any locations.`,
+  ];
+  if (newDayLabels.length) summaryParts.push(`Added in\n${newDayLabels.join('\n')}`);
+  if (failed.length) summaryParts.push(`Couldn't add: ${failed.join(', ')}.`);
+  alertify.alert(summaryParts.join('\n\n'));
 
   if (addedCount) {
     $textarea.value = '';
