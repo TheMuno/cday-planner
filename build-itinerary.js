@@ -865,6 +865,7 @@ function handlePopupOpen(e) {
   const $attraction = e.target.closest('[data-ak="attraction-location"]');
   if (!$attraction?.saveObj || !isInAttractionsSlider($attraction)) return;
 
+  map.panTo($attraction.saveObj.location);
   openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
 }
 
