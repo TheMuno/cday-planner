@@ -753,7 +753,10 @@ if (signupLink) {
   signupLink.addEventListener("click", (e) => {
     e.preventDefault();
     setMode(!isSignUpMode);
-    if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !isSignUpMode);
+    if (optInCheckbox) {
+      const hasHotelReferral = localStorage.getItem("hotel-referral") === "true";
+      optInCheckbox.toggleAttribute("data-ak-hidden", !(isSignUpMode && hasHotelReferral));
+    }
   });
 }
 
