@@ -416,6 +416,10 @@ function collectMissingEmail() {
   });
 }
 
+async function saveHotelReferral(uid, hotel, optedIn) {
+  await setDoc(doc(db, "users", uid), { hotelReferral: { hotel, optedIn } }, { merge: true });
+}
+
 function setMode(signUp) {
   isSignUpMode = signUp;
   if (submitBtn)           submitBtn.value              = signUp ? "Sign Up" : "Login";
@@ -721,6 +725,27 @@ if (submitBtn) {
         showSuccess(`Your ${linkedProvider} account has been linked! Going forward, you can sign in with either ${linkedProvider} or your email and password.`);
         await new Promise(r => setTimeout(r, 4000));
       }
+
+      try {
+        const hotel = localStorage.getItem("hotel-referral");
+        const snap = await getDoc(doc(db, "users", result.user.uid));
+        const existing = snap.exists() ? snap.data().hotelReferral : null;
+
+        if (hotel) {
+          // Case 1: fresh referral link this session (sign-up flow).
+          const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
+          if (!alreadyConsented) {
+            await saveHotelReferral(result.user.uid, hotel, !!optInCheckbox?.checked);
+          }
+          // DB is now the source of truth either way — drop the local copy
+          // (also covers the same-hotel-different-device case).
+          localStorage.removeItem("hotel-referral");
+        } else if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
+          // Case 2: returning user, opt-in surfaced via the email-blur DB lookup.
+          await saveHotelReferral(result.user.uid, existing.hotel, !!optInCheckbox.checked);
+        }
+      } catch (_) {}
+
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     }
@@ -754,10 +779,39 @@ if (signupLink) {
     e.preventDefault();
     setMode(!isSignUpMode);
     if (optInCheckbox) {
-      const hasHotelReferral = localStorage.getItem("hotel-referral") === "true";
-      optInCheckbox.toggleAttribute("data-ak-hidden", !(isSignUpMode && hasHotelReferral));
+      if (isSignUpMode) {
+        optInCheckbox.toggleAttribute("data-ak-hidden", !localStorage.getItem("hotel-referral"));
+      } else {
+        optInCheckbox.setAttribute("data-ak-hidden", "");
+      }
     }
   });
+}
+
+// Login mode has no localStorage signal to go on (the user may be on a new
+// device, or already used/cleared it at sign-up), so once they've typed an
+// email we look up their saved hotel-referral by email and show the opt-in
+// only if it's still unconsented. Debounced off "input" (not "blur") so the
+// lookup is already in flight/resolved well before they finish the password
+// field and hit submit, instead of only firing once they tab away.
+let hotelReferralLookupTimer = null;
+if (emailInput) {
+  emailInput.addEventListener("input", () => {
+    clearTimeout(hotelReferralLookupTimer);
+    hotelReferralLookupTimer = setTimeout(checkHotelReferralByEmail, 500);
+  });
+}
+
+async function checkHotelReferralByEmail() {
+  if (isSignUpMode || !optInCheckbox) return;
+  if (localStorage.getItem("hotel-referral")) return;
+  const email = emailInput.value.trim();
+  if (!email || !isValidEmail(email)) return;
+  try {
+    const snap = await getDocs(query(collection(db, "users"), where("email", "==", email)));
+    const referral = snap.empty ? null : snap.docs[0].data().hotelReferral;
+    optInCheckbox.toggleAttribute("data-ak-hidden", !(referral && !referral.optedIn));
+  } catch (_) {}
 }
 
 // ── 11. FORGOT PASSWORD ──────────────────────────────────────
