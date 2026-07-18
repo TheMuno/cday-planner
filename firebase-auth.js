@@ -83,8 +83,12 @@ const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]');
 // mode switch; Case 2's email lookup is the only thing allowed to override
 // it (show it) beyond this, and only while in login mode.
 function syncOptInFromLocalStorage() {
-  if (!optInCheckbox) return;
-  optInCheckbox.toggleAttribute("data-ak-hidden", !localStorage.getItem("hotel-referral"));
+  const hotelReferral = localStorage.getItem("hotel-referral");
+  if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !hotelReferral);
+  if (hotelReferral) {
+    const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
+    if (hotelReferrerEl) hotelReferrerEl.textContent = hotelReferral;
+  }
 }
 syncOptInFromLocalStorage();
 
