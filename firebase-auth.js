@@ -75,6 +75,19 @@ const forgotBackLink       = document.getElementById("forgot-back");
 const successEl            = document.getElementById("auth-success");
 const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]');
 
+// Case 1's visibility rule is "there's a fresh referral in localStorage" —
+// full stop, independent of login/signup mode. Social buttons are clickable
+// in either mode, so gating this behind isSignUpMode meant anyone who signed
+// up via Google/Facebook without ever touching the mode toggle never saw the
+// checkbox at all. Run once at load, and re-apply as the baseline on every
+// mode switch; Case 2's email lookup is the only thing allowed to override
+// it (show it) beyond this, and only while in login mode.
+function syncOptInFromLocalStorage() {
+  if (!optInCheckbox) return;
+  optInCheckbox.toggleAttribute("data-ak-hidden", !localStorage.getItem("hotel-referral"));
+}
+syncOptInFromLocalStorage();
+
 let isSignUpMode = false;
 let pendingCredential = null;
 let isSigningIn = false;
@@ -162,6 +175,7 @@ if (_fbIsFB) {
         }
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
+        try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
         isSigningIn = false;
         onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -225,6 +239,7 @@ getRedirectResult(auth).then(async (result) => {
     await saveUserProvider(result.user, email || undefined);
     if (email) localStorage.setItem("ak-userMail", email);
     localStorage.removeItem('ak-redirect-destination');
+    try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
     onUserLoginSuccess(result.user);
     window.location.replace(storedRedirectDest || REDIRECT_AFTER_LOGIN);
   } catch (err) {
@@ -420,6 +435,33 @@ async function saveHotelReferral(uid, hotel, optedIn) {
   await setDoc(doc(db, "users", uid), { hotelReferral: { hotel, optedIn } }, { merge: true });
 }
 
+// Case 1 of the hotel-referral opt-in: applies no matter which sign-in method
+// completes the flow, since the checkbox's visibility only ever depends on
+// isSignUpMode + localStorage, not on email/password vs. Google vs. Facebook.
+// Case 2 (returning-user DB lookup) stays email/password-only — social
+// sign-in never has a pre-auth email typed to key that lookup off of.
+async function applySignupHotelReferral(uid) {
+  const hotel = localStorage.getItem("hotel-referral");
+  if (!hotel) return;
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    const existing = snap.exists() ? snap.data().hotelReferral : null;
+    const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
+    const optedInNow = !!optInCheckbox?.checked;
+    if (!alreadyConsented) {
+      await saveHotelReferral(uid, hotel, optedInNow);
+    }
+    // Only clear localStorage once consent is actually on record — either
+    // just now, or from an earlier visit. Left unconsented, keep it: that's
+    // what makes the checkbox keep resurfacing on this device on every future
+    // visit/login, including via Google/Facebook, which has no other way to
+    // know to show it.
+    if (alreadyConsented || optedInNow) {
+      localStorage.removeItem("hotel-referral");
+    }
+  } catch (_) {}
+}
+
 function setMode(signUp) {
   isSignUpMode = signUp;
   if (submitBtn)           submitBtn.value              = signUp ? "Sign Up" : "Login";
@@ -560,6 +602,7 @@ if (googleBtn) {
       showLoader();
       await linkPendingCredential(result.user);
       await saveUserProvider(result.user);
+      try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
@@ -653,6 +696,7 @@ if (facebookBtn) {
         }
       } catch (_) {}
       localStorage.setItem("ak-userMail", email);
+      try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
 
@@ -727,22 +771,17 @@ if (submitBtn) {
       }
 
       try {
-        const hotel = localStorage.getItem("hotel-referral");
-        const snap = await getDoc(doc(db, "users", result.user.uid));
-        const existing = snap.exists() ? snap.data().hotelReferral : null;
-
-        if (hotel) {
+        if (localStorage.getItem("hotel-referral")) {
           // Case 1: fresh referral link this session (sign-up flow).
-          const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
-          if (!alreadyConsented) {
-            await saveHotelReferral(result.user.uid, hotel, !!optInCheckbox?.checked);
+          await applySignupHotelReferral(result.user.uid);
+        } else {
+          // Case 2: returning user, opt-in surfaced via the debounced email
+          // DB lookup while they were still typing into the login form.
+          const snap = await getDoc(doc(db, "users", result.user.uid));
+          const existing = snap.exists() ? snap.data().hotelReferral : null;
+          if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
+            await saveHotelReferral(result.user.uid, existing.hotel, !!optInCheckbox.checked);
           }
-          // DB is now the source of truth either way — drop the local copy
-          // (also covers the same-hotel-different-device case).
-          localStorage.removeItem("hotel-referral");
-        } else if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
-          // Case 2: returning user, opt-in surfaced via the email-blur DB lookup.
-          await saveHotelReferral(result.user.uid, existing.hotel, !!optInCheckbox.checked);
         }
       } catch (_) {}
 
@@ -778,13 +817,7 @@ if (signupLink) {
   signupLink.addEventListener("click", (e) => {
     e.preventDefault();
     setMode(!isSignUpMode);
-    if (optInCheckbox) {
-      if (isSignUpMode) {
-        optInCheckbox.toggleAttribute("data-ak-hidden", !localStorage.getItem("hotel-referral"));
-      } else {
-        optInCheckbox.setAttribute("data-ak-hidden", "");
-      }
-    }
+    syncOptInFromLocalStorage();
   });
 }
 
