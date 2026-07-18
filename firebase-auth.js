@@ -75,6 +75,18 @@ const forgotBackLink       = document.getElementById("forgot-back");
 const successEl            = document.getElementById("auth-success");
 const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]');
 
+// Display-only formatting — the raw slug (e.g. "hotel_name") is what's stored
+// in localStorage/Firestore and used for lookups; only the on-page text gets
+// prettified (e.g. "Hotel Name"), so nothing else needs to change.
+function formatHotelName(slug) {
+  return slug
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 // Case 1's visibility rule is "there's a fresh referral in localStorage" —
 // full stop, independent of login/signup mode. Social buttons are clickable
 // in either mode, so gating this behind isSignUpMode meant anyone who signed
@@ -87,7 +99,7 @@ function syncOptInFromLocalStorage() {
   if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !hotelReferral);
   if (hotelReferral) {
     const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
-    if (hotelReferrerEl) hotelReferrerEl.textContent = hotelReferral;
+    if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(hotelReferral);
   }
 }
 syncOptInFromLocalStorage();
