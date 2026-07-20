@@ -979,7 +979,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!redirectHandled) {
     redirectHandled = true;
     if (isSigningIn) onUserLoginSuccess(user);
-    saveUserProvider(user).catch(() => {});
+    try { await saveUserProvider(user); } catch (_) {}
     showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
   }
