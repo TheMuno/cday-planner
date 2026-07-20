@@ -91,11 +91,10 @@ function formatHotelName(slug) {
 // full stop, independent of login/signup mode. Social buttons are clickable
 // in either mode, so gating this behind isSignUpMode meant anyone who signed
 // up via Google/Facebook without ever touching the mode toggle never saw the
-// checkbox at all. Run once at load, and re-apply as the baseline on every
-// mode switch; Case 2's email lookup is the only thing allowed to override
-// it (show it) beyond this, and only while in login mode.
+// checkbox at all. Run once at load; Case 2's email lookup is the only thing
+// allowed to override it (show it) beyond this, and only while in login mode.
 function syncOptInFromLocalStorage() {
-  const hotelReferral = localStorage.getItem("hotel-referral");
+  const hotelReferral = localStorage.getItem("ak-hotel-referral");
   if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !hotelReferral);
   if (hotelReferral) {
     const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
@@ -457,7 +456,7 @@ async function saveHotelReferral(uid, hotel, optedIn) {
 // Case 2 (returning-user DB lookup) stays email/password-only — social
 // sign-in never has a pre-auth email typed to key that lookup off of.
 async function applySignupHotelReferral(uid) {
-  const hotel = localStorage.getItem("hotel-referral");
+  const hotel = localStorage.getItem("ak-hotel-referral");
   if (!hotel) return;
   try {
     const snap = await getDoc(doc(db, "users", uid));
@@ -473,7 +472,7 @@ async function applySignupHotelReferral(uid) {
     // visit/login, including via Google/Facebook, which has no other way to
     // know to show it.
     if (alreadyConsented || optedInNow) {
-      localStorage.removeItem("hotel-referral");
+      localStorage.removeItem("ak-hotel-referral");
     }
   } catch (_) {}
 }
@@ -787,7 +786,7 @@ if (submitBtn) {
       }
 
       try {
-        if (localStorage.getItem("hotel-referral")) {
+        if (localStorage.getItem("ak-hotel-referral")) {
           // Case 1: fresh referral link this session (sign-up flow).
           await applySignupHotelReferral(result.user.uid);
         } else {
@@ -833,7 +832,6 @@ if (signupLink) {
   signupLink.addEventListener("click", (e) => {
     e.preventDefault();
     setMode(!isSignUpMode);
-    syncOptInFromLocalStorage();
   });
 }
 
@@ -853,7 +851,7 @@ if (emailInput) {
 
 async function checkHotelReferralByEmail() {
   if (isSignUpMode || !optInCheckbox) return;
-  if (localStorage.getItem("hotel-referral")) return;
+  if (localStorage.getItem("ak-hotel-referral")) return;
   const email = emailInput.value.trim();
   if (!email || !isValidEmail(email)) return;
   try {
