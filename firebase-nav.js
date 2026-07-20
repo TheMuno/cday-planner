@@ -18,7 +18,7 @@ import {
   onAuthStateChanged,
   signOut,
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 // ── CONFIG ───────────────────────────────────────────────────
 const firebaseConfig = {
@@ -51,6 +51,15 @@ let currentUser      = null;
 let currentUserEmail = null;
 const LOGIN_PAGE_URL = '/log-in';
 
+// Firestore doc IDs are "user-<email>" (see firebase-auth.js), not the Auth
+// UID, so a user with no email on their auth object (e.g. Facebook without
+// the email scope) can't be looked up by doc ID directly — fall back to a
+// query on the stored uid field instead.
+async function findUserDocByUid(uid) {
+  const snap = await getDocs(query(collection(db, "users"), where("uid", "==", uid)));
+  return snap.empty ? null : snap.docs[0];
+}
+
 // ── FAST-PATH: render from cache before Firebase resolves ────
 // Avoids a flash of logged-out nav on page load
 const cached = localStorage.getItem(USER_STORAGE_KEY);
@@ -72,8 +81,8 @@ onAuthStateChanged(auth, async (user) => {
     let email = user.email;
     if (!email) {
       try {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        if (snap.exists()) email = snap.data().email || null;
+        const snap = await findUserDocByUid(user.uid);
+        if (snap) email = snap.data().email || null;
       } catch (_) {}
     }
     currentUserEmail = email;

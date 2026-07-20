@@ -55,6 +55,22 @@ const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
 
+// ── 3b. DOC ID HELPERS ───────────────────────────────────────
+// Firestore doc IDs are "user-<email>" (not the Firebase Auth UID), so an
+// admin can find a user by scanning/searching the console. Email is
+// normalized (trimmed + lowercased) so case differences don't create
+// duplicate docs for the same person. The UID is still stored as a field
+// (see saveUserProvider) so a doc can be located before its email is known —
+// e.g. a returning Facebook user who denies the email scope again.
+function userDocId(email) {
+  return "user-" + email.trim().toLowerCase();
+}
+
+async function findUserDocByUid(uid) {
+  const snap = await getDocs(query(collection(db, "users"), where("uid", "==", uid)));
+  return snap.empty ? null : snap.docs[0];
+}
+
 // ── 4. ELEMENT REFS ─────────────────────────────────────────
 const googleBtn            = document.getElementById("google-btn");
 const facebookBtn          = document.getElementById("facebook-btn");
@@ -173,8 +189,8 @@ if (_fbIsFB) {
         let email = result.user.email;
         if (!email) {
           try {
-            const snap = await getDoc(doc(db, "users", result.user.uid));
-            if (snap.exists()) email = snap.data().email || null;
+            const snap = await findUserDocByUid(result.user.uid);
+            if (snap) email = snap.data().email || null;
           } catch (_) {}
         }
         if (!email) {
@@ -190,7 +206,7 @@ if (_fbIsFB) {
         }
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
-        try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
+        try { await applySignupHotelReferral(email); } catch (_) {}
         isSigningIn = false;
         onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -233,8 +249,8 @@ getRedirectResult(auth).then(async (result) => {
 
     if (!email) {
       try {
-        const snap = await getDoc(doc(db, "users", result.user.uid));
-        if (snap.exists()) email = snap.data().email || null;
+        const snap = await findUserDocByUid(result.user.uid);
+        if (snap) email = snap.data().email || null;
       } catch (_) {}
     }
 
@@ -254,7 +270,7 @@ getRedirectResult(auth).then(async (result) => {
     await saveUserProvider(result.user, email || undefined);
     if (email) localStorage.setItem("ak-userMail", email);
     localStorage.removeItem('ak-redirect-destination');
-    try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
+    try { await applySignupHotelReferral(email); } catch (_) {}
     onUserLoginSuccess(result.user);
     window.location.replace(storedRedirectDest || REDIRECT_AFTER_LOGIN);
   } catch (err) {
@@ -446,8 +462,8 @@ function collectMissingEmail() {
   });
 }
 
-async function saveHotelReferral(uid, hotel, optedIn) {
-  await setDoc(doc(db, "users", uid), { hotelReferral: { hotel, optedIn } }, { merge: true });
+async function saveHotelReferral(email, hotel, optedIn) {
+  await setDoc(doc(db, "users", userDocId(email)), { hotelReferral: { hotel, optedIn } }, { merge: true });
 }
 
 // Case 1 of the hotel-referral opt-in: applies no matter which sign-in method
@@ -455,16 +471,16 @@ async function saveHotelReferral(uid, hotel, optedIn) {
 // isSignUpMode + localStorage, not on email/password vs. Google vs. Facebook.
 // Case 2 (returning-user DB lookup) stays email/password-only — social
 // sign-in never has a pre-auth email typed to key that lookup off of.
-async function applySignupHotelReferral(uid) {
+async function applySignupHotelReferral(email) {
   const hotel = localStorage.getItem("ak-hotel-referral");
-  if (!hotel) return;
+  if (!hotel || !email) return;
   try {
-    const snap = await getDoc(doc(db, "users", uid));
+    const snap = await getDoc(doc(db, "users", userDocId(email)));
     const existing = snap.exists() ? snap.data().hotelReferral : null;
     const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
     const optedInNow = !!optInCheckbox?.checked;
     if (!alreadyConsented) {
-      await saveHotelReferral(uid, hotel, optedInNow);
+      await saveHotelReferral(email, hotel, optedInNow);
     }
     // Only clear localStorage once consent is actually on record — either
     // just now, or from an earlier visit. Left unconsented, keep it: that's
@@ -540,9 +556,13 @@ async function handleAuthError(err) {
 }
 
 async function saveUserProvider(user, emailOverride) {
+  const email = emailOverride || user.email;
+  if (!email) return; // no email yet — can't derive a doc ID (see findUserDocByUid callers)
+  const normalizedEmail = email.trim().toLowerCase();
   const provider = user.providerData[0]?.providerId || "password";
-  await setDoc(doc(db, "users", user.uid), {
-    email:    emailOverride || user.email,
+  await setDoc(doc(db, "users", userDocId(normalizedEmail)), {
+    uid:      user.uid,
+    email:    normalizedEmail,
     provider,
     displayName: user.displayName || null,
   }, { merge: true });
@@ -617,7 +637,7 @@ if (googleBtn) {
       showLoader();
       await linkPendingCredential(result.user);
       await saveUserProvider(result.user);
-      try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
+      try { await applySignupHotelReferral(result.user.email); } catch (_) {}
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
     } catch (err) {
@@ -685,8 +705,8 @@ if (facebookBtn) {
       let email = result.user.email;
       if (!email) {
         try {
-          const snap = await getDoc(doc(db, "users", result.user.uid));
-          if (snap.exists()) email = snap.data().email || null;
+          const snap = await findUserDocByUid(result.user.uid);
+          if (snap) email = snap.data().email || null;
         } catch (_) {}
       }
       if (!email) {
@@ -711,7 +731,7 @@ if (facebookBtn) {
         }
       } catch (_) {}
       localStorage.setItem("ak-userMail", email);
-      try { await applySignupHotelReferral(result.user.uid); } catch (_) {}
+      try { await applySignupHotelReferral(email); } catch (_) {}
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
 
@@ -748,7 +768,7 @@ if (submitBtn) {
     e.preventDefault();
     clearError();
 
-    const email    = emailInput?.value.trim();
+    const email    = emailInput?.value.trim().toLowerCase();
     const password = passwordInput?.value;
 
     if (!email || !password) {
@@ -788,14 +808,14 @@ if (submitBtn) {
       try {
         if (localStorage.getItem("ak-hotel-referral")) {
           // Case 1: fresh referral link this session (sign-up flow).
-          await applySignupHotelReferral(result.user.uid);
+          await applySignupHotelReferral(email);
         } else {
           // Case 2: returning user, opt-in surfaced via the debounced email
           // DB lookup while they were still typing into the login form.
-          const snap = await getDoc(doc(db, "users", result.user.uid));
+          const snap = await getDoc(doc(db, "users", userDocId(email)));
           const existing = snap.exists() ? snap.data().hotelReferral : null;
           if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
-            await saveHotelReferral(result.user.uid, existing.hotel, !!optInCheckbox.checked);
+            await saveHotelReferral(email, existing.hotel, !!optInCheckbox.checked);
           }
         }
       } catch (_) {}
@@ -855,8 +875,8 @@ async function checkHotelReferralByEmail() {
   const email = emailInput.value.trim();
   if (!email || !isValidEmail(email)) return;
   try {
-    const snap = await getDocs(query(collection(db, "users"), where("email", "==", email)));
-    const referral = snap.empty ? null : snap.docs[0].data().hotelReferral;
+    const snap = await getDoc(doc(db, "users", userDocId(email)));
+    const referral = snap.exists() ? snap.data().hotelReferral : null;
     optInCheckbox.toggleAttribute("data-ak-hidden", !(referral && !referral.optedIn));
   } catch (_) {}
 }
@@ -899,15 +919,15 @@ if (forgotSubmitBtn) {
     clearError();
     if (successEl) successEl.classList.add("hide");
 
-    const email = forgotEmailInput?.value.trim();
+    const email = forgotEmailInput?.value.trim().toLowerCase();
     if (!email) { showError("Please enter your email address."); return; }
     if (!isValidEmail(email)) { showError("Please enter a valid email address."); return; }
 
     try {
       try {
-        const snap = await getDocs(query(collection(db, "users"), where("email", "==", email)));
-        if (!snap.empty) {
-          const provider = snap.docs[0].data().provider;
+        const snap = await getDoc(doc(db, "users", userDocId(email)));
+        if (snap.exists()) {
+          const provider = snap.data().provider;
           const providerNames = { "google.com": "Google", "facebook.com": "Facebook" };
           if (providerNames[provider]) {
             showError(`This account uses ${providerNames[provider]} to sign in. No password to reset.`);
