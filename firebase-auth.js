@@ -463,7 +463,12 @@ function collectMissingEmail() {
 }
 
 async function saveHotelReferral(email, hotel, optedIn) {
-  await setDoc(doc(db, "users", userDocId(email)), { hotelReferral: { hotel, optedIn } }, { merge: true });
+  try {
+    await setDoc(doc(db, "users", userDocId(email)), { hotelReferral: { hotel, optedIn } }, { merge: true });
+  } catch (err) {
+    console.error("saveHotelReferral write failed:", err.code || err.message, err);
+    throw err;
+  }
 }
 
 // Case 1 of the hotel-referral opt-in: applies no matter which sign-in method
@@ -490,7 +495,9 @@ async function applySignupHotelReferral(email) {
     if (alreadyConsented || optedInNow) {
       localStorage.removeItem("ak-hotel-referral");
     }
-  } catch (_) {}
+  } catch (err) {
+    console.error("applySignupHotelReferral failed:", err.code || err.message, err);
+  }
 }
 
 function setMode(signUp) {
