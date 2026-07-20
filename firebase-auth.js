@@ -560,12 +560,17 @@ async function saveUserProvider(user, emailOverride) {
   if (!email) return; // no email yet — can't derive a doc ID (see findUserDocByUid callers)
   const normalizedEmail = email.trim().toLowerCase();
   const provider = user.providerData[0]?.providerId || "password";
-  await setDoc(doc(db, "users", userDocId(normalizedEmail)), {
-    uid:      user.uid,
-    email:    normalizedEmail,
-    provider,
-    displayName: user.displayName || null,
-  }, { merge: true });
+  try {
+    await setDoc(doc(db, "users", userDocId(normalizedEmail)), {
+      uid:      user.uid,
+      email:    normalizedEmail,
+      provider,
+      displayName: user.displayName || null,
+    }, { merge: true });
+  } catch (err) {
+    console.error("saveUserProvider write failed:", err.code || err.message, err);
+    throw err;
+  }
 }
 
 // After a successful sign-in, link the pending credential if one was saved.
