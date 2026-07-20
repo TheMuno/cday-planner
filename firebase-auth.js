@@ -465,6 +465,7 @@ function collectMissingEmail() {
 async function saveHotelReferral(email, hotel, optedIn) {
   try {
     await setDoc(doc(db, "users", userDocId(email)), { hotelReferral: { hotel, optedIn } }, { merge: true });
+    console.log("saveHotelReferral: write call resolved for", userDocId(email));
   } catch (err) {
     console.error("saveHotelReferral write failed:", err.code || err.message, err);
     throw err;
@@ -496,6 +497,8 @@ async function applySignupHotelReferral(email) {
     if (alreadyConsented || optedInNow) {
       localStorage.removeItem("ak-hotel-referral");
     }
+    const verifySnap = await getDoc(doc(db, "users", userDocId(email)));
+    console.log("applySignupHotelReferral: doc read back after write:", verifySnap.exists() ? verifySnap.data() : "MISSING");
   } catch (err) {
     console.error("applySignupHotelReferral failed:", err.code || err.message, err);
   }
