@@ -478,6 +478,7 @@ async function saveHotelReferral(email, hotel, optedIn) {
 // sign-in never has a pre-auth email typed to key that lookup off of.
 async function applySignupHotelReferral(email) {
   const hotel = localStorage.getItem("ak-hotel-referral");
+  console.log("applySignupHotelReferral:", { hotel, email });
   if (!hotel || !email) return;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
@@ -822,6 +823,7 @@ if (submitBtn) {
           // Case 1: fresh referral link this session (sign-up flow).
           await applySignupHotelReferral(email);
         } else {
+          console.log("no ak-hotel-referral in localStorage at submit time");
           // Case 2: returning user, opt-in surfaced via the debounced email
           // DB lookup while they were still typing into the login form.
           const snap = await getDoc(doc(db, "users", userDocId(email)));
