@@ -17,8 +17,6 @@ import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } 
 import {
   getAuth,
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
   GoogleAuthProvider,
   FacebookAuthProvider,
   signInWithCredential,
@@ -123,7 +121,7 @@ syncOptInFromLocalStorage();
 let isSignUpMode = false;
 let pendingCredential = null;
 let isSigningIn = false;
-let redirectHandled = false; // prevents onAuthStateChanged and getRedirectResult racing
+let redirectHandled = false; // ensures only one sign-in flow (a button/form handler or the onAuthStateChanged backstop) finishes and navigates per sign-in
 
 function isInAppBrowser() {
   const ua = navigator.userAgent || "";
@@ -164,11 +162,29 @@ function clearPendingCred() {
   sessionStorage.removeItem(PENDING_CRED_KEY);
 }
 
-pendingCredential = loadPendingCred();
+// ── OPT-IN INTENT PERSISTENCE (sessionStorage) ───────────────
+// The mobile Facebook flow does a full-page redirect to facebook.com and
+// back, so the page (and the opt-in checkbox's checked state) is rebuilt
+// from scratch on return. Without this, applySignupHotelReferral would read
+// the freshly-reloaded, always-unchecked checkbox instead of what the user
+// actually selected before tapping the Facebook button.
+const OPT_IN_INTENT_KEY = "ak_optin_intent";
 
-// Capture the redirect destination once at load time so both getRedirectResult
-// and onAuthStateChanged can reference it even after localStorage is cleared.
-const storedRedirectDest = localStorage.getItem('ak-redirect-destination');
+function saveOptInIntent() {
+  try { sessionStorage.setItem(OPT_IN_INTENT_KEY, optInInput?.checked ? "1" : "0"); } catch (_) {}
+}
+
+function consumeOptInIntent() {
+  try {
+    const raw = sessionStorage.getItem(OPT_IN_INTENT_KEY);
+    sessionStorage.removeItem(OPT_IN_INTENT_KEY);
+    return raw === null ? undefined : raw === "1";
+  } catch (_) {
+    return undefined;
+  }
+}
+
+pendingCredential = loadPendingCred();
 
 // ── Handle return from manual Facebook OAuth redirect (mobile) ──
 const _fbHash  = new URLSearchParams(window.location.hash.slice(1));
@@ -183,6 +199,7 @@ if (_fbIsFB) {
     isSigningIn = true;
     showLoader();
     (async () => {
+      const optedInIntent = consumeOptInIntent();
       try {
         const credential = FacebookAuthProvider.credential(_fbToken);
         const result = await signInWithCredential(auth, credential);
@@ -200,6 +217,7 @@ if (_fbIsFB) {
           if (!email) {
             await signOut(auth);
             isSigningIn = false;
+            redirectHandled = false; // release the claim — signed back out, nothing left for the backstop to skip
             showError("An email address is required to sign in with Facebook. Please try again.");
             return;
           }
@@ -207,7 +225,7 @@ if (_fbIsFB) {
         }
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
-        try { await applySignupHotelReferral(email); } catch (_) {}
+        try { await applySignupHotelReferral(email, optedInIntent); } catch (_) {}
         isSigningIn = false;
         onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -223,75 +241,6 @@ if (_fbIsFB) {
     if (fbErr) showError('Facebook sign-in failed: ' + fbErr);
   }
 }
-
-if (storedRedirectDest) {
-  isSigningIn = true;
-  showLoader();
-}
-
-// Handle result after OAuth redirect (desktop popup fallback)
-getRedirectResult(auth).then(async (result) => {
-  if (!result) {
-    if (!redirectHandled) {
-      isSigningIn = false;
-      localStorage.removeItem('ak-redirect-destination');
-      hideLoader();
-      if (auth.currentUser && storedRedirectDest) {
-        redirectHandled = true;
-        window.location.replace(storedRedirectDest);
-      }
-    }
-    return;
-  }
-  redirectHandled = true;
-  try {
-    await linkPendingCredential(result.user);
-    let email = result.user.email;
-
-    if (!email) {
-      try {
-        const snap = await findUserDocByUid(result.user.uid);
-        if (snap) email = snap.data().email || null;
-      } catch (_) {}
-    }
-
-    if (!email) {
-      hideLoader();
-      email = await collectMissingEmail();
-      if (!email) {
-        await signOut(auth);
-        isSigningIn = false;
-        localStorage.removeItem('ak-redirect-destination');
-        showError("An email address is required to sign in with Facebook. Please try again.");
-        return;
-      }
-      showLoader();
-    }
-
-    await saveUserProvider(result.user, email || undefined);
-    if (email) localStorage.setItem("ak-userMail", email);
-    localStorage.removeItem('ak-redirect-destination');
-    try { await applySignupHotelReferral(email); } catch (_) {}
-    onUserLoginSuccess(result.user);
-    window.location.replace(storedRedirectDest || REDIRECT_AFTER_LOGIN);
-  } catch (err) {
-    isSigningIn = false;
-    localStorage.removeItem('ak-redirect-destination');
-    hideLoader();
-    handleAuthError(err);
-  }
-}).catch((err) => {
-  if (!redirectHandled) {
-    isSigningIn = false;
-    localStorage.removeItem('ak-redirect-destination');
-    hideLoader();
-  }
-  if (err.message && err.message.includes('missing initial state')) {
-    showError("Sign-in couldn't complete — your browser's storage was inaccessible.\nPlease open this page in Safari or Chrome and try again.");
-    return;
-  }
-  handleAuthError(err);
-});
 
 // ── 5. HELPERS ───────────────────────────────────────────────
 function showPopup(msg, duration, isError) {
@@ -326,10 +275,11 @@ function showPopup(msg, duration, isError) {
   closeBtn.addEventListener("click", () => backdrop.remove());
 
   const text = document.createElement("p");
-  text.innerHTML = msg.replace(/\n/g, "<br>");
+  text.textContent = msg;
   Object.assign(text.style, {
     margin: "0", fontSize: window.innerWidth > 768 ? "17px" : "14px",
     color: isError ? "#dc2626" : "#16a34a",
+    whiteSpace: "pre-line",
   });
 
   backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
@@ -478,7 +428,7 @@ async function saveHotelReferral(email, hotel, optedIn) {
 // isSignUpMode + localStorage, not on email/password vs. Google vs. Facebook.
 // Case 2 (returning-user DB lookup) stays email/password-only — social
 // sign-in never has a pre-auth email typed to key that lookup off of.
-async function applySignupHotelReferral(email) {
+async function applySignupHotelReferral(email, checkedOverride) {
   const hotel = localStorage.getItem("ak-hotel-referral");
   console.log("applySignupHotelReferral:", { hotel, email });
   if (!hotel || !email) return;
@@ -486,7 +436,10 @@ async function applySignupHotelReferral(email) {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
     const existing = snap.exists() ? snap.data().hotelReferral : null;
     const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
-    const optedInNow = !!optInInput?.checked;
+    // checkedOverride carries the pre-redirect checkbox state for the mobile
+    // Facebook flow (see consumeOptInIntent) — the live checkbox has already
+    // been reset by the full-page redirect by the time this runs.
+    const optedInNow = checkedOverride !== undefined ? checkedOverride : !!optInInput?.checked;
     if (!alreadyConsented) {
       await saveHotelReferral(email, hotel, optedInNow);
     }
@@ -604,8 +557,8 @@ async function linkPendingCredential(user) {
 }
 
 // Called once per genuine sign-in (Google/Facebook popup, Facebook mobile
-// redirect, getRedirectResult, email/password) right before we navigate away
-// from /log-in. Header avatar rendering happens separately, on the
+// redirect, email/password) right before we navigate away from /log-in.
+// Header avatar rendering happens separately, on the
 // destination page, via firebase-nav.js's onAuthStateChanged listener.
 function onUserLoginSuccess(user) {
   if (typeof gtag === 'function') {
@@ -645,31 +598,52 @@ function sendToMake(user) {
 }
 
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
+// Shared by the normal popup-resolves path and the popup-race recovery path
+// below (auth/popup-closed-by-user firing even though auth.currentUser is
+// already set) — both must run the exact same steps, or the recovery path
+// silently skips saveUserProvider/applySignupHotelReferral.
+async function finishGoogleSignIn(user) {
+  await linkPendingCredential(user);
+  await saveUserProvider(user);
+  try { await applySignupHotelReferral(user.email); } catch (_) {}
+  onUserLoginSuccess(user);
+  window.location.replace(REDIRECT_AFTER_LOGIN);
+}
+
 if (googleBtn) {
   googleBtn.addEventListener("click", async () => {
     clearError();
     isSigningIn = true;
+    // Claim redirectHandled before the popup call, same reasoning as the
+    // email/password handler: without this, the onAuthStateChanged backstop
+    // can independently race the happy path here too and navigate away before
+    // finishGoogleSignIn completes its writes.
+    redirectHandled = true;
     try {
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
-      await linkPendingCredential(result.user);
-      await saveUserProvider(result.user);
-      try { await applySignupHotelReferral(result.user.email); } catch (_) {}
-      onUserLoginSuccess(result.user);
-      window.location.replace(REDIRECT_AFTER_LOGIN);
+      await finishGoogleSignIn(result.user);
     } catch (err) {
-      isSigningIn = false;
-      hideLoader();
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        hideLoader();
         // On mobile the popup opens as a new tab with no window.opener, so auth
-        // can succeed before postMessage fails. Redirect if we're already signed in.
+        // can succeed before postMessage fails. If it's already visible, finish
+        // now; otherwise release the claim and leave isSigningIn=true —
+        // auth.currentUser may just not have synced across tabs yet, and the
+        // onAuthStateChanged listener at the bottom of this file will finish
+        // the job once it does.
         if (auth.currentUser) {
-          onUserLoginSuccess(auth.currentUser);
+          isSigningIn = false;
           showLoader();
-          window.location.replace(REDIRECT_AFTER_LOGIN);
+          await finishGoogleSignIn(auth.currentUser);
+        } else {
+          redirectHandled = false;
         }
         return;
       }
+      isSigningIn = false;
+      redirectHandled = false;
+      hideLoader();
       if (err.code === 'auth/popup-blocked' ||
           err.code === 'auth/web-storage-unsupported' ||
           err.code === 'auth/operation-not-supported-in-this-environment') {
@@ -682,6 +656,47 @@ if (googleBtn) {
 }
 
 // ── 7. FACEBOOK SIGN-IN ──────────────────────────────────────
+// Shared by the normal popup-resolves path and the popup-race recovery path
+// below, same reasoning as finishGoogleSignIn — Facebook additionally needs
+// the email-recovery steps (email scope can be denied) run on both paths too.
+async function finishFacebookSignIn(user) {
+  await linkPendingCredential(user);
+
+  let email = user.email;
+  if (!email) {
+    try {
+      const snap = await findUserDocByUid(user.uid);
+      if (snap) email = snap.data().email || null;
+    } catch (_) {}
+  }
+  if (!email) {
+    hideLoader();
+    email = await collectMissingEmail();
+    if (!email) {
+      await signOut(auth);
+      isSigningIn = false;
+      redirectHandled = false; // release the claim — signed back out, nothing left for the backstop to skip
+      showError("An email address is required to sign in with Facebook. Please try again.");
+      return;
+    }
+    showLoader();
+  }
+
+  await saveUserProvider(user, email);
+  try {
+    const cached = localStorage.getItem("ak-user");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      parsed.email = email;
+      localStorage.setItem("ak-user", JSON.stringify(parsed));
+    }
+  } catch (_) {}
+  localStorage.setItem("ak-userMail", email);
+  try { await applySignupHotelReferral(email); } catch (_) {}
+  onUserLoginSuccess(user);
+  window.location.replace(REDIRECT_AFTER_LOGIN);
+}
+
 if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
     clearError();
@@ -703,6 +718,7 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
+      saveOptInIntent();
       const redirectUri = window.location.origin + window.location.pathname;
       window.location.href =
         'https://www.facebook.com/dialog/oauth' +
@@ -714,65 +730,40 @@ if (facebookBtn) {
       return;
     }
 
+    // Claim redirectHandled before the popup call — same reasoning as the
+    // Google handler above. Placed here (not at the top of the click handler)
+    // so the isInAppBrowser/Firefox/mobile-redirect early returns above never
+    // need to release it themselves; they never reach this line.
+    redirectHandled = true;
     try {
       const result = await signInWithPopup(auth, fbProvider);
       showLoader();
-      await linkPendingCredential(result.user);
-
-      let email = result.user.email;
-      if (!email) {
-        try {
-          const snap = await findUserDocByUid(result.user.uid);
-          if (snap) email = snap.data().email || null;
-        } catch (_) {}
-      }
-      if (!email) {
-        hideLoader();
-        email = await collectMissingEmail();
-        if (!email) {
-          await signOut(auth);
-          isSigningIn = false;
-          showError("An email address is required to sign in with Facebook. Please try again.");
-          return;
-        }
-        showLoader();
-      }
-
-      await saveUserProvider(result.user, email);
-      try {
-        const cached = localStorage.getItem("ak-user");
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          parsed.email = email;
-          localStorage.setItem("ak-user", JSON.stringify(parsed));
-        }
-      } catch (_) {}
-      localStorage.setItem("ak-userMail", email);
-      try { await applySignupHotelReferral(email); } catch (_) {}
-      onUserLoginSuccess(result.user);
-      window.location.replace(REDIRECT_AFTER_LOGIN);
-
+      await finishFacebookSignIn(result.user);
     } catch (err) {
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
-        isSigningIn = false;
         hideLoader();
+        // Same cross-tab sync race as the Google handler above — leave
+        // isSigningIn=true when auth.currentUser isn't visible yet, and
+        // release the claim so the onAuthStateChanged listener can finish the
+        // job once it lands.
         if (auth.currentUser) {
-          onUserLoginSuccess(auth.currentUser);
+          isSigningIn = false;
           showLoader();
-          window.location.replace(REDIRECT_AFTER_LOGIN);
+          await finishFacebookSignIn(auth.currentUser);
+        } else {
+          redirectHandled = false;
         }
-        return;
-      }
-      if (err.code === 'auth/popup-blocked' ||
-          err.code === 'auth/web-storage-unsupported' ||
-          err.code === 'auth/operation-not-supported-in-this-environment') {
-        isSigningIn = false;
-        hideLoader();
-        showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
         return;
       }
       isSigningIn = false;
+      redirectHandled = false;
       hideLoader();
+      if (err.code === 'auth/popup-blocked' ||
+          err.code === 'auth/web-storage-unsupported' ||
+          err.code === 'auth/operation-not-supported-in-this-environment') {
+        showError("The sign-in popup was blocked.\nPlease allow popups for this site in your browser settings, then try again.");
+        return;
+      }
       handleAuthError(err);
     }
   });
@@ -806,6 +797,14 @@ if (submitBtn) {
     }
 
     isSigningIn = true;
+    // Claim redirectHandled up front, synchronously, before the sign-in call
+    // even starts. This flow never needs the onAuthStateChanged backstop (no
+    // popup/redirect — everything happens in this tab), but onAuthStateChanged
+    // can still fire before the await below resolves, and it would otherwise
+    // race to call window.location.replace() before Case 2's lookup/write a
+    // few lines down ever runs. Claiming early means that whenever the
+    // listener fires, it always sees this already handled and stands down.
+    redirectHandled = true;
     showLoader();
     try {
       let result;
@@ -843,6 +842,7 @@ if (submitBtn) {
     }
     catch (err) {
       isSigningIn = false;
+      redirectHandled = false; // release the claim — this attempt failed, so a later one (this form or another sign-in method) must still be able to use the backstop
       hideLoader();
       if (err.code === "auth/email-already-in-use") {
         setMode(false);
@@ -970,21 +970,16 @@ if (forgotSubmitBtn) {
 }
 
 // ── 12. REDIRECT ALREADY-LOGGED-IN USERS ────────────────────
+// This is the authoritative backstop for every "auth actually succeeded but
+// the tab that requested it hasn't seen auth.currentUser yet" race — it fires
+// whenever Firebase's cross-tab auth-state sync lands, however long that
+// takes, so it (not a timeout in the click handlers) is what has to run the
+// full set of post-sign-in steps. Missing any of these here is exactly what
+// let user docs get saved without their hotelReferral: saveUserProvider alone
+// writes a valid-looking doc, so the gap doesn't fail loudly, it just quietly
+// drops the referral write.
 onAuthStateChanged(auth, async (user) => {
   if (!user) return;
-
-  // Redirect flow fallback: onAuthStateChanged can fire before getRedirectResult
-  // resolves, leaving isSigningIn=true and the user stranded on the login page.
-  // If we came from a redirect and it hasn't been handled yet, handle it now.
-  if (storedRedirectDest && !redirectHandled) {
-    redirectHandled = true;
-    isSigningIn = false;
-    try { await saveUserProvider(user); } catch (_) {}
-    onUserLoginSuccess(user);
-    hideLoader();
-    window.location.replace(storedRedirectDest);
-    return;
-  }
 
   // Redirect if nothing else has taken ownership. This handles:
   // - Already logged in on page load
@@ -996,8 +991,20 @@ onAuthStateChanged(auth, async (user) => {
   // plain page load for an already-logged-in user would fire "sign-in success".
   if (!redirectHandled) {
     redirectHandled = true;
-    if (isSigningIn) onUserLoginSuccess(user);
+    const wasSigningIn = isSigningIn;
+    if (wasSigningIn) onUserLoginSuccess(user);
+    isSigningIn = false;
+    try { await linkPendingCredential(user); } catch (_) {}
     try { await saveUserProvider(user); } catch (_) {}
+    // Only decide the opt-in here if a sign-in actually happened in this tab
+    // (wasSigningIn) — e.g. the popup-as-new-tab mobile race. If the user
+    // merely landed on /log-in already authenticated from an earlier session,
+    // don't silently record a "declined" opt-in before they've ever seen the
+    // checkbox; leave the pending referral in localStorage so it's asked for
+    // honestly the next time they actually sign in through this tab.
+    if (wasSigningIn) {
+      try { await applySignupHotelReferral(user.email); } catch (_) {}
+    }
     showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
   }
