@@ -89,7 +89,8 @@ const forgotEmailInput     = document.getElementById("forgot-email");
 const forgotSubmitBtn      = document.getElementById("forgot-submit");
 const forgotBackLink       = document.getElementById("forgot-back");
 const successEl            = document.getElementById("auth-success");
-const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]');
+const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]'); // wrapping label — show/hide only
+const optInInput           = document.querySelector('[data-name="User Consent"]'); // actual checkbox input — read .checked here
 
 // Display-only formatting — the raw slug (e.g. "hotel_name") is what's stored
 // in localStorage/Firestore and used for lookups; only the on-page text gets
@@ -485,7 +486,7 @@ async function applySignupHotelReferral(email) {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
     const existing = snap.exists() ? snap.data().hotelReferral : null;
     const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
-    const optedInNow = !!optInCheckbox?.checked;
+    const optedInNow = !!optInInput?.checked;
     if (!alreadyConsented) {
       await saveHotelReferral(email, hotel, optedInNow);
     }
@@ -832,7 +833,7 @@ if (submitBtn) {
           const snap = await getDoc(doc(db, "users", userDocId(email)));
           const existing = snap.exists() ? snap.data().hotelReferral : null;
           if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
-            await saveHotelReferral(email, existing.hotel, !!optInCheckbox.checked);
+            await saveHotelReferral(email, existing.hotel, !!optInInput?.checked);
           }
         }
       } catch (_) {}
