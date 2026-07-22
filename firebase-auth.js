@@ -13,7 +13,7 @@
 // ============================================================
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 import {
   getAuth,
   signInWithPopup,
@@ -442,14 +442,39 @@ function collectMissingEmail() {
   });
 }
 
-async function saveHotelReferral(email, hotel, optedIn) {
+// existingEntry (the caller's already-fetched hotelReferrals[hotel], if any) is
+// how createdAt survives repeat writes: the dot-path merge below replaces the
+// *entire* value object at hotelReferrals.<hotel> each time, so createdAt has
+// to be explicitly carried forward or it would silently vanish on write #2.
+async function saveHotelReferral(email, hotel, optedIn, existingEntry) {
   try {
-    await setDoc(doc(db, "users", userDocId(email)), { hotelReferral: { hotel, optedIn } }, { merge: true });
+    // Dot-path key so merge:true only touches this one hotel's entry — a plain
+    // { hotelReferrals: { [hotel]: {...} } } would replace the *entire*
+    // hotelReferrals map and wipe out every other hotel's consent history.
+    const value = {
+      optedIn,
+      updatedAt: serverTimestamp(),
+      createdAt: existingEntry?.createdAt ?? serverTimestamp(), // set once, then only ever copied forward — never re-stamped
+    };
+    await setDoc(doc(db, "users", userDocId(email)), { [`hotelReferrals.${hotel}`]: value }, { merge: true });
     console.log("saveHotelReferral: write call resolved for", userDocId(email));
   } catch (err) {
     console.error("saveHotelReferral write failed:", err.code || err.message, err);
     throw err;
   }
+}
+
+// Multiple hotels can now have their own (possibly unconsented) entry in the
+// same user's hotelReferrals map. Case 2 / submit only ever have one checkbox
+// to show, so when more than one is unconsented, the most recently touched
+// entry (by updatedAt) wins. Missing/unresolved updatedAt (e.g. a serverTimestamp
+// not yet synced back from the server) sorts last rather than throwing.
+function findUnconsentedHotel(hotelReferrals) {
+  if (!hotelReferrals) return null;
+  const unconsented = Object.entries(hotelReferrals).filter(([, v]) => !v.optedIn);
+  if (!unconsented.length) return null;
+  unconsented.sort(([, a], [, b]) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
+  return unconsented[0][0];
 }
 
 // Case 1 of the hotel-referral opt-in: applies no matter which sign-in method
@@ -463,14 +488,14 @@ async function applySignupHotelReferral(email, checkedOverride) {
   if (!hotel || !email) return;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
-    const existing = snap.exists() ? snap.data().hotelReferral : null;
-    const alreadyConsented = existing && existing.hotel === hotel && existing.optedIn;
+    const existing = snap.exists() ? snap.data().hotelReferrals?.[hotel] : null;
+    const alreadyConsented = !!existing?.optedIn;
     // checkedOverride carries the pre-redirect checkbox state for the mobile
     // Facebook flow (see consumeOptInIntent) — the live checkbox has already
     // been reset by the full-page redirect by the time this runs.
     const optedInNow = checkedOverride !== undefined ? checkedOverride : !!optInInput?.checked;
     if (!alreadyConsented) {
-      await saveHotelReferral(email, hotel, optedInNow);
+      await saveHotelReferral(email, hotel, optedInNow, existing);
     }
     // Only clear localStorage once consent is actually on record — either
     // just now, or from an earlier visit. Left unconsented, keep it: that's
@@ -884,9 +909,10 @@ if (submitBtn) {
           // Case 2: returning user, opt-in surfaced via the debounced email
           // DB lookup while they were still typing into the login form.
           const snap = await getDoc(doc(db, "users", userDocId(email)));
-          const existing = snap.exists() ? snap.data().hotelReferral : null;
-          if (existing && !existing.optedIn && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
-            await saveHotelReferral(email, existing.hotel, !!optInInput?.checked);
+          const hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
+          const unconsentedHotel = findUnconsentedHotel(hotelReferrals);
+          if (unconsentedHotel && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
+            await saveHotelReferral(email, unconsentedHotel, !!optInInput?.checked, hotelReferrals[unconsentedHotel]);
           }
         }
       } catch (_) {}
@@ -949,12 +975,11 @@ async function checkHotelReferralByEmail() {
   if (!email || !isValidEmail(email)) return;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
-    const referral = snap.exists() ? snap.data().hotelReferral : null;
-    const showCheckbox = !!(referral && !referral.optedIn);
-    optInCheckbox.toggleAttribute("data-ak-hidden", !showCheckbox);
-    if (showCheckbox) {
+    const unconsentedHotel = findUnconsentedHotel(snap.exists() ? snap.data().hotelReferrals : null);
+    optInCheckbox.toggleAttribute("data-ak-hidden", !unconsentedHotel);
+    if (unconsentedHotel) {
       const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
-      if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(referral.hotel);
+      if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(unconsentedHotel);
     }
   } catch (_) {}
 }
