@@ -123,6 +123,32 @@ let pendingCredential = null;
 let isSigningIn = false;
 let redirectHandled = false; // ensures only one sign-in flow (a button/form handler or the onAuthStateChanged backstop) finishes and navigates per sign-in
 
+// ── DOUBLE-CLICK / CROSS-BUTTON GUARD ────────────────────────
+// Deliberately separate from isSigningIn: isSigningIn is left true on purpose
+// in the popup-race punt branches below (so the onAuthStateChanged backstop
+// can still attribute analytics/opt-in correctly whenever it eventually
+// fires, however long that takes) — it can legitimately stay true forever if
+// the user simply closed the popup without ever signing in. Reusing it as a
+// click-guard would permanently lock every button in that case. This flag
+// instead auto-releases after a bounded timeout, so a genuinely-abandoned
+// attempt never locks the page.
+let authButtonsLocked = false;
+let authButtonsLockTimer = null;
+
+function lockAuthButtons() {
+  authButtonsLocked = true;
+  clearTimeout(authButtonsLockTimer);
+  // Long enough that it won't fire mid-attempt on a real popup (2FA, a slow
+  // network, an account picker), short enough that an abandoned attempt
+  // doesn't leave the page feeling stuck for long.
+  authButtonsLockTimer = setTimeout(() => { authButtonsLocked = false; }, 30000);
+}
+
+function unlockAuthButtons() {
+  authButtonsLocked = false;
+  clearTimeout(authButtonsLockTimer);
+}
+
 function isInAppBrowser() {
   const ua = navigator.userAgent || "";
   return /FBAN|FBAV|FB_IAB|Instagram|MicroMessenger/i.test(ua);
@@ -197,6 +223,7 @@ if (_fbIsFB) {
   if (_fbToken) {
     redirectHandled = true;
     isSigningIn = true;
+    lockAuthButtons();
     showLoader();
     (async () => {
       const optedInIntent = consumeOptInIntent();
@@ -218,6 +245,7 @@ if (_fbIsFB) {
             await signOut(auth);
             isSigningIn = false;
             redirectHandled = false; // release the claim — signed back out, nothing left for the backstop to skip
+            unlockAuthButtons();
             showError("An email address is required to sign in with Facebook. Please try again.");
             return;
           }
@@ -232,6 +260,7 @@ if (_fbIsFB) {
       } catch (err) {
         isSigningIn = false;
         redirectHandled = false;
+        unlockAuthButtons();
         hideLoader();
         handleAuthError(err);
       }
@@ -612,6 +641,10 @@ async function finishGoogleSignIn(user) {
 
 if (googleBtn) {
   googleBtn.addEventListener("click", async () => {
+    // Guard against a double-click on this button, or Google clicked while a
+    // Facebook/email attempt is already in flight.
+    if (authButtonsLocked) return;
+    lockAuthButtons();
     clearError();
     isSigningIn = true;
     // Claim redirectHandled before the popup call, same reasoning as the
@@ -634,15 +667,20 @@ if (googleBtn) {
         // the job once it does.
         if (auth.currentUser) {
           isSigningIn = false;
+          unlockAuthButtons();
           showLoader();
           await finishGoogleSignIn(auth.currentUser);
         } else {
           redirectHandled = false;
+          // Leave authButtonsLocked as-is: a background sign-in may still
+          // complete via the onAuthStateChanged backstop, and its timeout is
+          // the safety valve if it never does.
         }
         return;
       }
       isSigningIn = false;
       redirectHandled = false;
+      unlockAuthButtons();
       hideLoader();
       if (err.code === 'auth/popup-blocked' ||
           err.code === 'auth/web-storage-unsupported' ||
@@ -699,6 +737,11 @@ async function finishFacebookSignIn(user) {
 
 if (facebookBtn) {
   facebookBtn.addEventListener("click", async () => {
+    // Same double-click / cross-button guard as the Google handler above.
+    // Locked further down, once the in-app-browser/Firefox early returns are
+    // behind us — those show an error and bail without ever attempting a
+    // sign-in, so they shouldn't leave the buttons locked.
+    if (authButtonsLocked) return;
     clearError();
     isSigningIn = true;
 
@@ -718,6 +761,7 @@ if (facebookBtn) {
     }
 
     if (isMobile()) {
+      lockAuthButtons();
       saveOptInIntent();
       const redirectUri = window.location.origin + window.location.pathname;
       window.location.href =
@@ -734,6 +778,7 @@ if (facebookBtn) {
     // Google handler above. Placed here (not at the top of the click handler)
     // so the isInAppBrowser/Firefox/mobile-redirect early returns above never
     // need to release it themselves; they never reach this line.
+    lockAuthButtons();
     redirectHandled = true;
     try {
       const result = await signInWithPopup(auth, fbProvider);
@@ -748,15 +793,19 @@ if (facebookBtn) {
         // job once it lands.
         if (auth.currentUser) {
           isSigningIn = false;
+          unlockAuthButtons();
           showLoader();
           await finishFacebookSignIn(auth.currentUser);
         } else {
           redirectHandled = false;
+          // Leave authButtonsLocked as-is — see the matching comment in the
+          // Google handler above.
         }
         return;
       }
       isSigningIn = false;
       redirectHandled = false;
+      unlockAuthButtons();
       hideLoader();
       if (err.code === 'auth/popup-blocked' ||
           err.code === 'auth/web-storage-unsupported' ||
@@ -774,6 +823,10 @@ if (facebookBtn) {
 if (submitBtn) {
   submitBtn.addEventListener("click", async (e) => {
     e.preventDefault();
+    // Same double-click / cross-button guard as the Google/Facebook handlers.
+    // Checked here, but only locked once validation passes below — an empty
+    // field shouldn't lock the buttons for a sign-in attempt that never starts.
+    if (authButtonsLocked) return;
     clearError();
 
     const email    = emailInput?.value.trim().toLowerCase();
@@ -796,6 +849,7 @@ if (submitBtn) {
       }
     }
 
+    lockAuthButtons();
     isSigningIn = true;
     // Claim redirectHandled up front, synchronously, before the sign-in call
     // even starts. This flow never needs the onAuthStateChanged backstop (no
@@ -843,6 +897,7 @@ if (submitBtn) {
     catch (err) {
       isSigningIn = false;
       redirectHandled = false; // release the claim — this attempt failed, so a later one (this form or another sign-in method) must still be able to use the backstop
+      unlockAuthButtons();
       hideLoader();
       if (err.code === "auth/email-already-in-use") {
         setMode(false);
