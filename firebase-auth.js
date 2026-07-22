@@ -950,7 +950,12 @@ async function checkHotelReferralByEmail() {
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
     const referral = snap.exists() ? snap.data().hotelReferral : null;
-    optInCheckbox.toggleAttribute("data-ak-hidden", !(referral && !referral.optedIn));
+    const showCheckbox = !!(referral && !referral.optedIn);
+    optInCheckbox.toggleAttribute("data-ak-hidden", !showCheckbox);
+    if (showCheckbox) {
+      const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
+      if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(referral.hotel);
+    }
   } catch (_) {}
 }
 
