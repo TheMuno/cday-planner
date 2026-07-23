@@ -531,13 +531,16 @@ function showHotelReferralModal(hotel) {
 // this at all: pre-auth there's no typed email to key a DB lookup off of, but
 // every provider gives us one by the time this runs.
 //
-// Which hotel to ask about: a fresh localStorage referral (this device just
-// followed a referral link) takes priority; otherwise fall back to whichever
-// hotel is unconsented in the user's own DB record (a returning user on a new
-// device/browser with nothing in localStorage).
+// Which hotel to ask about: the DB is checked first, since it's the source of
+// truth for consent already on record — any hotel still unconsented there
+// takes priority over whatever localStorage says. localStorage is only
+// consulted as a fallback when the DB has nothing pending (e.g. a brand-new
+// referral this device just picked up, with no DB entry yet). Checking the DB
+// first also means revisiting an old referral link for an already-consented
+// hotel can never resurface the modal — that specific case is caught before
+// localStorage's stale flag is ever trusted.
 async function promptHotelReferralOptIn(email) {
   if (!email) return;
-  let hotel = localStorage.getItem("ak-hotel-referral");
   let hotelReferrals;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
@@ -547,17 +550,18 @@ async function promptHotelReferralOptIn(email) {
     return; // can't reach Firestore — don't block sign-in on this
   }
 
-  let existing;
-  if (hotel) {
-    existing = hotelReferrals?.[hotel] ?? null;
+  let hotel = findUnconsentedHotel(hotelReferrals);
+  let existing = hotel ? hotelReferrals[hotel] : null;
+
+  if (!hotel) {
+    const localHotel = localStorage.getItem("ak-hotel-referral");
+    if (!localHotel) return;
+    existing = hotelReferrals?.[localHotel] ?? null;
     if (existing?.optedIn) {
-      localStorage.removeItem("ak-hotel-referral"); // already consented elsewhere — nothing left to ask
+      localStorage.removeItem("ak-hotel-referral"); // already consented — stale flag, nothing left to ask
       return;
     }
-  } else {
-    hotel = findUnconsentedHotel(hotelReferrals);
-    if (!hotel) return;
-    existing = hotelReferrals[hotel];
+    hotel = localHotel;
   }
 
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
