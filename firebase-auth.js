@@ -536,20 +536,16 @@ function showHotelReferralModal(hotel) {
 // hotel is unconsented in the user's own DB record (a returning user on a new
 // device/browser with nothing in localStorage).
 async function promptHotelReferralOptIn(email) {
-  console.log("promptHotelReferralOptIn: called with", email);
   if (!email) return;
   let hotel = localStorage.getItem("ak-hotel-referral");
   let hotelReferrals;
   try {
-    const docRef = doc(db, "users", userDocId(email));
-    const snap = await getDoc(docRef);
-    console.log("promptHotelReferralOptIn: read doc id =", docRef.path, "| exists =", snap.exists(), "| full data =", snap.exists() ? snap.data() : null);
+    const snap = await getDoc(doc(db, "users", userDocId(email)));
     hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
   } catch (err) {
     console.error("promptHotelReferralOptIn: getDoc failed:", err.code || err.message, err);
     return; // can't reach Firestore — don't block sign-in on this
   }
-  console.log("promptHotelReferralOptIn: localStorage hotel =", hotel, "| hotelReferrals from db =", hotelReferrals);
 
   let existing;
   if (hotel) {
@@ -560,14 +556,10 @@ async function promptHotelReferralOptIn(email) {
     }
   } else {
     hotel = findUnconsentedHotel(hotelReferrals);
-    if (!hotel) {
-      console.log("promptHotelReferralOptIn: no unconsented hotel found, nothing to show");
-      return;
-    }
+    if (!hotel) return;
     existing = hotelReferrals[hotel];
   }
 
-  console.log("promptHotelReferralOptIn: showing modal for", hotel);
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
   const accepted = await showHotelReferralModal(hotel);
   showLoader();
@@ -722,7 +714,6 @@ function sendToMake(user) {
 // already set) — both must run the exact same steps, or the recovery path
 // silently skips saveUserProvider/promptHotelReferralOptIn.
 async function finishGoogleSignIn(user) {
-  console.log("finishGoogleSignIn: called for", user.email);
   await linkPendingCredential(user);
   await saveUserProvider(user);
   try { await promptHotelReferralOptIn(user.email); } catch (_) {}
@@ -1097,7 +1088,6 @@ onAuthStateChanged(auth, async (user) => {
   if (!redirectHandled) {
     redirectHandled = true;
     const wasSigningIn = isSigningIn;
-    console.log("onAuthStateChanged backstop: firing for", user.email, "| wasSigningIn =", wasSigningIn);
     if (wasSigningIn) onUserLoginSuccess(user);
     isSigningIn = false;
     try { await linkPendingCredential(user); } catch (_) {}
