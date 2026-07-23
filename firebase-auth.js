@@ -13,7 +13,7 @@
 // ============================================================
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 import {
   getAuth,
   signInWithPopup,
@@ -404,20 +404,24 @@ function collectMissingEmail() {
 }
 
 // existingEntry (the caller's already-fetched hotelReferrals[hotel], if any) is
-// how createdAt survives repeat writes: the dot-path merge below replaces the
+// how createdAt survives repeat writes: the dot-path update below replaces the
 // *entire* value object at hotelReferrals.<hotel> each time, so createdAt has
 // to be explicitly carried forward or it would silently vanish on write #2.
 async function saveHotelReferral(email, hotel, optedIn, existingEntry) {
   try {
-    // Dot-path key so merge:true only touches this one hotel's entry — a plain
-    // { hotelReferrals: { [hotel]: {...} } } would replace the *entire*
-    // hotelReferrals map and wipe out every other hotel's consent history.
+    // updateDoc (not setDoc+merge!) is what actually parses a dotted string key
+    // as a nested field path — setDoc's merge option takes top-level object keys
+    // literally, so { [`hotelReferrals.${hotel}`]: value } passed to setDoc would
+    // create one field literally named "hotelReferrals.<hotel>" instead of
+    // nesting under a hotelReferrals map. updateDoc requires the doc to already
+    // exist, which is guaranteed here since every caller runs saveUserProvider
+    // (setDoc+merge, creates the doc if missing) first.
     const value = {
       optedIn,
       updatedAt: serverTimestamp(),
       createdAt: existingEntry?.createdAt ?? serverTimestamp(), // set once, then only ever copied forward — never re-stamped
     };
-    await setDoc(doc(db, "users", userDocId(email)), { [`hotelReferrals.${hotel}`]: value }, { merge: true });
+    await updateDoc(doc(db, "users", userDocId(email)), { [`hotelReferrals.${hotel}`]: value });
     console.log("saveHotelReferral: write call resolved for", userDocId(email));
   } catch (err) {
     console.error("saveHotelReferral write failed:", err.code || err.message, err);
