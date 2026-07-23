@@ -87,8 +87,8 @@ const forgotEmailInput     = document.getElementById("forgot-email");
 const forgotSubmitBtn      = document.getElementById("forgot-submit");
 const forgotBackLink       = document.getElementById("forgot-back");
 const successEl            = document.getElementById("auth-success");
-const optInCheckbox        = document.querySelector('[data-ak="user-opt-in"]'); // wrapping label — show/hide only
-const optInInput           = document.querySelector('[data-name="User Consent"]'); // actual checkbox input — read .checked here
+const TERMS_URL            = "/legal/terms";
+const PRIVACY_URL          = "/legal/privacy";
 
 // Display-only formatting — the raw slug (e.g. "hotel_name") is what's stored
 // in localStorage/Firestore and used for lookups; only the on-page text gets
@@ -101,22 +101,6 @@ function formatHotelName(slug) {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
-
-// Case 1's visibility rule is "there's a fresh referral in localStorage" —
-// full stop, independent of login/signup mode. Social buttons are clickable
-// in either mode, so gating this behind isSignUpMode meant anyone who signed
-// up via Google/Facebook without ever touching the mode toggle never saw the
-// checkbox at all. Run once at load; Case 2's email lookup is the only thing
-// allowed to override it (show it) beyond this, and only while in login mode.
-function syncOptInFromLocalStorage() {
-  const hotelReferral = localStorage.getItem("ak-hotel-referral");
-  if (optInCheckbox) optInCheckbox.toggleAttribute("data-ak-hidden", !hotelReferral);
-  if (hotelReferral) {
-    const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
-    if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(hotelReferral);
-  }
-}
-syncOptInFromLocalStorage();
 
 let isSignUpMode = false;
 let pendingCredential = null;
@@ -188,28 +172,6 @@ function clearPendingCred() {
   sessionStorage.removeItem(PENDING_CRED_KEY);
 }
 
-// ── OPT-IN INTENT PERSISTENCE (sessionStorage) ───────────────
-// The mobile Facebook flow does a full-page redirect to facebook.com and
-// back, so the page (and the opt-in checkbox's checked state) is rebuilt
-// from scratch on return. Without this, applySignupHotelReferral would read
-// the freshly-reloaded, always-unchecked checkbox instead of what the user
-// actually selected before tapping the Facebook button.
-const OPT_IN_INTENT_KEY = "ak_optin_intent";
-
-function saveOptInIntent() {
-  try { sessionStorage.setItem(OPT_IN_INTENT_KEY, optInInput?.checked ? "1" : "0"); } catch (_) {}
-}
-
-function consumeOptInIntent() {
-  try {
-    const raw = sessionStorage.getItem(OPT_IN_INTENT_KEY);
-    sessionStorage.removeItem(OPT_IN_INTENT_KEY);
-    return raw === null ? undefined : raw === "1";
-  } catch (_) {
-    return undefined;
-  }
-}
-
 pendingCredential = loadPendingCred();
 
 // ── Handle return from manual Facebook OAuth redirect (mobile) ──
@@ -226,7 +188,6 @@ if (_fbIsFB) {
     lockAuthButtons();
     showLoader();
     (async () => {
-      const optedInIntent = consumeOptInIntent();
       try {
         const credential = FacebookAuthProvider.credential(_fbToken);
         const result = await signInWithCredential(auth, credential);
@@ -253,7 +214,7 @@ if (_fbIsFB) {
         }
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
-        try { await applySignupHotelReferral(email, optedInIntent); } catch (_) {}
+        try { await promptHotelReferralOptIn(email); } catch (_) {}
         isSigningIn = false;
         onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -477,39 +438,130 @@ function findUnconsentedHotel(hotelReferrals) {
   return unconsented[0][0];
 }
 
-// Case 1 of the hotel-referral opt-in: applies no matter which sign-in method
-// completes the flow, since the checkbox's visibility only ever depends on
-// isSignUpMode + localStorage, not on email/password vs. Google vs. Facebook.
-// Case 2 (returning-user DB lookup) stays email/password-only — social
-// sign-in never has a pre-auth email typed to key that lookup off of.
-async function applySignupHotelReferral(email, checkedOverride) {
-  const hotel = localStorage.getItem("ak-hotel-referral");
-  console.log("applySignupHotelReferral:", { hotel, email });
-  if (!hotel || !email) return;
+// Returns a Promise resolving true (accepted) / false (declined — including
+// dismissal via the backdrop, so it never hangs). Built from DOM nodes rather
+// than innerHTML so the hotel name (sourced from localStorage or Firestore,
+// not a hardcoded string) can never be interpreted as markup.
+function showHotelReferralModal(hotel) {
+  return new Promise((resolve) => {
+    document.getElementById("auth-hotel-referral-popup")?.remove();
+
+    const backdrop = document.createElement("div");
+    backdrop.id = "auth-hotel-referral-popup";
+    Object.assign(backdrop.style, {
+      position: "fixed", inset: "0",
+      background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: "9998",
+    });
+
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      background: "#fff", borderRadius: "8px",
+      padding: "24px", maxWidth: "420px", width: "90%",
+      boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
+    });
+
+    const msg = document.createElement("p");
+    Object.assign(msg.style, { margin: "0 0 20px", fontSize: "14px", color: "#111", lineHeight: "1.5" });
+
+    const hotelSpan = document.createElement("span");
+    hotelSpan.textContent = formatHotelName(hotel);
+    hotelSpan.style.fontWeight = "600";
+
+    const termsLink = document.createElement("a");
+    termsLink.href = TERMS_URL;
+    termsLink.target = "_blank";
+    termsLink.rel = "noopener";
+    termsLink.textContent = "Terms of Service";
+    Object.assign(termsLink.style, { color: "#ff7f34" });
+
+    const privacyLink = document.createElement("a");
+    privacyLink.href = PRIVACY_URL;
+    privacyLink.target = "_blank";
+    privacyLink.rel = "noopener";
+    privacyLink.textContent = "Privacy Policy";
+    Object.assign(privacyLink.style, { color: "#ff7f34" });
+
+    msg.append(
+      "Share my travel preferences with ", hotelSpan,
+      " to unlock exclusive guest perks, arrival coordination, and personalized room preparation. " +
+      "By accepting, you agree to our ", termsLink, " and ", privacyLink,
+      ", and authorize Khonsu to share your trip details and email address with your host hotel to improve your stay."
+    );
+
+    const btnRow = document.createElement("div");
+    Object.assign(btnRow.style, { display: "flex", gap: "10px" });
+
+    const declineBtn = document.createElement("button");
+    declineBtn.textContent = "Decline";
+    Object.assign(declineBtn.style, {
+      flex: "1", padding: "10px", background: "#f3f4f6", color: "#111",
+      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+    });
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.textContent = "Accept";
+    Object.assign(acceptBtn.style, {
+      flex: "1", padding: "10px", background: "#ff7f34", color: "#fff",
+      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+    });
+
+    const finish = (result) => { backdrop.remove(); resolve(result); };
+    declineBtn.addEventListener("click", () => finish(false));
+    acceptBtn.addEventListener("click", () => finish(true));
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) finish(false); });
+
+    btnRow.appendChild(declineBtn);
+    btnRow.appendChild(acceptBtn);
+    card.appendChild(msg);
+    card.appendChild(btnRow);
+    backdrop.appendChild(card);
+    document.body.appendChild(backdrop);
+  });
+}
+
+// Runs once per sign-in, right after auth succeeds and email is known — the
+// same call for every provider (email/password, Google, Facebook popup,
+// Facebook mobile redirect). Post-auth is what lets social-login users see
+// this at all: pre-auth there's no typed email to key a DB lookup off of, but
+// every provider gives us one by the time this runs.
+//
+// Which hotel to ask about: a fresh localStorage referral (this device just
+// followed a referral link) takes priority; otherwise fall back to whichever
+// hotel is unconsented in the user's own DB record (a returning user on a new
+// device/browser with nothing in localStorage).
+async function promptHotelReferralOptIn(email) {
+  if (!email) return;
+  let hotel = localStorage.getItem("ak-hotel-referral");
+  let hotelReferrals;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
-    const existing = snap.exists() ? snap.data().hotelReferrals?.[hotel] : null;
-    const alreadyConsented = !!existing?.optedIn;
-    // checkedOverride carries the pre-redirect checkbox state for the mobile
-    // Facebook flow (see consumeOptInIntent) — the live checkbox has already
-    // been reset by the full-page redirect by the time this runs.
-    const optedInNow = checkedOverride !== undefined ? checkedOverride : !!optInInput?.checked;
-    if (!alreadyConsented) {
-      await saveHotelReferral(email, hotel, optedInNow, existing);
-    }
-    // Only clear localStorage once consent is actually on record — either
-    // just now, or from an earlier visit. Left unconsented, keep it: that's
-    // what makes the checkbox keep resurfacing on this device on every future
-    // visit/login, including via Google/Facebook, which has no other way to
-    // know to show it.
-    if (alreadyConsented || optedInNow) {
-      localStorage.removeItem("ak-hotel-referral");
-    }
-    const verifySnap = await getDoc(doc(db, "users", userDocId(email)));
-    console.log("applySignupHotelReferral: doc read back after write:", verifySnap.exists() ? verifySnap.data() : "MISSING");
-  } catch (err) {
-    console.error("applySignupHotelReferral failed:", err.code || err.message, err);
+    hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
+  } catch (_) {
+    return; // can't reach Firestore — don't block sign-in on this
   }
+
+  let existing;
+  if (hotel) {
+    existing = hotelReferrals?.[hotel] ?? null;
+    if (existing?.optedIn) {
+      localStorage.removeItem("ak-hotel-referral"); // already consented elsewhere — nothing left to ask
+      return;
+    }
+  } else {
+    hotel = findUnconsentedHotel(hotelReferrals);
+    if (!hotel) return;
+    existing = hotelReferrals[hotel];
+  }
+
+  hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
+  const accepted = await showHotelReferralModal(hotel);
+  showLoader();
+  try {
+    await saveHotelReferral(email, hotel, accepted, existing);
+  } catch (_) {}
+  if (accepted) localStorage.removeItem("ak-hotel-referral");
 }
 
 function setMode(signUp) {
@@ -655,11 +707,11 @@ function sendToMake(user) {
 // Shared by the normal popup-resolves path and the popup-race recovery path
 // below (auth/popup-closed-by-user firing even though auth.currentUser is
 // already set) — both must run the exact same steps, or the recovery path
-// silently skips saveUserProvider/applySignupHotelReferral.
+// silently skips saveUserProvider/promptHotelReferralOptIn.
 async function finishGoogleSignIn(user) {
   await linkPendingCredential(user);
   await saveUserProvider(user);
-  try { await applySignupHotelReferral(user.email); } catch (_) {}
+  try { await promptHotelReferralOptIn(user.email); } catch (_) {}
   onUserLoginSuccess(user);
   window.location.replace(REDIRECT_AFTER_LOGIN);
 }
@@ -755,7 +807,7 @@ async function finishFacebookSignIn(user) {
     }
   } catch (_) {}
   localStorage.setItem("ak-userMail", email);
-  try { await applySignupHotelReferral(email); } catch (_) {}
+  try { await promptHotelReferralOptIn(email); } catch (_) {}
   onUserLoginSuccess(user);
   window.location.replace(REDIRECT_AFTER_LOGIN);
 }
@@ -787,7 +839,6 @@ if (facebookBtn) {
 
     if (isMobile()) {
       lockAuthButtons();
-      saveOptInIntent();
       const redirectUri = window.location.origin + window.location.pathname;
       window.location.href =
         'https://www.facebook.com/dialog/oauth' +
@@ -900,22 +951,7 @@ if (submitBtn) {
         await new Promise(r => setTimeout(r, 4000));
       }
 
-      try {
-        if (localStorage.getItem("ak-hotel-referral")) {
-          // Case 1: fresh referral link this session (sign-up flow).
-          await applySignupHotelReferral(email);
-        } else {
-          console.log("no ak-hotel-referral in localStorage at submit time");
-          // Case 2: returning user, opt-in surfaced via the debounced email
-          // DB lookup while they were still typing into the login form.
-          const snap = await getDoc(doc(db, "users", userDocId(email)));
-          const hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
-          const unconsentedHotel = findUnconsentedHotel(hotelReferrals);
-          if (unconsentedHotel && optInCheckbox && !optInCheckbox.hasAttribute("data-ak-hidden")) {
-            await saveHotelReferral(email, unconsentedHotel, !!optInInput?.checked, hotelReferrals[unconsentedHotel]);
-          }
-        }
-      } catch (_) {}
+      try { await promptHotelReferralOptIn(email); } catch (_) {}
 
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -952,36 +988,6 @@ if (signupLink) {
     e.preventDefault();
     setMode(!isSignUpMode);
   });
-}
-
-// Login mode has no localStorage signal to go on (the user may be on a new
-// device, or already used/cleared it at sign-up), so once they've typed an
-// email we look up their saved hotel-referral by email and show the opt-in
-// only if it's still unconsented. Debounced off "input" (not "blur") so the
-// lookup is already in flight/resolved well before they finish the password
-// field and hit submit, instead of only firing once they tab away.
-let hotelReferralLookupTimer = null;
-if (emailInput) {
-  emailInput.addEventListener("input", () => {
-    clearTimeout(hotelReferralLookupTimer);
-    hotelReferralLookupTimer = setTimeout(checkHotelReferralByEmail, 500);
-  });
-}
-
-async function checkHotelReferralByEmail() {
-  if (isSignUpMode || !optInCheckbox) return;
-  if (localStorage.getItem("ak-hotel-referral")) return;
-  const email = emailInput.value.trim();
-  if (!email || !isValidEmail(email)) return;
-  try {
-    const snap = await getDoc(doc(db, "users", userDocId(email)));
-    const unconsentedHotel = findUnconsentedHotel(snap.exists() ? snap.data().hotelReferrals : null);
-    optInCheckbox.toggleAttribute("data-ak-hidden", !unconsentedHotel);
-    if (unconsentedHotel) {
-      const hotelReferrerEl = document.querySelector('[data-ak-hotel-referrer]');
-      if (hotelReferrerEl) hotelReferrerEl.textContent = formatHotelName(unconsentedHotel);
-    }
-  } catch (_) {}
 }
 
 // ── 11. FORGOT PASSWORD ──────────────────────────────────────
@@ -1085,10 +1091,10 @@ onAuthStateChanged(auth, async (user) => {
     // (wasSigningIn) — e.g. the popup-as-new-tab mobile race. If the user
     // merely landed on /log-in already authenticated from an earlier session,
     // don't silently record a "declined" opt-in before they've ever seen the
-    // checkbox; leave the pending referral in localStorage so it's asked for
+    // modal; leave the pending referral in localStorage so it's asked for
     // honestly the next time they actually sign in through this tab.
     if (wasSigningIn) {
-      try { await applySignupHotelReferral(user.email); } catch (_) {}
+      try { await promptHotelReferralOptIn(user.email); } catch (_) {}
     }
     showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
