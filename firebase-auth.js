@@ -538,7 +538,8 @@ async function promptHotelReferralOptIn(email) {
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
     hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
-  } catch (_) {
+  } catch (err) {
+    console.error("promptHotelReferralOptIn: getDoc failed:", err.code || err.message, err);
     return; // can't reach Firestore — don't block sign-in on this
   }
 
