@@ -540,6 +540,7 @@ function showHotelReferralModal(hotel) {
 // hotel can never resurface the modal — that specific case is caught before
 // localStorage's stale flag is ever trusted.
 async function promptHotelReferralOptIn(email) {
+  console.log("promptHotelReferralOptIn: START, about to read db for", email);
   if (!email) return;
   let hotelReferrals;
   try {
@@ -549,20 +550,25 @@ async function promptHotelReferralOptIn(email) {
     console.error("promptHotelReferralOptIn: getDoc failed:", err.code || err.message, err);
     return; // can't reach Firestore — don't block sign-in on this
   }
+  console.log("promptHotelReferralOptIn: db read resolved, hotelReferrals =", hotelReferrals);
 
   let hotel = findUnconsentedHotel(hotelReferrals);
   let existing = hotel ? hotelReferrals[hotel] : null;
+  console.log("promptHotelReferralOptIn: findUnconsentedHotel (db-first) returned =", hotel);
 
   if (!hotel) {
     const localHotel = localStorage.getItem("ak-hotel-referral");
+    console.log("promptHotelReferralOptIn: db had nothing pending, falling back to localStorage =", localHotel);
     if (!localHotel) return;
     existing = hotelReferrals?.[localHotel] ?? null;
     if (existing?.optedIn) {
+      console.log("promptHotelReferralOptIn: localStorage hotel already consented in db, clearing flag, no modal");
       localStorage.removeItem("ak-hotel-referral"); // already consented — stale flag, nothing left to ask
       return;
     }
     hotel = localHotel;
   }
+  console.log("promptHotelReferralOptIn: will show modal for hotel =", hotel);
 
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
   const accepted = await showHotelReferralModal(hotel);
