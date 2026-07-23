@@ -537,7 +537,9 @@ async function promptHotelReferralOptIn(email) {
   let hotel = localStorage.getItem("ak-hotel-referral");
   let hotelReferrals;
   try {
-    const snap = await getDoc(doc(db, "users", userDocId(email)));
+    const docRef = doc(db, "users", userDocId(email));
+    const snap = await getDoc(docRef);
+    console.log("promptHotelReferralOptIn: read doc id =", docRef.path, "| exists =", snap.exists(), "| full data =", snap.exists() ? snap.data() : null);
     hotelReferrals = snap.exists() ? snap.data().hotelReferrals : null;
   } catch (err) {
     console.error("promptHotelReferralOptIn: getDoc failed:", err.code || err.message, err);
