@@ -42,7 +42,9 @@
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before {
   top: 0;
+  left: 50%;
   width: 60%;
+  transform: translateX(-50%);
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
