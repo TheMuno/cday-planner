@@ -28,6 +28,29 @@
   top: 0;
 }
 
+[data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before,
+[data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  height: clamp(3rem, 2.428rem + 2.86vw, 5rem);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
+  background-size: 200% 100%;
+  animation: akSkeletonShimmer 1.5s infinite;
+}
+
+[data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before {
+  top: 0;
+  width: 60%;
+}
+
+[data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
+  bottom: 0;
+  width: 90%;
+  max-width: none;
+}
+
 @keyframes akSkeletonShimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
