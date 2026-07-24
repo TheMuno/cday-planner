@@ -475,7 +475,7 @@ function showHotelReferralModal(hotel) {
     hotelSpan.style.fontWeight = "600";
 
     const subheadline = document.createElement("p");
-    Object.assign(subheadline.style, { margin: "0 0 16px", fontSize: "14px", color: "#111", lineHeight: "1.5", textAlign: "center" });
+    Object.assign(subheadline.style, { margin: "0 0 5px", fontSize: "14px", color: "#111", lineHeight: "1.5" });
     subheadline.append("Connect your stay with ", hotelSpan, " to enjoy:");
 
     const perksList = document.createElement("ul");
@@ -487,6 +487,7 @@ function showHotelReferralModal(hotel) {
       .forEach((text) => {
         const li = document.createElement("li");
         li.textContent = text;
+        li.style.marginBottom = "0";
         perksList.appendChild(li);
       });
 
