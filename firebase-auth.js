@@ -466,60 +466,77 @@ function showHotelReferralModal(hotel) {
       boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
     });
 
-    const msg = document.createElement("p");
-    Object.assign(msg.style, { margin: "0 0 20px", fontSize: "14px", color: "#111", lineHeight: "1.5" });
+    const headline = document.createElement("h3");
+    headline.textContent = "Unlock Your Hotel Perks & Guide";
+    Object.assign(headline.style, { margin: "0 0 8px", fontSize: "18px", color: "#111", lineHeight: "1.3" });
 
     const hotelSpan = document.createElement("span");
     hotelSpan.textContent = formatHotelName(hotel);
     hotelSpan.style.fontWeight = "600";
+
+    const subheadline = document.createElement("p");
+    Object.assign(subheadline.style, { margin: "0 0 16px", fontSize: "14px", color: "#111", lineHeight: "1.5" });
+    subheadline.append("Connect your stay with ", hotelSpan, " to enjoy:");
+
+    const perksList = document.createElement("ul");
+    Object.assign(perksList.style, {
+      margin: "0 0 20px", padding: "0", listStyle: "none",
+      fontSize: "14px", color: "#111", lineHeight: "1.8",
+    });
+    ["🗺️ Curated neighborhood & transit guide", "⚡ Priority check-in & room coordination", "🎁 Exclusive guest discounts"]
+      .forEach((text) => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        perksList.appendChild(li);
+      });
 
     const termsLink = document.createElement("a");
     termsLink.href = TERMS_URL;
     termsLink.target = "_blank";
     termsLink.rel = "noopener";
     termsLink.textContent = "Terms of Service";
-    Object.assign(termsLink.style, { color: "#ff7f34" });
+    Object.assign(termsLink.style, { color: "#888" });
 
     const privacyLink = document.createElement("a");
     privacyLink.href = PRIVACY_URL;
     privacyLink.target = "_blank";
     privacyLink.rel = "noopener";
     privacyLink.textContent = "Privacy Policy";
-    Object.assign(privacyLink.style, { color: "#ff7f34" });
+    Object.assign(privacyLink.style, { color: "#888" });
 
-    msg.append(
-      "Share my travel preferences with ", hotelSpan,
-      " to unlock exclusive guest perks, arrival coordination, and personalized room preparation. " +
+    const legalCopy = document.createElement("p");
+    Object.assign(legalCopy.style, { margin: "8px 0 0", fontSize: "10px", color: "#888", lineHeight: "1.4", textAlign: "center" });
+    legalCopy.append(
       "By accepting, you agree to our ", termsLink, " and ", privacyLink,
       ", and authorize Khonsu to share your trip details and email address with your host hotel to improve your stay."
     );
 
-    const btnRow = document.createElement("div");
-    Object.assign(btnRow.style, { display: "flex", gap: "10px" });
-
-    const declineBtn = document.createElement("button");
-    declineBtn.textContent = "Decline";
-    Object.assign(declineBtn.style, {
-      flex: "1", padding: "10px", background: "#f3f4f6", color: "#111",
+    const acceptBtn = document.createElement("button");
+    acceptBtn.textContent = "Accept & Unlock Perks";
+    Object.assign(acceptBtn.style, {
+      width: "100%", padding: "10px", background: "#ff7f34", color: "#fff",
       border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
     });
 
-    const acceptBtn = document.createElement("button");
-    acceptBtn.textContent = "Accept";
-    Object.assign(acceptBtn.style, {
-      flex: "1", padding: "10px", background: "#ff7f34", color: "#fff",
-      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+    const skipLink = document.createElement("button");
+    skipLink.textContent = "Skip for now";
+    Object.assign(skipLink.style, {
+      display: "block", margin: "12px auto 0", padding: "0",
+      background: "none", border: "none", color: "#888",
+      fontSize: "13px", textDecoration: "underline", cursor: "pointer",
     });
 
     const finish = (result) => { backdrop.remove(); resolve(result); };
-    declineBtn.addEventListener("click", () => finish(false));
+    skipLink.addEventListener("click", () => finish(false));
     acceptBtn.addEventListener("click", () => finish(true));
     backdrop.addEventListener("click", (e) => { if (e.target === backdrop) finish(false); });
 
-    btnRow.appendChild(declineBtn);
-    btnRow.appendChild(acceptBtn);
-    card.appendChild(msg);
-    card.appendChild(btnRow);
+    card.appendChild(headline);
+    card.appendChild(subheadline);
+    card.appendChild(perksList);
+    card.appendChild(acceptBtn);
+    card.appendChild(legalCopy);
+    card.appendChild(skipLink);
     backdrop.appendChild(card);
     document.body.appendChild(backdrop);
   });
