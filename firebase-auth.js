@@ -468,14 +468,14 @@ function showHotelReferralModal(hotel) {
 
     const headline = document.createElement("h3");
     headline.textContent = "Unlock Your Hotel Perks & Guide";
-    Object.assign(headline.style, { margin: "0 0 8px", fontSize: "18px", color: "#111", lineHeight: "1.3" });
+    Object.assign(headline.style, { margin: "0 0 8px", fontSize: "18px", color: "#111", lineHeight: "1.3", textAlign: "center" });
 
     const hotelSpan = document.createElement("span");
     hotelSpan.textContent = formatHotelName(hotel);
     hotelSpan.style.fontWeight = "600";
 
     const subheadline = document.createElement("p");
-    Object.assign(subheadline.style, { margin: "0 0 16px", fontSize: "14px", color: "#111", lineHeight: "1.5" });
+    Object.assign(subheadline.style, { margin: "0 0 16px", fontSize: "14px", color: "#111", lineHeight: "1.5", textAlign: "center" });
     subheadline.append("Connect your stay with ", hotelSpan, " to enjoy:");
 
     const perksList = document.createElement("ul");
@@ -515,7 +515,7 @@ function showHotelReferralModal(hotel) {
     acceptBtn.textContent = "Accept & Unlock Perks";
     Object.assign(acceptBtn.style, {
       width: "100%", padding: "10px", background: "#ff7f34", color: "#fff",
-      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer",
+      border: "none", borderRadius: "6px", fontSize: "14px", cursor: "pointer", textAlign: "center",
     });
 
     const skipLink = document.createElement("button");
