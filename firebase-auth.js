@@ -495,7 +495,7 @@ function showHotelReferralModal(hotel) {
     termsLink.href = TERMS_URL;
     termsLink.target = "_blank";
     termsLink.rel = "noopener";
-    termsLink.textContent = "Terms of Service";
+    termsLink.textContent = "Terms";
     Object.assign(termsLink.style, { color: "#888" });
 
     const privacyLink = document.createElement("a");
@@ -508,8 +508,8 @@ function showHotelReferralModal(hotel) {
     const legalCopy = document.createElement("p");
     Object.assign(legalCopy.style, { margin: "8px 0 0", fontSize: "10px", color: "#888", lineHeight: "1.4", textAlign: "center" });
     legalCopy.append(
-      "By accepting, you agree to our ", termsLink, " and ", privacyLink,
-      ", and authorize Khonsu to share your trip details and email address with your host hotel to improve your stay."
+      "By accepting, you agree to share your details with ", formatHotelName(hotel),
+      " & agree to ", termsLink, " & ", privacyLink, "."
     );
 
     const acceptBtn = document.createElement("button");
