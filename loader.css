@@ -32,19 +32,18 @@
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
   content: '';
   position: absolute;
-  left: 0;
+  left: 50%;
   height: clamp(3rem, 2.428rem + 2.86vw, 5rem);
   border-radius: 8px;
   background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite;
+  transform: translateX(-50%);
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before {
   top: 0;
-  left: 50%;
   width: 60%;
-  transform: translateX(-50%);
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
