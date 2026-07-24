@@ -18,6 +18,7 @@ const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
 
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
+const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
 
 function hasStoredPlaceIds() {
   try {
@@ -104,8 +105,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
-  // .finally() so Y still shows up even if the sheet fetch fails.
-  populateOnPassTickets().catch(err => console.error(err)).finally(renderInitTickets);
+  // .finally() so Y still shows up (and the shimmer stops) even if the sheet fetch fails.
+  populateOnPassTickets().catch(err => console.error(err)).finally(() => {
+    renderInitTickets();
+    $attractionsOnPasses?.removeAttribute('data-ak-skeleton-pulse');
+  });
 
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
@@ -176,7 +180,6 @@ function renderInitTickets() {
 // element never gets stuck on its placeholder markup.
 async function populateOnPassTickets() {
   const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
-  const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
 
   const { Attractions } = await fetchSheetData();
   localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
