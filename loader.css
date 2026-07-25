@@ -38,16 +38,16 @@
   background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before {
-  top: 25%;
+  bottom: 50%;
   width: 60%;
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
-  top: 75%;
+  top: 50%;
   width: 90%;
   max-width: none;
 }
