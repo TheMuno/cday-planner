@@ -42,12 +42,12 @@
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::before {
-  bottom: 50%;
+  bottom: calc(50% + 6px);
   width: 60%;
 }
 
 [data-ak="attractions-on-passes"][data-ak-skeleton-pulse]::after {
-  top: 50%;
+  top: calc(50% + 6px);
   width: 90%;
   max-width: none;
 }
