@@ -54,8 +54,8 @@ const AIRPORT_FIELDS = [
 ];
 
 const MAP_POPUP_FIELDS = [
-  { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel' },
-  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey }) => ({ nameSelector, markerKey, storageKey })),
+  { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel', updateKey: 'ak-update-hotel' },
+  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey, updateKey }) => ({ nameSelector, markerKey, storageKey, updateKey })),
 ];
 
 const AIRPORT_FLIGHT_FIELDS = [
@@ -635,11 +635,13 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
       };
     } else {
       if ($actionLabel) $actionLabel.textContent = 'Remove';
+      const $fieldMatch = !$existingMatch ? findMapPopupField(marker) : null;
       $popupActionBtn.onclick = () => {
         alertify.confirm(
           `Remove ${saveObj?.displayName || 'this location'}?`,
           () => {
             if ($existingMatch) removeAttractionLocation($existingMatch);
+            else if ($fieldMatch) clearMapPopupField($fieldMatch);
             $mapPopup.setAttribute('data-ak-hidden', 'true');
           },
           () => {}
@@ -661,6 +663,25 @@ function findItineraryMatch(saveObj) {
     (saveObj.placeId && el.placeId === saveObj.placeId) ||
     (saveObj.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
   ) || null;
+}
+
+function findMapPopupField(marker) {
+  if (!marker) return null;
+  return MAP_POPUP_FIELDS.find(({ markerKey }) => markerObj[markerKey] === marker) || null;
+}
+
+function clearMapPopupField(field) {
+  const marker = markerObj[field.markerKey];
+  if (marker) marker.setMap(null);
+  delete markerObj[field.markerKey];
+
+  localStorage.removeItem(field.storageKey);
+  if (field.updateKey) localStorage[field.updateKey] = true;
+
+  const $nameEl = document.querySelector(field.nameSelector);
+  if ($nameEl) $nameEl.textContent = '';
+
+  setUnsavedChangesFlag();
 }
 
 function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = null } = {}) {
