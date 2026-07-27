@@ -149,9 +149,9 @@ window.addEventListener('load', async () => {
     document.querySelector('[data-ak="sign-in-to-save"]')?.removeAttribute('data-ak-hidden');
   }
 
-  document.querySelector('[data-ak="back-to-homepage"]')?.addEventListener('click', e => {
+  document.querySelector('[data-ak="back-to-landingpage"]')?.addEventListener('click', e => {
     e.preventDefault();
-    window.location.href = '/';
+    window.location.href = '/free-trip-planner';
   });
 
   document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
