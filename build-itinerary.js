@@ -121,6 +121,11 @@ window.addEventListener('load', async () => {
     document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
   });
 
+  MAP_POPUP_FIELDS.forEach(field => {
+    const $el = document.querySelector(field.nameSelector);
+    field.defaultText = $el ? $el.textContent : '';
+  });
+
   loadInsiderTips();
 
   setupAutocompleteInp();
@@ -679,7 +684,7 @@ function clearMapPopupField(field) {
   if (field.updateKey) localStorage[field.updateKey] = true;
 
   const $nameEl = document.querySelector(field.nameSelector);
-  if ($nameEl) $nameEl.textContent = '';
+  if ($nameEl) $nameEl.textContent = field.defaultText || '';
 
   setUnsavedChangesFlag();
 }
