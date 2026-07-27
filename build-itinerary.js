@@ -996,8 +996,17 @@ function handleFieldMapPopup(e) {
   }
   if (!saveObj?.location) return;
 
-  document.querySelector('[data-ak="map"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
+  scrollToMapPopupTop();
+}
+
+function scrollToMapPopupTop() {
+  const $mapPopup = document.querySelector('[data-ak="map-popup"]');
+  if (!$mapPopup) return;
+
+  const margin = 20;
+  const top = $mapPopup.getBoundingClientRect().top + window.scrollY - margin;
+  window.scrollTo({ top, behavior: 'smooth' });
 }
 
 function removeAttractionLocation($attraction) {
