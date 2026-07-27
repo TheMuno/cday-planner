@@ -957,30 +957,18 @@ function handleFieldMapPopup(e) {
   const $trigger = e.target.closest('[data-ak-map-popup]');
   if (!$trigger) return;
   e.preventDefault();
-  console.log('[ak-map-popup] trigger clicked', $trigger);
 
-  const $item = $trigger.closest('.itinerary_ui_fields_item');
-  if (!$item) { console.log('[ak-map-popup] bail: no .itinerary_ui_fields_item ancestor found'); return; }
-  console.log('[ak-map-popup] found item', $item);
-
-  const field = MAP_POPUP_FIELDS.find(({ nameSelector }) => $item.querySelector(nameSelector));
-  if (!field) { console.log('[ak-map-popup] bail: no MAP_POPUP_FIELDS nameSelector matched inside item', MAP_POPUP_FIELDS.map(f => f.nameSelector)); return; }
-  console.log('[ak-map-popup] matched field', field);
+  const triggerName = $trigger.getAttribute('data-ak');
+  const field = MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
+  if (!field) return;
 
   let saveObj;
   try {
     saveObj = JSON.parse(localStorage[field.storageKey] || 'null');
   } catch (err) {
-    console.log('[ak-map-popup] bail: JSON.parse threw for localStorage key', field.storageKey, err);
     return;
   }
-  console.log('[ak-map-popup] saveObj from localStorage', saveObj);
-  if (!saveObj?.location) { console.log('[ak-map-popup] bail: saveObj missing location'); return; }
-
-  const $mapPopup = document.querySelector('[data-ak="map-popup"]');
-  console.log('[ak-map-popup] $mapPopup found?', !!$mapPopup);
-  const $locationBlock = $mapPopup?.querySelector('.map_card_content > .map_card_title:first-child');
-  console.log('[ak-map-popup] $locationBlock found?', !!$locationBlock);
+  if (!saveObj?.location) return;
 
   openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
 }
