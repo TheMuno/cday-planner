@@ -55,6 +55,24 @@ function redirectToStep1(message) {
   setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
 }
 
+// Shared with stripe-purchase.js: attractions-on-passes and buy-plan each run their own async
+// check, but should appear together — whichever finishes last reveals both. Keys for parts not
+// present on the current page are dropped immediately so the other party never waits on them.
+function akRegisterReveal(key, reveal) {
+  const sync = window.akRevealSync || (window.akRevealSync = { pending: new Set(['attractions', 'buyPlan']), reveals: {}, fired: false });
+  // Already revealed once — just run this one's own update, don't re-queue and re-fire the
+  // other party's stale callback.
+  if (sync.fired) { reveal(); return; }
+  if (!document.querySelector('[data-ak="attractions-on-passes"]')) sync.pending.delete('attractions');
+  if (!document.querySelector('[data-ak="buy-plan"]')) sync.pending.delete('buyPlan');
+  sync.reveals[key] = reveal;
+  sync.pending.delete(key);
+  if (sync.pending.size === 0) {
+    sync.fired = true;
+    Object.values(sync.reveals).forEach(fn => fn());
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // Not-logged-in takes priority over everything else on this page — checked first, before any
   // other wiring or the purchased/attractions check below (which would otherwise be able to fire
@@ -106,7 +124,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
   // .finally() so Y still shows up (and the shimmer stops) even if the sheet fetch fails.
-  populateOnPassTickets().catch(err => console.error(err)).finally(() => {
+  populateOnPassTickets().catch(err => {
+    console.error(err);
+    // Fail-safe: X couldn't be computed (e.g. sheet fetch failed) before the reveal below ever
+    // ran, so register a no-op here — otherwise buy-plan would wait forever for this key.
+    if ($attractionsOnPasses) akRegisterReveal('attractions', () => {});
+  }).finally(() => {
     renderInitTickets();
     $attractionsOnPasses?.removeAttribute('data-ak-skeleton-pulse');
   });
@@ -213,8 +236,10 @@ async function populateOnPassTickets() {
 
   if ($onPassCounter) $onPassCounter.textContent = X;
   if ($attractionsOnPasses) {
-    if (X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
-    else $attractionsOnPasses.setAttribute('data-ak-hidden', 'true');
+    akRegisterReveal('attractions', () => {
+      if (X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
+      else $attractionsOnPasses.setAttribute('data-ak-hidden', 'true');
+    });
   }
 }
 

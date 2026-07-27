@@ -51,6 +51,24 @@ function broadcastPurchaseStatus(purchased, { persist = true } = {}) {
   window.dispatchEvent(new CustomEvent(PURCHASE_EVENT, { detail: { purchased } }));
 }
 
+// Shared with calculate-pass-savings.js: buy-plan and attractions-on-passes each run their own
+// async check, but should appear together — whichever finishes last reveals both. Keys for parts
+// not present on the current page are dropped immediately so the other party never waits on them.
+function akRegisterReveal(key, reveal) {
+  const sync = window.akRevealSync || (window.akRevealSync = { pending: new Set(['attractions', 'buyPlan']), reveals: {}, fired: false });
+  // Already revealed once (e.g. a later setUI() call from pollForPurchase) — just run this
+  // one's own update, don't re-queue and re-fire the other party's stale callback.
+  if (sync.fired) { reveal(); return; }
+  if (!document.querySelector('[data-ak="attractions-on-passes"]')) sync.pending.delete('attractions');
+  if (!document.querySelector('[data-ak="buy-plan"]')) sync.pending.delete('buyPlan');
+  sync.reveals[key] = reveal;
+  sync.pending.delete(key);
+  if (sync.pending.size === 0) {
+    sync.fired = true;
+    Object.values(sync.reveals).forEach(fn => fn());
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const $buyButtons      = document.querySelectorAll('[data-ak="buy-plan"]');
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
@@ -155,17 +173,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   function setUI(purchased) {
     const onUpgradePage = window.location.pathname === '/upgrade';
 
-    $buyButtons.forEach(btn => {
-      if (purchased) {
-        if (onUpgradePage) {
-          btn.textContent = 'Thanks for purchasing Smart Guide';
-          btn.disabled = true;
+    akRegisterReveal('buyPlan', () => {
+      $buyButtons.forEach(btn => {
+        if (purchased) {
+          if (onUpgradePage) {
+            btn.textContent = 'Thanks for purchasing Smart Guide';
+            btn.disabled = true;
+          } else {
+            btn.setAttribute('data-ak-hidden', '');
+          }
         } else {
-          btn.setAttribute('data-ak-hidden', '');
+          btn.removeAttribute('data-ak-hidden');
         }
-      } else {
-        btn.removeAttribute('data-ak-hidden');
-      }
+      });
     });
 
     $prePurchaseEls.forEach(el => {
