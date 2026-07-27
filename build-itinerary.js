@@ -996,6 +996,7 @@ function handleFieldMapPopup(e) {
   }
   if (!saveObj?.location) return;
 
+  document.querySelector('[data-ak="map"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
 }
 
