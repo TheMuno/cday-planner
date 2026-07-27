@@ -967,6 +967,7 @@ function handlePopupOpen(e) {
 
   map.panTo($attraction.saveObj.location);
   openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
+  scrollToMapPopupTop();
 }
 
 function handleSectionActivate(e) {
