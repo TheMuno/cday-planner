@@ -53,6 +53,8 @@ const AIRPORT_FIELDS = [
   { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
 ];
 
+const placeAutocompleteEls = {};
+
 const MAP_POPUP_FIELDS = [
   { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel', updateKey: 'ak-update-hotel' },
   ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey, updateKey }) => ({ nameSelector, markerKey, storageKey, updateKey })),
@@ -413,6 +415,7 @@ async function setupHotelAutocomplete() {
     includedPrimaryTypes: ['lodging', 'hotel'],
   });
   placeAutocomplete.placeholder = 'Add hotel...';
+  placeAutocompleteEls['hotel'] = placeAutocomplete;
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
@@ -466,6 +469,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
     includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
   });
   if (placeholder) placeAutocomplete.placeholder = placeholder;
+  placeAutocompleteEls[markerKey] = placeAutocomplete;
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
@@ -992,9 +996,13 @@ function handleFieldMapPopup(e) {
   try {
     saveObj = JSON.parse(localStorage[field.storageKey] || 'null');
   } catch (err) {
+    saveObj = null;
+  }
+
+  if (!saveObj?.location) {
+    placeAutocompleteEls[field.markerKey]?.focus();
     return;
   }
-  if (!saveObj?.location) return;
 
   openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
   scrollToMapPopupTop();
