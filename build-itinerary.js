@@ -148,7 +148,10 @@ window.addEventListener('load', async () => {
     restoreHotel();
     restoreAirports();
     restoreTripNotes();
-    unwrapSectionsWithContent();
+    // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
+    // clicks inside unwrapSectionsWithContent() need bound) is actually ready, instead of guessing.
+    if (window.Webflow) window.Webflow.push(unwrapSectionsWithContent);
+    else unwrapSectionsWithContent();
   });
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
@@ -1244,10 +1247,11 @@ function unwrapSectionsWithContent() {
 
       const $content = $typeSection.querySelector('[data-ak-type-panel]');
       if ($content?.style.height === '0px') {
-        // Open sections have no inline height at all in this markup (Webflow's own click-interaction
-        // clears it once its open animation finishes) — matching that resting state directly avoids
-        // depending on Webflow's own listener/interaction system at all.
-        $content.style.removeProperty('height');
+        // Goes through Webflow's own click-interaction (rather than setting height directly) so its
+        // internal open/closed state for this element stays in sync — setting the DOM ourselves left
+        // Webflow's IX2 still thinking the section was closed, so the next real click was a no-op
+        // sync-up instead of actually closing it.
+        $typeSection.querySelector('[data-ak-type-title]')?.click();
       }
     });
   });
