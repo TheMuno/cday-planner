@@ -244,9 +244,15 @@ window.addEventListener('load', async () => {
   wireChipWrap($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
   wireChipWrap($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
 
-  // 'idle' fires once after the user stops panning/zooming (not on every drag frame) — refetch any
-  // active chip whose results are tied to the current viewport.
+  // 'idle' fires once after the user stops panning/zooming, but also after things that don't move the
+  // viewport at all (e.g. the map container resizing when the popup panel opens/closes) — bail out unless
+  // the bounds actually changed, so those no-op idles don't burn a Places API call per active chip.
+  let lastIdleBoundsKey = null;
   map.addListener('idle', () => {
+    const boundsKeyNow = boundsKey(map.getBounds());
+    if (boundsKeyNow === lastIdleBoundsKey) return;
+    lastIdleBoundsKey = boundsKeyNow;
+
     refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
     refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
   });
@@ -1636,8 +1642,11 @@ function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
       if (chipRequestSeq[slug] !== seq) return;
 
       (markerCache[slug] || []).forEach(marker => marker.setMap(null));
-      markerCache[slug] = results.map(({ title, position, saveObj }) =>
-        createSearchMarker(title, position, saveObj, pinUrl));
+      // Same reasoning as the initial activation fetch: don't recreate a dim marker over a spot
+      // that's already been added, or the dense marker there gets covered by this fresh dim one.
+      markerCache[slug] = results
+        .filter(({ saveObj }) => !findItineraryMatch(saveObj))
+        .map(({ title, position, saveObj }) => createSearchMarker(title, position, saveObj, pinUrl));
     } catch (e) {
       if (e.name === 'AbortError') return; // superseded by a newer viewport — not a real failure
       console.warn(`Viewport refresh failed for "${slug}":`, e);
@@ -1685,8 +1694,12 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
       const results = await config.search(signal);
       // refetchOnActivate chips drop any stale cache from a previous viewport before showing fresh results.
       (markerCache[slug] || []).forEach(marker => marker.setMap(null));
-      markerCache[slug] = results.map(({ title, position, saveObj }) =>
-        createSearchMarker(title, position, saveObj, pinUrl));
+      // Skip anything already added to the itinerary — otherwise this drops a dim preselect marker
+      // directly on top of the already-added dense one, which looks like the dense marker "reverted"
+      // once the chip is later deactivated and this fresh dim marker is the one that gets removed.
+      markerCache[slug] = results
+        .filter(({ saveObj }) => !findItineraryMatch(saveObj))
+        .map(({ title, position, saveObj }) => createSearchMarker(title, position, saveObj, pinUrl));
     } catch (e) {
       if (e.name === 'AbortError') return; // superseded — not a real failure, leave UI as the newer trigger left it
       console.warn(`Chip search failed for "${slug}":`, e);
@@ -1778,6 +1791,15 @@ async function resolveCuratedLocation(place) {
     console.warn('Could not resolve location for', place.displayName, e);
   }
   return place.location;
+}
+
+// Rounded to ~11m precision so float jitter between two functionally-identical bounds doesn't
+// read as a real viewport change.
+function boundsKey(bounds) {
+  if (!bounds) return '';
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  return `${ne.lat().toFixed(4)},${ne.lng().toFixed(4)},${sw.lat().toFixed(4)},${sw.lng().toFixed(4)}`;
 }
 
 function boundsToRect(bounds) {
