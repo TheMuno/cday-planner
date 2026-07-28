@@ -1251,6 +1251,9 @@ function unwrapSectionsWithContent() {
         // load time. Matching that resting state directly sidesteps the dependency entirely.
         $content.style.removeProperty('height');
         console.log('[unwrap] opened', type);
+        setTimeout(() => {
+          console.log('[unwrap] recheck', type, 'inline height', JSON.stringify($content.style.height), 'computed height', getComputedStyle($content).height, 'scrollHeight', $content.scrollHeight);
+        }, 2000);
       }
     });
   });
