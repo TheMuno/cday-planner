@@ -1317,11 +1317,16 @@ function restoreTripDaySlides() {
 
   // Newly appended .w-slide nodes aren't picked up by the Webflow slider widget until it's
   // rebuilt — same reinit handleBulkImport() runs after createNextDaySlide() adds slides.
+  // Deferred a frame so the browser has actually laid out the new clones before Webflow
+  // measures the container for the redraw — measuring mid-mutation is what let the
+  // mask's computed width drift wider as more slides got added in the same tick.
   if (addedSlide && window.Webflow) {
-    Webflow.destroy();
-    Webflow.ready();
-    Webflow.require('ix2').init();
-    Webflow.require('slider').redraw();
+    requestAnimationFrame(() => {
+      Webflow.destroy();
+      Webflow.ready();
+      Webflow.require('ix2').init();
+      Webflow.require('slider').redraw();
+    });
   }
 }
 
