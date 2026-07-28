@@ -143,13 +143,13 @@ window.addEventListener('load', async () => {
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
-  restoreTripDaySlides();
-  restoreAttractions();
-  restoreHotel();
-  restoreAirports();
-  restoreTripNotes();
-  console.log('[unwrap] about to run, slide count', $attractionsSliderMask.querySelectorAll('.w-slide').length);
-  unwrapSectionsWithContent();
+  restoreTripDaySlides(() => {
+    restoreAttractions();
+    restoreHotel();
+    restoreAirports();
+    restoreTripNotes();
+    unwrapSectionsWithContent();
+  });
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   if (auth.currentUser) {
@@ -1243,17 +1243,11 @@ function unwrapSectionsWithContent() {
       if (!hasContent) return;
 
       const $content = $typeSection.querySelector('[data-ak-type-panel]');
-      console.log('[unwrap] section', type, 'hasContent', hasContent, 'panel found', !!$content, 'height', JSON.stringify($content?.style.height));
       if ($content?.style.height === '0px') {
         // Open sections have no inline height at all in this markup (Webflow's own click-interaction
-        // clears it once its open animation finishes) — clicking the title to *ask* that interaction
-        // to do it depends on Webflow's own listener already being bound, which raced unreliably at
-        // load time. Matching that resting state directly sidesteps the dependency entirely.
+        // clears it once its open animation finishes) — matching that resting state directly avoids
+        // depending on Webflow's own listener/interaction system at all.
         $content.style.removeProperty('height');
-        console.log('[unwrap] opened', type);
-        setTimeout(() => {
-          console.log('[unwrap] recheck', type, 'inline height', JSON.stringify($content.style.height), 'computed height', getComputedStyle($content).height, 'scrollHeight', $content.scrollHeight);
-        }, 2000);
       }
     });
   });
@@ -1262,25 +1256,32 @@ function unwrapSectionsWithContent() {
 // Mirrors setupTravelDates()/setupSliderDates() in customize-itinerary.js: sizes the day slides to
 // the user's saved trip length before restoreAttractions() populates them, so slide N exists for
 // every day the trip actually spans instead of relying on however many slides the static markup has.
-function restoreTripDaySlides() {
-  if (!localStorage['ak-travel-days']) return;
+//
+// Takes a callback instead of just returning, because when a reinit *is* needed (see below) it replays
+// Webflow's own "page load" interactions — including the one that sets every accordion panel back to
+// height:0 — so anything that depends on the DOM being in its final settled state (restoreAttractions(),
+// unwrapSectionsWithContent(), etc.) has to run after that reinit finishes, not before it.
+function restoreTripDaySlides(onSettled) {
+  const settle = () => { if (typeof onSettled === 'function') onSettled(); };
+
+  if (!localStorage['ak-travel-days']) return settle();
 
   let flatpickrDate;
   try {
     ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
   } catch (e) {
-    return;
+    return settle();
   }
-  if (!flatpickrDate) return;
+  if (!flatpickrDate) return settle();
 
   const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
   const startDate = new Date(startRaw);
   const endDate = new Date(endRaw || startRaw);
-  if (isNaN(startDate) || isNaN(endDate)) return;
+  if (isNaN(startDate) || isNaN(endDate)) return settle();
 
   const msPerDay = 24 * 60 * 60 * 1000;
   const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
-  if (totalDays < 1) return;
+  if (totalDays < 1) return settle();
 
   const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1294,7 +1295,7 @@ function restoreTripDaySlides() {
 
   const $existingSlides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
   const $firstSlide = $existingSlides[0];
-  if (!$firstSlide) return;
+  if (!$firstSlide) return settle();
 
   let addedSlide = false;
 
@@ -1336,7 +1337,10 @@ function restoreTripDaySlides() {
       Webflow.ready();
       Webflow.require('ix2').init();
       Webflow.require('slider').redraw();
+      settle();
     });
+  } else {
+    settle();
   }
 }
 
