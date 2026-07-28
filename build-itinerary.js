@@ -148,6 +148,7 @@ window.addEventListener('load', async () => {
   restoreHotel();
   restoreAirports();
   restoreTripNotes();
+  console.log('[unwrap] about to run, slide count', $attractionsSliderMask.querySelectorAll('.w-slide').length);
   unwrapSectionsWithContent();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
@@ -1242,12 +1243,14 @@ function unwrapSectionsWithContent() {
       if (!hasContent) return;
 
       const $content = $typeSection.querySelector('[data-ak-type-panel]');
+      console.log('[unwrap] section', type, 'hasContent', hasContent, 'panel found', !!$content, 'height', JSON.stringify($content?.style.height));
       if ($content?.style.height === '0px') {
         // Open sections have no inline height at all in this markup (Webflow's own click-interaction
         // clears it once its open animation finishes) — clicking the title to *ask* that interaction
         // to do it depends on Webflow's own listener already being bound, which raced unreliably at
         // load time. Matching that resting state directly sidesteps the dependency entirely.
         $content.style.removeProperty('height');
+        console.log('[unwrap] opened', type);
       }
     });
   });
