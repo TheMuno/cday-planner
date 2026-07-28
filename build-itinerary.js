@@ -822,7 +822,12 @@ function createNextDaySlide() {
   $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
     $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
   });
-  $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => { $panel.style.height = '0px'; });
+  // The "visit" section starts open by default in the static template slides (no inline height at
+  // all) — only eat/notes ship pre-closed — so leave it alone here to match.
+  $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => {
+    if ($panel.closest('[data-ak-types]')?.getAttribute('data-ak-type') === 'visit') return;
+    $panel.style.height = '0px';
+  });
   $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
   const $notes = $newSlide.querySelector('.ak-notes');
   if ($notes) $notes.value = '';
@@ -1321,7 +1326,12 @@ function restoreTripDaySlides(onSettled) {
     $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
       $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
     });
-    $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => { $panel.style.height = '0px'; });
+    // The "visit" section starts open by default in the static template slides (no inline height at
+    // all) — only eat/notes ship pre-closed — so leave it alone here to match.
+    $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => {
+      if ($panel.closest('[data-ak-types]')?.getAttribute('data-ak-type') === 'visit') return;
+      $panel.style.height = '0px';
+    });
     $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
     const $notes = $newSlide.querySelector('.ak-notes');
     if ($notes) $notes.value = '';
