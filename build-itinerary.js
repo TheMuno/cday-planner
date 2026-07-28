@@ -143,6 +143,7 @@ window.addEventListener('load', async () => {
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+  restoreTripDaySlides();
   restoreAttractions();
   restoreHotel();
   restoreAirports();
@@ -1246,6 +1247,64 @@ function unwrapSectionsWithContent() {
       }
     });
   });
+}
+
+// Mirrors setupTravelDates()/setupSliderDates() in customize-itinerary.js: sizes the day slides to
+// the user's saved trip length before restoreAttractions() populates them, so slide N exists for
+// every day the trip actually spans instead of relying on however many slides the static markup has.
+function restoreTripDaySlides() {
+  if (!localStorage['ak-travel-days']) return;
+
+  let flatpickrDate;
+  try {
+    ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
+  } catch (e) {
+    return;
+  }
+  if (!flatpickrDate) return;
+
+  const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
+  const startDate = new Date(startRaw);
+  const endDate = new Date(endRaw || startRaw);
+  if (isNaN(startDate) || isNaN(endDate)) return;
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const numberOfDays = (endDate.getTime() - startDate.getTime()) / msPerDay;
+
+  const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const $firstSlide = $attractionsSliderMask.querySelector('.w-slide');
+  if (!$firstSlide) return;
+
+  const setDayNDate = ($slide, theDate) => {
+    const $day = $slide.querySelector('[data-ak="types-day"]');
+    const $date = $slide.querySelector('[data-ak="types-date"]');
+    if ($day) $day.textContent = daysArr[theDate.getDay()];
+    if ($date) $date.textContent = `${monthArr[theDate.getMonth()]} ${theDate.getDate()}, ${theDate.getFullYear()}`;
+  };
+
+  setDayNDate($firstSlide, startDate);
+  $attractionsSliderMask.querySelectorAll('.w-slide')[1]?.remove();
+
+  const runningDate = new Date(startDate);
+  for (let i = 0; i < numberOfDays; i++) {
+    runningDate.setDate(runningDate.getDate() + 1);
+
+    const $newSlide = $firstSlide.cloneNode(true);
+    $newSlide.setAttribute('aria-hidden', 'true');
+    setDayNDate($newSlide, new Date(runningDate));
+
+    $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
+      $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
+    });
+    $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => { $panel.style.height = '0px'; });
+    $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
+    const $notes = $newSlide.querySelector('.ak-notes');
+    if ($notes) $notes.value = '';
+
+    $attractionsSliderMask.append($newSlide);
+  }
 }
 
 function restoreTripHeading() {
