@@ -148,7 +148,14 @@ window.addEventListener('load', async () => {
   restoreHotel();
   restoreAirports();
   restoreTripNotes();
-  unwrapSectionsWithContent();
+  // [data-ak-type-panel]'s open/close animation is driven entirely by Webflow's own click-interaction
+  // bound to [data-ak-type-title], not by our JS or any CSS class here — so the synthetic .click()
+  // inside unwrapSectionsWithContent() only does anything once that interaction has finished binding.
+  // Webflow.push() is Webflow's own documented "run after my init, including IX2, is done" queue — if
+  // Webflow's already ready it runs immediately, otherwise it waits — so unlike a fixed rAF/setTimeout
+  // delay it can't race regardless of how long Webflow's own setup takes.
+  if (window.Webflow) window.Webflow.push(unwrapSectionsWithContent);
+  else unwrapSectionsWithContent();
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   if (auth.currentUser) {
