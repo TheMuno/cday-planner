@@ -1269,13 +1269,11 @@ function restoreTripDaySlides() {
   if (isNaN(startDate) || isNaN(endDate)) return;
 
   const msPerDay = 24 * 60 * 60 * 1000;
-  const numberOfDays = (endDate.getTime() - startDate.getTime()) / msPerDay;
+  const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+  if (totalDays < 1) return;
 
   const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  const $firstSlide = $attractionsSliderMask.querySelector('.w-slide');
-  if (!$firstSlide) return;
 
   const setDayNDate = ($slide, theDate) => {
     const $day = $slide.querySelector('[data-ak="types-day"]');
@@ -1284,16 +1282,24 @@ function restoreTripDaySlides() {
     if ($date) $date.textContent = `${monthArr[theDate.getMonth()]} ${theDate.getDate()}, ${theDate.getFullYear()}`;
   };
 
-  setDayNDate($firstSlide, startDate);
-  $attractionsSliderMask.querySelectorAll('.w-slide')[1]?.remove();
+  const $existingSlides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+  const $firstSlide = $existingSlides[0];
+  if (!$firstSlide) return;
 
-  const runningDate = new Date(startDate);
-  for (let i = 0; i < numberOfDays; i++) {
-    runningDate.setDate(runningDate.getDate() + 1);
+  for (let i = 0; i < totalDays; i++) {
+    const dayDate = new Date(startDate);
+    dayDate.setDate(dayDate.getDate() + i);
 
+    // Slide already present (e.g. the static Jan 1/Jan 2 pair Webflow ships with) — just retarget its date.
+    if ($existingSlides[i]) {
+      setDayNDate($existingSlides[i], dayDate);
+      continue;
+    }
+
+    // Beyond what's already in the DOM — clone the template slide to cover the remaining days.
     const $newSlide = $firstSlide.cloneNode(true);
     $newSlide.setAttribute('aria-hidden', 'true');
-    setDayNDate($newSlide, new Date(runningDate));
+    setDayNDate($newSlide, dayDate);
 
     $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
       $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
