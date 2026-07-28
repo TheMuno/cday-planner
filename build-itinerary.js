@@ -1286,6 +1286,8 @@ function restoreTripDaySlides() {
   const $firstSlide = $existingSlides[0];
   if (!$firstSlide) return;
 
+  let addedSlide = false;
+
   for (let i = 0; i < totalDays; i++) {
     const dayDate = new Date(startDate);
     dayDate.setDate(dayDate.getDate() + i);
@@ -1310,6 +1312,16 @@ function restoreTripDaySlides() {
     if ($notes) $notes.value = '';
 
     $attractionsSliderMask.append($newSlide);
+    addedSlide = true;
+  }
+
+  // Newly appended .w-slide nodes aren't picked up by the Webflow slider widget until it's
+  // rebuilt — same reinit handleBulkImport() runs after createNextDaySlide() adds slides.
+  if (addedSlide && window.Webflow) {
+    Webflow.destroy();
+    Webflow.ready();
+    Webflow.require('ix2').init();
+    Webflow.require('slider').redraw();
   }
 }
 
