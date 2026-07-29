@@ -198,41 +198,47 @@ function renderInitTickets() {
   document.querySelectorAll('[data-ak="init-tickets-num"]').forEach(el => el.textContent = Y);
 }
 
+// Attractions the user actually added, deduped by normalized name — shared by the on-pass
+// counter (X) and the packages grid below so both agree on the same matched set.
+function getMatchedAttractions(Attractions) {
+  if (!Attractions) return [];
+
+  const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
+  const userAddedAttractions = Object.entries(JSON.parse(localStorage['ak-user-added-items'] || '{}'));
+  const normalize = str => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
+  const seenNames = new Set();
+  const matched = [];
+
+  for (const passInfo of Object.values(Attractions)) {
+    const { place_id, place_id_secondary, attraction_name } = passInfo;
+    const normalizedName = normalize(attraction_name);
+
+    const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
+    const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
+
+    if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
+    seenNames.add(normalizedName);
+    matched.push(passInfo);
+  }
+
+  return matched;
+}
+
 // Mirrors the X portion of preCalculatePassStats() in customize-itinerary_dev_pg2.js.
 // Always writes a value to on-pass-tickets (even 0) instead of bailing out silently, so the
 // element never gets stuck on its placeholder markup.
 async function populateOnPassTickets() {
   const $onPassCounter = document.querySelector('[data-ak="on-pass-tickets"]');
 
-  const { Attractions } = await fetchSheetData();
+  const { Attractions, Passes } = await fetchSheetData();
   localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
 
-  const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
-  const userAddedAttractions = Object.entries(JSON.parse(localStorage['ak-user-added-items'] || '{}'));
-
-  let X = 0;
-
-  if (Attractions && (placeIds.length || userAddedAttractions.length)) {
-    const normalize = str => str?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-    const seenNames = new Map();
-
-    for (const [id, passInfo] of Object.entries(Attractions)) {
-      const { place_id, place_id_secondary, on_pass, attraction_name, passes } = passInfo;
-      const normalizedName = normalize(attraction_name);
-
-      const isMatchedById = placeIds.includes(place_id) || (place_id_secondary && placeIds.includes(place_id_secondary));
-      const isMatchedByName = userAddedAttractions.some(a => a[0].includes(normalizedName));
-
-      if ((!isMatchedById && !isMatchedByName) || seenNames.has(normalizedName)) continue;
-      seenNames.set(normalizedName, true);
-
-      if (on_pass?.trim().toLowerCase() === 'true') {
-        const isOnGoCity   = passes?.toLowerCase().includes('go city');
-        const isOnCityPass = passes?.toLowerCase().includes('citypass');
-        if (isOnGoCity || isOnCityPass) X++;
-      }
-    }
-  }
+  const matched = getMatchedAttractions(Attractions);
+  const X = matched.filter(a => {
+    if (a.on_pass?.trim().toLowerCase() !== 'true') return false;
+    const passes = a.passes?.toLowerCase() || '';
+    return passes.includes('go city') || passes.includes('citypass');
+  }).length;
 
   if ($onPassCounter) $onPassCounter.textContent = X;
   if ($attractionsOnPasses) {
@@ -240,6 +246,139 @@ async function populateOnPassTickets() {
       if (X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
       else $attractionsOnPasses.setAttribute('data-ak-hidden', 'true');
     });
+  }
+
+  populatePackagesGrid(matched, Passes);
+}
+
+// Best pass covering `targetCount` attractions for a given pass family (gocity_explorer /
+// citypass). Mirrors populateGoCityPasses/populateCityPasses + workoutLowerNUpperPass in
+// customize-itinerary_dev_pg2.js: an exact attraction_count match (or only one side of the
+// range existing) renders as a single price; only when both a cheaper and pricier candidate
+// exist with no exact match is it a range.
+function resolveBestPass(passData, passIdSubstr, targetCount, extraFilter) {
+  let matches = passData.filter(([, p]) => p.pass_id?.includes(passIdSubstr));
+  if (extraFilter) matches = matches.filter(extraFilter);
+  if (!matches.length) return null;
+
+  const sorted = matches.sort((a, b) => Number(a[1].attraction_count) - Number(b[1].attraction_count));
+  const exact = sorted.find(([, p]) => Number(p.attraction_count) === targetCount);
+  if (exact) return { shape: 'single', pass: exact[1] };
+
+  const upper = sorted.find(([, p]) => Number(p.attraction_count) >= targetCount);
+  const lower = [...sorted].reverse().find(([, p]) => Number(p.attraction_count) <= targetCount);
+
+  if (lower && upper) return { shape: 'range', lower: lower[1], upper: upper[1] };
+  if (lower) return { shape: 'single', pass: lower[1] };
+  if (upper) return { shape: 'single', pass: upper[1] };
+  return null;
+}
+
+// Mirrors citypass5EligibilityCheck() in customize-itinerary_dev_pg2.js: C5 tiers require
+// Empire State Building or AMNH and exclude Edge/MoMA.
+function citypass5EligibilityCheck(cityPassAttractions) {
+  const empireStateBuilding = 'ChIJaXQRs6lZwokRY6EFpJnhNNE';
+  const amnh = 'ChIJCXoPsPRYwokRsV1MYnKBfaI';
+  const edge = 'ChIJ3aqq5Q1ZwokRb9hLO7Gyxgw';
+  const moma = 'ChIJKxDbe_lYwokRVf__s8CPn-o';
+  let required = 0;
+  let excluded = 0;
+
+  for (const { place_id } of cityPassAttractions) {
+    if (place_id?.includes(empireStateBuilding) || place_id?.includes(amnh)) required++;
+    else if (place_id?.includes(edge) || place_id?.includes(moma)) excluded++;
+  }
+
+  return excluded === 0 && required >= 2;
+}
+
+function renderSinglePriceShape($contain, priceText) {
+  $contain.innerHTML = `<div class="u-size-120-64 w-richtext"><p>${priceText}<sub></sub></p></div>`;
+}
+
+function renderRangePriceShape($contain, lowerPriceText, lowerLabel, upperPriceText, upperLabel) {
+  $contain.innerHTML = `
+    <div class="calc_packages_box_inner">
+      <div class="u-size-56-28 w-richtext"><p>${lowerPriceText}</p></div>
+      <div class="u-body">${lowerLabel}</div>
+    </div>
+    <div class="calc_packages_box_inner">
+      <div class="u-size-56-28 w-richtext"><p>${upperPriceText}</p></div>
+      <div class="u-body">${upperLabel}</div>
+    </div>`;
+}
+
+function updateBoxContent($box, labelText, savingsText) {
+  const $content = $box.querySelector('.calc_packages_box_content');
+  if (!$content) return;
+  const $labelP = $content.firstElementChild?.querySelector('p');
+  const $savingsP = $content.lastElementChild?.querySelector('p');
+  if ($labelP) $labelP.textContent = labelText;
+  if ($savingsP) $savingsP.textContent = savingsText;
+}
+
+// Renders one calc_packages_box_wrap (GoCity or CityPass): single price shape (like GoCity's
+// current markup) when one pass matches exactly, or the two-tier range shape (like CityPass's
+// current markup) when the best fit falls between two passes. Savings is always figured against
+// the Individual column's summed total, using the cheaper tier's price when in range shape.
+function updatePassBox($box, result, individualTotal) {
+  const $contain = $box.querySelector('.calc_packages_box_contain');
+  if (!$contain) return;
+
+  if (!result) {
+    renderSinglePriceShape($contain, '$0');
+    updateBoxContent($box, '', 'No attractions on this pass');
+    return;
+  }
+
+  if (result.shape === 'single') {
+    const price = Number(result.pass.pass_price) || 0;
+    const savings = Math.max(individualTotal - price, 0);
+    renderSinglePriceShape($contain, `$${price}`);
+    updateBoxContent($box, result.pass.pass_name || '', `Saves $${savings} vs Individual`);
+  } else {
+    const lowerPrice = Number(result.lower.pass_price) || 0;
+    const upperPrice = Number(result.upper.pass_price) || 0;
+    const savings = Math.max(individualTotal - lowerPrice, 0);
+    renderRangePriceShape($contain, `$${lowerPrice}`, result.lower.pass_name || '', `$${upperPrice}`, result.upper.pass_name || '');
+    updateBoxContent($box, 'Chose your level', `${result.lower.pass_name || ''} saves $${savings} vs Individual`);
+  }
+}
+
+// .calc_packages_grid: Individual sums every matched attraction regardless of pass membership
+// (buying each ticket separately); GoCity/CityPass only count attractions personally on that
+// pass, then resolve the best-fit pass for that count.
+function populatePackagesGrid(matched, Passes) {
+  const $grid = document.querySelector('[data-ak-post-purchase="true"] .calc_packages_grid');
+  if (!$grid || !matched.length || !Passes) return;
+
+  const $goCityBox = $grid.querySelector('.calc_packages_box_wrap.is-black');
+  const $individualBox = $grid.querySelector('.calc_packages_box_wrap:not(.is-black):not(.is-orange-gdrn)');
+  const $cityPassBox = $grid.querySelector('.calc_packages_box_wrap.is-orange-gdrn');
+
+  const individualTotal = matched.reduce((sum, a) => sum + (Number(a.cost?.replace(/[^0-9.]/g, '')) || 0), 0);
+  if ($individualBox) {
+    const $contain = $individualBox.querySelector('.calc_packages_box_contain');
+    if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
+  }
+
+  const passData = Object.entries(Passes);
+
+  const goCityMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('go city'));
+  if ($goCityBox) {
+    const goCityResult = goCityMatched.length ? resolveBestPass(passData, 'gocity_explorer', goCityMatched.length) : null;
+    updatePassBox($goCityBox, goCityResult, individualTotal);
+  }
+
+  const cityPassMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('citypass'));
+  if ($cityPassBox) {
+    let cityPassResult = null;
+    if (cityPassMatched.length) {
+      const c5Eligible = citypass5EligibilityCheck(cityPassMatched);
+      const filter = c5Eligible ? undefined : ([, p]) => !p.pass_name?.toLowerCase().includes('c5');
+      cityPassResult = resolveBestPass(passData, 'citypass', cityPassMatched.length, filter);
+    }
+    updatePassBox($cityPassBox, cityPassResult, individualTotal);
   }
 }
 
