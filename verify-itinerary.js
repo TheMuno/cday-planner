@@ -91,6 +91,11 @@ function injectPdfSpinnerStyle() {
   document.head.appendChild(style);
 }
 
+document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
+  e.preventDefault();
+  window.location.href = '/itinerary-maker/get-the-guide';
+});
+
 if ($downloadBtns.length) {
   let isLoading = false;
 
