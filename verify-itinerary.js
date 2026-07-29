@@ -57,8 +57,56 @@ function restoreTripHeading() {
   if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
 }
 
+// Mirrors calculate-pass-savings.js's redirectToStep1().
+function redirectToStep1(message) {
+  showRedirectLoader(message);
+  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
+}
+
+// Mirrors calculate-pass-savings.js's showRedirectLoader().
+function showRedirectLoader(message) {
+  if (!document.getElementById('vi-spinner-style')) {
+    const style = document.createElement('style');
+    style.id = 'vi-spinner-style';
+    style.textContent = "@keyframes vi-spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(style);
+  }
+  const overlay = document.createElement('div');
+  overlay.id = 'vi-loader-overlay';
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0',
+    background: 'rgba(255,255,255,0.5)',
+    display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    gap: '12px', zIndex: '9999',
+  });
+  const redirecting = document.createElement('p');
+  redirecting.textContent = 'Redirecting...';
+  Object.assign(redirecting.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(redirecting);
+  const label = document.createElement('p');
+  label.textContent = message;
+  Object.assign(label.style, { margin: '0', fontSize: '14px', color: '#111' });
+  overlay.appendChild(label);
+  const spinner = document.createElement('div');
+  Object.assign(spinner.style, {
+    width: '40px', height: '40px',
+    border: '4px solid #e5e7eb', borderTopColor: '#111',
+    borderRadius: '50%', animation: 'vi-spin 0.7s linear infinite',
+  });
+  overlay.appendChild(spinner);
+  document.body.appendChild(overlay);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
-  await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
+  if (!user) {
+    redirectToStep1('User not logged in');
+    return;
+  }
+
+  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
+  localStorage['ak-userMail'] = user.email;
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
