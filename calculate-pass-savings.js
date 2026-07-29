@@ -355,11 +355,23 @@ function updatePassBox($box, $purchaseBtn, result, individualTotal) {
   }
 }
 
-// The price a pass result should be shown as outside its own box (e.g. in the attractions
-// table's TOTAL row) — the single price, or the cheaper tier's price when in range shape.
-function resultDisplayPrice(result) {
-  if (!result) return 0;
-  return Number((result.shape === 'single' ? result.pass : result.lower).pass_price) || 0;
+// pass_id's tier code, stripped of its "gocity"/"citypass" family prefix and cleaned up —
+// e.g. "gocity_explorer_7" -> "Explorer 7", "citypass_c3" -> "C3".
+function passCodeName(pass) {
+  const stripped = (pass.pass_id || '').replace(/^(gocity|citypass)[_\s-]*/i, '');
+  const words = stripped.replace(/[_-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// How a pass result should read outside its own box (e.g. in the attractions table's TOTAL
+// row): just the price when single, or "$price - code" (the cheaper tier's code) when a range.
+function resultDisplayText(result) {
+  if (!result) return '$0';
+  const pass = result.shape === 'single' ? result.pass : result.lower;
+  const price = Number(pass.pass_price) || 0;
+  const code = passCodeName(pass);
+  if (result.shape === 'single' || !code) return `$${price}`;
+  return `$${price} - ${code}`;
 }
 
 // Rebuilds .calc_table_wrap's per-attraction rows from the existing template row (cloned before
@@ -380,7 +392,7 @@ function populateAttractionsTable(matched, goCitySet, cityPassSet, totals) {
     const values = [totals.goCity, totals.individual, totals.cityPass];
     $totalCols.forEach(($col, i) => {
       const $h2 = $col.querySelector('h2');
-      if ($h2 && values[i] !== undefined) $h2.textContent = `$${values[i]}`;
+      if ($h2 && values[i] !== undefined) $h2.textContent = values[i];
     });
   }
 
@@ -454,9 +466,9 @@ function populatePackagesGrid(matched, Passes) {
   }
 
   populateAttractionsTable(matched, new Set(goCityMatched), new Set(cityPassMatched), {
-    individual: individualTotal,
-    goCity: resultDisplayPrice(goCityResult),
-    cityPass: resultDisplayPrice(cityPassResult),
+    individual: `$${individualTotal}`,
+    goCity: resultDisplayText(goCityResult),
+    cityPass: resultDisplayText(cityPassResult),
   });
 }
 
