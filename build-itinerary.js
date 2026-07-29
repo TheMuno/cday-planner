@@ -161,11 +161,6 @@ window.addEventListener('load', async () => {
     document.querySelector('[data-ak="sign-in-to-save"]')?.removeAttribute('data-ak-hidden');
   }
 
-  document.querySelector('[data-ak="back-to-landingpage"]')?.addEventListener('click', e => {
-    e.preventDefault();
-    window.location.href = '/free-trip-planner';
-  });
-
   document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
     e.preventDefault();
     window.location.href = '/log-in';
