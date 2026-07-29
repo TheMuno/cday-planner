@@ -52,7 +52,7 @@ function noAttractionsAdded() {
 
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
+  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker-open'; }, 1500);
 }
 
 // Shared with stripe-purchase.js: attractions-on-passes and buy-plan each run their own async

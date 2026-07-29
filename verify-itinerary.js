@@ -70,7 +70,7 @@ function restoreTripHeading() {
 // Mirrors calculate-pass-savings.js's redirectToStep1().
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker'; }, 1500);
+  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker-open'; }, 1500);
 }
 
 // Mirrors calculate-pass-savings.js's showRedirectLoader().
