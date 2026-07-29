@@ -378,13 +378,13 @@ function populateAttractionsTable(matched, goCitySet, cityPassSet, totals) {
   const $template = $templateRow.cloneNode(true);
   $rows.forEach(r => { if (r !== $headerRow && r !== $totalRow) r.remove(); });
 
-  const setPassCell = ($col, isOnPass, cost) => {
+  const setPassCell = ($col, isOnPass) => {
     const $check = $col.querySelector('.calc_table_icon.is-check');
     const $cross = Array.from($col.querySelectorAll('.calc_table_icon')).find(el => el !== $check);
     if ($check) $check.style.display = isOnPass ? '' : 'none';
     if ($cross) $cross.style.display = isOnPass ? 'none' : '';
     const $price = $col.querySelector('div');
-    if ($price) $price.textContent = isOnPass ? `$${cost}` : '';
+    if ($price) $price.textContent = '';
   };
 
   matched.forEach((attr, i) => {
@@ -397,8 +397,8 @@ function populateAttractionsTable(matched, goCitySet, cityPassSet, totals) {
     const cost = Number(attr.cost?.replace(/[^0-9.]/g, '')) || 0;
     const [$goCityCol, $individualCol, $cityPassCol] = $row.querySelectorAll('.calc_table_column');
 
-    if ($goCityCol) setPassCell($goCityCol, goCitySet.has(attr), cost);
-    if ($cityPassCol) setPassCell($cityPassCol, cityPassSet.has(attr), cost);
+    if ($goCityCol) setPassCell($goCityCol, goCitySet.has(attr));
+    if ($cityPassCol) setPassCell($cityPassCol, cityPassSet.has(attr));
 
     const $individualPrice = $individualCol?.querySelector('div');
     if ($individualPrice) $individualPrice.textContent = `$${cost}`;
