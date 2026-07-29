@@ -321,14 +321,19 @@ function updateBoxContent($box, labelText, savingsText) {
 // current markup) when one pass matches exactly, or the two-tier range shape (like CityPass's
 // current markup) when the best fit falls between two passes. Savings is always figured against
 // the Individual column's summed total, using the cheaper tier's price when in range shape.
-function updatePassBox($box, result, individualTotal) {
+function updatePassBox($box, $purchaseBtn, result, individualTotal) {
   const $contain = $box.querySelector('.calc_packages_box_contain');
   if (!$contain) return;
 
-  // Single price -> black background; range -> orange (the current default).
+  // Single price -> black background; range -> orange (the current default). The purchase
+  // button below the box follows the same theme (dark for black, brand for orange).
   const isSingle = result?.shape === 'single';
   $box.classList.toggle('is-black', isSingle);
   $box.classList.toggle('is-orange-gdrn', !isSingle);
+  if ($purchaseBtn) {
+    $purchaseBtn.classList.toggle('is-dark-theme', isSingle);
+    $purchaseBtn.classList.toggle('is-brand-theme', !isSingle);
+  }
 
   if (!result) {
     renderSinglePriceShape($contain, '$0');
@@ -444,8 +449,8 @@ function populatePackagesGrid(matched, Passes) {
       const $contain = $individualBox.querySelector('.calc_packages_box_contain');
       if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
     }
-    if ($goCityBox) updatePassBox($goCityBox, goCityResult, individualTotal);
-    if ($cityPassBox) updatePassBox($cityPassBox, cityPassResult, individualTotal);
+    if ($goCityBox) updatePassBox($goCityBox, document.querySelector('[data-ak="purchase-go-city"]'), goCityResult, individualTotal);
+    if ($cityPassBox) updatePassBox($cityPassBox, document.querySelector('[data-ak="purchase-city-pass"]'), cityPassResult, individualTotal);
   }
 
   populateAttractionsTable(matched, new Set(goCityMatched), new Set(cityPassMatched), {
