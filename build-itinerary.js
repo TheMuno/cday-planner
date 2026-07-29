@@ -375,9 +375,9 @@ async function setupAutocompleteInp() {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
 
-    const saveObj = buildSaveObjFromPlace(place);
+    const saveObj = await buildSaveObjFromPlace(place);
     map.panTo(saveObj.location);
 
     const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
@@ -814,21 +814,47 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = n
 async function resolvePlaceFromText(query) {
   const { places } = await google.maps.places.Place.searchByText({
     textQuery: query,
-    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'],
+    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'],
     locationBias: { radius: 5000.0, center: mapCenter },
     maxResultCount: 1,
   });
   return places?.[0] || null;
 }
 
-function buildSaveObjFromPlace(place) {
+// Mirrors customize-itinerary.js's extractNeighborhood(): prefer the "neighborhood" address
+// component Places already gave us, else reverse-geocode the coordinates for it, else fall back
+// to the nearest broader area so the ez-guide always has something to show.
+async function extractNeighborhood(addressComponents, lat, lng) {
+  const find = (...types) => addressComponents.find(c => types.some(t => c.types.includes(t)))?.longText;
+  const findLast = (...types) => addressComponents.findLast(c => types.some(t => c.types.includes(t)))?.longText;
+
+  const fromComponents = findLast('neighborhood');
+  if (fromComponents) return fromComponents;
+
+  try {
+    const geocoder = new google.maps.Geocoder();
+    const { results } = await geocoder.geocode({ location: { lat, lng } });
+    for (const result of results) {
+      if (result.types.includes('neighborhood')) {
+        const comp = result.address_components.find(c => c.types.includes('neighborhood'));
+        if (comp) return comp.long_name;
+      }
+    }
+  } catch (_) {}
+
+  return find('sublocality', 'sublocality_level_1') || find('locality') || '';
+}
+
+async function buildSaveObjFromPlace(place) {
   const placeObj = place.toJSON();
   const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
   const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+  const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
 
   return {
     location: { lat, lng },
     displayName,
+    neighborhood,
     address: placeObj.formattedAddress || '',
     editorialSummary,
     type,
@@ -941,7 +967,7 @@ async function handleBulkImport() {
         const place = await resolvePlaceFromText(line);
         if (!place) { notFound.push(line); continue; }
 
-        const saveObj = buildSaveObjFromPlace(place);
+        const saveObj = await buildSaveObjFromPlace(place);
         const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
         const status = addSearchResultToItinerary(saveObj, marker, { silent: true, slide });
 
@@ -1881,10 +1907,11 @@ async function enrichPlaceDetails(saveObj) {
   if (!saveObj.placeId) return;
   try {
     const place = new google.maps.places.Place({ id: saveObj.placeId });
-    await place.fetchFields({ fields: ['displayName', 'editorialSummary', 'formattedAddress', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
+    await place.fetchFields({ fields: ['displayName', 'editorialSummary', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
     const placeObj = place.toJSON();
 
     saveObj.displayName = saveObj.displayName || placeObj.displayName;
+    saveObj.neighborhood = saveObj.neighborhood || await extractNeighborhood(placeObj.addressComponents || [], saveObj.location?.lat, saveObj.location?.lng);
     saveObj.editorialSummary = placeObj.editorialSummary;
     saveObj.address = placeObj.formattedAddress || '';
     saveObj.rating = placeObj.rating ?? saveObj.rating ?? null;
