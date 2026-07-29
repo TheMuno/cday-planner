@@ -208,6 +208,7 @@ function populateVerifyContent() {
     const attractions = slide.attractions || [];
     const restaurants = slide.restaurants || [];
     const totalCount = attractions.length + restaurants.length;
+    if (!totalCount) return;
 
     const $day = $template.cloneNode(true);
 
