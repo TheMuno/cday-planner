@@ -325,12 +325,6 @@ function updatePassBox($box, result, individualTotal) {
   const $contain = $box.querySelector('.calc_packages_box_contain');
   if (!$contain) return;
 
-  // Black background for a single resolved price, orange only when the result is a range —
-  // independent of which pass (Go City/City Pass) this box happens to be.
-  const isRange = result?.shape === 'range';
-  $box.classList.toggle('is-orange-gdrn', isRange);
-  $box.classList.toggle('is-black', !isRange);
-
   if (!result) {
     renderSinglePriceShape($contain, '$0');
     updateBoxContent($box, '', 'No attractions on this pass');
@@ -437,18 +431,11 @@ function populatePackagesGrid(matched, Passes) {
 
   const $grid = document.querySelector('[data-ak-post-purchase="true"] .calc_packages_grid');
   if ($grid) {
-    // Identified by title text, not is-black/is-orange-gdrn — updatePassBox() now toggles those
-    // classes dynamically based on single-vs-range shape, so they can no longer be used to find
-    // which box is which.
-    const $boxWraps = Array.from($grid.querySelectorAll('.calc_packages_box_wrap'));
-    const titleOf = $box => $box.querySelector('.calc_packages_box_title')?.textContent.trim().toLowerCase() || '';
-    const $goCityBox = $boxWraps.find(el => titleOf(el) === 'go city');
-    const $individualBox = $boxWraps.find(el => titleOf(el).includes('individual'));
-    const $cityPassBox = $boxWraps.find(el => titleOf(el) === 'city pass');
+    const $goCityBox = $grid.querySelector('.calc_packages_box_wrap.is-black');
+    const $individualBox = $grid.querySelector('.calc_packages_box_wrap:not(.is-black):not(.is-orange-gdrn)');
+    const $cityPassBox = $grid.querySelector('.calc_packages_box_wrap.is-orange-gdrn');
 
     if ($individualBox) {
-      // Never colored — stays on its default white background regardless of shape/state.
-      $individualBox.classList.remove('is-black', 'is-orange-gdrn');
       const $contain = $individualBox.querySelector('.calc_packages_box_contain');
       if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
     }
