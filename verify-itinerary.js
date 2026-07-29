@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, initializeFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -16,6 +17,15 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const functions = getFunctions(app);
 const auth = getAuth(app);
+
+// Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+// connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+let db;
+try {
+  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+} catch (e) {
+  db = getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+}
 
 const $downloadBtns = document.querySelectorAll('[data-ak="download-ez-guide"]');
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
@@ -98,6 +108,131 @@ function showRedirectLoader(message) {
   document.body.appendChild(overlay);
 }
 
+// Restores whatever this user last saved to Firestore into localStorage, before populateVerifyContent()
+// reads those same keys — mirrors build-itinerary.js's retrieveDBData()/syncWithDB(). Unlike that page,
+// nothing gets edited here, so there's no local-vs-DB precedence to resolve: a value already in
+// localStorage (e.g. carried over from build-itinerary.js earlier in this session) is just as fresh as
+// the DB copy, so it's kept as-is and DB only fills in whatever's missing locally.
+async function retrieveDBData(userMail) {
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+  const docSnap = await getDoc(userRef);
+  return docSnap.exists() ? docSnap.data() : null;
+}
+
+async function syncWithDB() {
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  if (!userMail) return;
+
+  const dbData = await retrieveDBData(userMail);
+  if (!dbData) return;
+
+  if (!localStorage['ak-travel-days'] && dbData.travelDates) localStorage['ak-travel-days'] = dbData.travelDates;
+  if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
+  if (!localStorage['ak-attractions-saved'] && dbData.savedAttractions) localStorage['ak-attractions-saved'] = dbData.savedAttractions;
+}
+
+// --- Verify-content day/attraction/restaurant tables ---
+// Mirrors build-itinerary.js's restoreTripDaySlides() for the date math, and the PDF backend's
+// pdfRenderDay() (functions/index.js) for the day-label format and "skip section if empty" rule,
+// so what the user verifies here matches what the ez-guide PDF actually renders.
+function getTravelDayDates() {
+  if (!localStorage['ak-travel-days']) return [];
+
+  let flatpickrDate;
+  try {
+    ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
+  } catch (e) {
+    return [];
+  }
+  if (!flatpickrDate) return [];
+
+  const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
+  const startDate = new Date(startRaw);
+  const endDate = new Date(endRaw || startRaw);
+  if (isNaN(startDate) || isNaN(endDate)) return [];
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+  if (totalDays < 1) return [];
+
+  const days = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+
+function getSavedAttractions() {
+  try {
+    return JSON.parse(localStorage['ak-attractions-saved'] || '{}');
+  } catch (e) {
+    return {};
+  }
+}
+
+// Replaces the sample rows in a verify_table_wrap (keeping its header row) with one cloned row
+// per item.
+function populateVerifyTable($tableWrap, items) {
+  const $rows = $tableWrap.querySelectorAll('.verify_table_row');
+  const $rowTemplate = $rows[1];
+  if (!$rowTemplate) return;
+
+  for (let i = $rows.length - 1; i >= 1; i--) $rows[i].remove();
+
+  items.forEach(item => {
+    const $row = $rowTemplate.cloneNode(true);
+    const $nameEl = $row.querySelector('.verify_table_main p');
+    const [$neighborhoodEl, $addressEl] = $row.querySelectorAll('.verify_table_column p');
+    if ($nameEl) $nameEl.textContent = item.displayName || '';
+    if ($neighborhoodEl) $neighborhoodEl.textContent = item.neighborhood || '';
+    if ($addressEl) $addressEl.textContent = item.address || '';
+    $tableWrap.appendChild($row);
+  });
+}
+
+function populateVerifyContent() {
+  const $container = document.querySelector('.verify_content');
+  const $dayTemplate = $container?.querySelector('.verify_block_wrap');
+  if (!$dayTemplate) return;
+
+  const $template = $dayTemplate.cloneNode(true);
+  const days = getTravelDayDates();
+  const savedAttractions = getSavedAttractions();
+
+  $container.querySelectorAll('.verify_block_wrap').forEach($el => $el.remove());
+
+  days.forEach((date, i) => {
+    const slide = savedAttractions[`slide${i + 1}`] || {};
+    const attractions = slide.attractions || [];
+    const restaurants = slide.restaurants || [];
+    const totalCount = attractions.length + restaurants.length;
+
+    const $day = $template.cloneNode(true);
+
+    const $heading = $day.querySelector('.verify_block_top h1');
+    if ($heading) $heading.textContent = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+    const $countEl = $day.querySelector('.verify_block_top p');
+    if ($countEl) $countEl.textContent = `${totalCount} ${totalCount === 1 ? 'Activity' : 'Activities'}`;
+
+    $day.querySelectorAll('.verify_block_bit').forEach($bit => {
+      const label = $bit.querySelector('.verify_block_tag p')?.textContent?.trim().toLowerCase();
+      const items = label === 'attractions' ? attractions : label === 'restaurants' ? restaurants : null;
+      const $tableWrap = $bit.querySelector('.verify_table_wrap');
+
+      if (!items || !items.length || !$tableWrap) {
+        $bit.style.display = 'none';
+        return;
+      }
+      populateVerifyTable($tableWrap, items);
+    });
+
+    $container.appendChild($day);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
@@ -107,7 +242,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
   localStorage['ak-userMail'] = user.email;
+  await syncWithDB();
   restoreTripHeading();
+  populateVerifyContent();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 });
