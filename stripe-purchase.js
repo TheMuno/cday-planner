@@ -227,6 +227,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function wireBuyButtons(user, $buyButtons) {
     let isLoading = false;
+    // Captured once, up front — not inside the click handler — so the bfcache
+    // restore below (which can fire without ever re-running this function) has
+    // the pre-click content to restore to.
+    const originals = Array.from($buyButtons).map(b => b.innerHTML);
+
+    // Back-button restore: window.location.href = data.url below navigates to
+    // Stripe, but hitting "back" from there often restores this page from
+    // bfcache instead of re-running wireBuyButtons — so without this, the
+    // button would come back stuck showing "Processing..." and disabled.
+    // event.persisted is true only on that bfcache restore, never on the
+    // initial forward navigation, so this can't interfere with the redirect itself.
+    window.addEventListener('pageshow', (e) => {
+      if (!e.persisted || !isLoading) return;
+      isLoading = false;
+      $buyButtons.forEach((b, i) => {
+        b.disabled = false;
+        b.innerHTML = originals[i];
+        b.style.minWidth = '';
+      });
+    });
 
     $buyButtons.forEach(btn => {
       btn.addEventListener('click', async (e) => {
@@ -234,8 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isLoading) return;
         isLoading = true;
 
-        // Save each button's original content and replace with spinner
-        const originals = Array.from($buyButtons).map(b => b.innerHTML);
+        // Replace each button's content with a spinner (originals captured above)
         $buyButtons.forEach(b => {
           b.style.minWidth = `${b.getBoundingClientRect().width}px`;
           b.disabled = true;
