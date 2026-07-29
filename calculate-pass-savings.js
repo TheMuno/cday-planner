@@ -345,41 +345,109 @@ function updatePassBox($box, result, individualTotal) {
   }
 }
 
+// The price a pass result should be shown as outside its own box (e.g. in the attractions
+// table's TOTAL row) — the single price, or the cheaper tier's price when in range shape.
+function resultDisplayPrice(result) {
+  if (!result) return 0;
+  return Number((result.shape === 'single' ? result.pass : result.lower).pass_price) || 0;
+}
+
+// Rebuilds .calc_table_wrap's per-attraction rows from the existing template row (cloned before
+// the placeholder rows are removed, so its check/✕ <svg> pair and structure are reused as-is).
+// Go City / City Pass cells: check icon + price when the attraction is personally on that pass,
+// ✕ icon + no price otherwise. Individual always shows the price, no icons (no on/off state).
+function populateAttractionsTable(matched, goCitySet, cityPassSet, totals) {
+  const $tableWrap = document.querySelector('[data-ak-post-purchase="true"] .calc_table_wrap');
+  if (!$tableWrap) return;
+
+  const $rows = Array.from($tableWrap.querySelectorAll('.calc_table_row'));
+  const $headerRow = $rows.find(r => r.classList.contains('is-black'));
+  const $totalRow = $rows.find(r => r.classList.contains('is-last'));
+  const $templateRow = $rows.find(r => r !== $headerRow && r !== $totalRow);
+
+  if ($totalRow) {
+    const $totalCols = $totalRow.querySelectorAll('.calc_table_column');
+    const values = [totals.goCity, totals.individual, totals.cityPass];
+    $totalCols.forEach(($col, i) => {
+      const $h2 = $col.querySelector('h2');
+      if ($h2 && values[i] !== undefined) $h2.textContent = `$${values[i]}`;
+    });
+  }
+
+  if (!$templateRow) return;
+  const $template = $templateRow.cloneNode(true);
+  $rows.forEach(r => { if (r !== $headerRow && r !== $totalRow) r.remove(); });
+
+  const setPassCell = ($col, isOnPass, cost) => {
+    const $check = $col.querySelector('.calc_table_icon.is-check');
+    const $cross = Array.from($col.querySelectorAll('.calc_table_icon')).find(el => el !== $check);
+    if ($check) $check.style.display = isOnPass ? '' : 'none';
+    if ($cross) $cross.style.display = isOnPass ? 'none' : '';
+    const $price = $col.querySelector('div');
+    if ($price) $price.textContent = isOnPass ? `$${cost}` : '';
+  };
+
+  matched.forEach((attr, i) => {
+    const $row = $template.cloneNode(true);
+    $row.classList.toggle('is-alt', i % 2 === 1);
+
+    const $title = $row.querySelector('.calc_table_title_column .u-body');
+    if ($title) $title.textContent = attr.attraction_name || '';
+
+    const cost = Number(attr.cost?.replace(/[^0-9.]/g, '')) || 0;
+    const [$goCityCol, $individualCol, $cityPassCol] = $row.querySelectorAll('.calc_table_column');
+
+    if ($goCityCol) setPassCell($goCityCol, goCitySet.has(attr), cost);
+    if ($cityPassCol) setPassCell($cityPassCol, cityPassSet.has(attr), cost);
+
+    const $individualPrice = $individualCol?.querySelector('div');
+    if ($individualPrice) $individualPrice.textContent = `$${cost}`;
+
+    if ($totalRow) $totalRow.insertAdjacentElement('beforebegin', $row);
+    else $tableWrap.appendChild($row);
+  });
+}
+
 // .calc_packages_grid: Individual sums every matched attraction regardless of pass membership
 // (buying each ticket separately); GoCity/CityPass only count attractions personally on that
-// pass, then resolve the best-fit pass for that count.
+// pass, then resolve the best-fit pass for that count. Also drives .calc_table_wrap's
+// per-attraction breakdown below the grid, from the same matched/pass-result data.
 function populatePackagesGrid(matched, Passes) {
-  const $grid = document.querySelector('[data-ak-post-purchase="true"] .calc_packages_grid');
-  if (!$grid || !matched.length || !Passes) return;
-
-  const $goCityBox = $grid.querySelector('.calc_packages_box_wrap.is-black');
-  const $individualBox = $grid.querySelector('.calc_packages_box_wrap:not(.is-black):not(.is-orange-gdrn)');
-  const $cityPassBox = $grid.querySelector('.calc_packages_box_wrap.is-orange-gdrn');
-
-  const individualTotal = matched.reduce((sum, a) => sum + (Number(a.cost?.replace(/[^0-9.]/g, '')) || 0), 0);
-  if ($individualBox) {
-    const $contain = $individualBox.querySelector('.calc_packages_box_contain');
-    if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
-  }
+  if (!matched.length || !Passes) return;
 
   const passData = Object.entries(Passes);
+  const individualTotal = matched.reduce((sum, a) => sum + (Number(a.cost?.replace(/[^0-9.]/g, '')) || 0), 0);
 
   const goCityMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('go city'));
-  if ($goCityBox) {
-    const goCityResult = goCityMatched.length ? resolveBestPass(passData, 'gocity_explorer', goCityMatched.length) : null;
-    updatePassBox($goCityBox, goCityResult, individualTotal);
-  }
+  const goCityResult = goCityMatched.length ? resolveBestPass(passData, 'gocity_explorer', goCityMatched.length) : null;
 
   const cityPassMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('citypass'));
-  if ($cityPassBox) {
-    let cityPassResult = null;
-    if (cityPassMatched.length) {
-      const c5Eligible = citypass5EligibilityCheck(cityPassMatched);
-      const filter = c5Eligible ? undefined : ([, p]) => !p.pass_name?.toLowerCase().includes('c5');
-      cityPassResult = resolveBestPass(passData, 'citypass', cityPassMatched.length, filter);
-    }
-    updatePassBox($cityPassBox, cityPassResult, individualTotal);
+  let cityPassResult = null;
+  if (cityPassMatched.length) {
+    const c5Eligible = citypass5EligibilityCheck(cityPassMatched);
+    const filter = c5Eligible ? undefined : ([, p]) => !p.pass_name?.toLowerCase().includes('c5');
+    cityPassResult = resolveBestPass(passData, 'citypass', cityPassMatched.length, filter);
   }
+
+  const $grid = document.querySelector('[data-ak-post-purchase="true"] .calc_packages_grid');
+  if ($grid) {
+    const $goCityBox = $grid.querySelector('.calc_packages_box_wrap.is-black');
+    const $individualBox = $grid.querySelector('.calc_packages_box_wrap:not(.is-black):not(.is-orange-gdrn)');
+    const $cityPassBox = $grid.querySelector('.calc_packages_box_wrap.is-orange-gdrn');
+
+    if ($individualBox) {
+      const $contain = $individualBox.querySelector('.calc_packages_box_contain');
+      if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
+    }
+    if ($goCityBox) updatePassBox($goCityBox, goCityResult, individualTotal);
+    if ($cityPassBox) updatePassBox($cityPassBox, cityPassResult, individualTotal);
+  }
+
+  populateAttractionsTable(matched, new Set(goCityMatched), new Set(cityPassMatched), {
+    individual: individualTotal,
+    goCity: resultDisplayPrice(goCityResult),
+    cityPass: resultDisplayPrice(cityPassResult),
+  });
 }
 
 function restoreTripHeading() {
