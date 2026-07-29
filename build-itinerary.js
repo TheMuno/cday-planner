@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -137,8 +137,13 @@ window.addEventListener('load', async () => {
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
   await mapReady;
 
+  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
+  if (auth.currentUser) localStorage['ak-userMail'] = auth.currentUser.email;
+
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
+
+  await syncWithDB();
 
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
@@ -1499,6 +1504,80 @@ function setUnsavedChangesFlag() {
 function removeUnsavedChangesFlag() {
   $unsavedChanges.setAttribute('data-ak-hidden', 'true');
   localStorage.removeItem('ak-unsaved-changes');
+}
+
+async function retrieveDBData(userMail) {
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+  const docSnap = await getDoc(userRef);
+  return docSnap.exists() ? docSnap.data() : null;
+}
+
+// Combines a DB-saved attractions blob with whatever's in ak-attractions-saved, de-duping each
+// slide's buckets by displayName (mirrors customize-itinerary.js's mergelocalNDBAttractions, but
+// covers every slide instead of just slide1/slide2, since a trip here can run longer than 2 days).
+function mergeAttractions(dbSavedAttractionsJSON, localSavedAttractionsJSON) {
+  let dbAttractions, localAttractions;
+  try { dbAttractions = dbSavedAttractionsJSON ? JSON.parse(dbSavedAttractionsJSON) : {}; } catch (e) { dbAttractions = {}; }
+  try { localAttractions = localSavedAttractionsJSON ? JSON.parse(localSavedAttractionsJSON) : {}; } catch (e) { localAttractions = {}; }
+
+  const combineArrays = (dbArr = [], localArr = []) =>
+    [...new Map([...dbArr, ...localArr].map(obj => [obj.displayName, obj])).values()];
+
+  const merged = {};
+  for (const slide of new Set([...Object.keys(dbAttractions), ...Object.keys(localAttractions)])) {
+    const dbSlide = dbAttractions[slide] || {};
+    const localSlide = localAttractions[slide] || {};
+
+    merged[slide] = {
+      attractions: combineArrays(dbSlide.attractions, localSlide.attractions),
+      restaurants: combineArrays(dbSlide.restaurants, localSlide.restaurants),
+      notes: combineArrays(dbSlide.notes, localSlide.notes),
+    };
+    if (localSlide.dayNotes || dbSlide.dayNotes) merged[slide].dayNotes = localSlide.dayNotes || dbSlide.dayNotes || '';
+  }
+
+  return JSON.stringify(merged);
+}
+
+// Restores whatever this user last saved to Firestore into localStorage, before restoreTripDaySlides()/
+// restoreAttractions()/restoreHotel()/restoreAirports()/restoreTripNotes() read those same keys — those
+// functions only ever look at localStorage, so without this a fresh login on an empty browser (nothing
+// cached locally yet) would show nothing despite the trip already being saved server-side.
+//
+// Anything the user already touched locally in *this* session (ak-update-hotel/arrival-airport/
+// departure-airport, or the ak-update-merge-local flag set when a guest adds attractions pre-login)
+// wins over the DB copy instead of being silently overwritten by it.
+async function syncWithDB() {
+  if (!auth.currentUser) return;
+
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  if (!userMail) return;
+
+  const dbData = await retrieveDBData(userMail);
+  if (!dbData) return;
+
+  // Travel dates and headcounts are never edited on this page (only picked upstream), so a value
+  // already sitting in localStorage is always the guest's freshest pick — keep it over the DB copy.
+  if (!localStorage['ak-travel-days'] && dbData.travelDates) localStorage['ak-travel-days'] = dbData.travelDates;
+  if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
+  if (localStorage['ak-adult-num'] == null && dbData.adultNum != null) localStorage['ak-adult-num'] = dbData.adultNum;
+  if (localStorage['ak-children-num'] == null && dbData.childrenNum != null) localStorage['ak-children-num'] = dbData.childrenNum;
+
+  if (!localStorage['ak-update-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
+  if (!localStorage['ak-update-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
+  if (!localStorage['ak-update-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
+
+  if (dbData.savedAttractions) {
+    if (localStorage['ak-update-merge-local']) {
+      // Guest added attractions before logging in — combine with what's already saved to the DB
+      // instead of either side clobbering the other.
+      localStorage['ak-attractions-saved'] = mergeAttractions(dbData.savedAttractions, localStorage['ak-attractions-saved']);
+      localStorage.removeItem('ak-update-merge-local');
+    } else if (!localStorage['ak-update-attractions']) {
+      // No local edits this session — DB is authoritative.
+      localStorage['ak-attractions-saved'] = dbData.savedAttractions;
+    }
+  }
 }
 
 async function saveAttractionsDB() {
