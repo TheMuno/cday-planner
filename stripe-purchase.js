@@ -237,6 +237,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Save each button's original content and replace with spinner
         const originals = Array.from($buyButtons).map(b => b.innerHTML);
         $buyButtons.forEach(b => {
+          b.style.minWidth = `${b.getBoundingClientRect().width}px`;
           b.disabled = true;
           b.innerHTML = `
             <div style="display:inline-flex;align-items:center;justify-content:center;gap:8px;">
@@ -273,6 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           $buyButtons.forEach((b, i) => {
             b.disabled = false;
             b.innerHTML = originals[i];
+            b.style.minWidth = '';
           });
         }
       });
