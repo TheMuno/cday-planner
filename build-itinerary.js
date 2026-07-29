@@ -825,31 +825,46 @@ async function resolvePlaceFromText(query) {
 // component Places already gave us, else reverse-geocode the coordinates for it, else fall back
 // to the nearest broader area so the ez-guide always has something to show.
 async function extractNeighborhood(addressComponents, lat, lng) {
+  console.log('[neighborhood] extractNeighborhood called with', { addressComponents, lat, lng });
+
   const find = (...types) => addressComponents.find(c => types.some(t => c.types.includes(t)))?.longText;
   const findLast = (...types) => addressComponents.findLast(c => types.some(t => c.types.includes(t)))?.longText;
 
   const fromComponents = findLast('neighborhood');
-  if (fromComponents) return fromComponents;
+  if (fromComponents) {
+    console.log('[neighborhood] resolved from addressComponents:', fromComponents);
+    return fromComponents;
+  }
 
   try {
     const geocoder = new google.maps.Geocoder();
     const { results } = await geocoder.geocode({ location: { lat, lng } });
+    console.log('[neighborhood] geocode results:', results);
     for (const result of results) {
       if (result.types.includes('neighborhood')) {
         const comp = result.address_components.find(c => c.types.includes('neighborhood'));
-        if (comp) return comp.long_name;
+        if (comp) {
+          console.log('[neighborhood] resolved from geocode:', comp.long_name);
+          return comp.long_name;
+        }
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    console.log('[neighborhood] geocode call failed:', e);
+  }
 
-  return find('sublocality', 'sublocality_level_1') || find('locality') || '';
+  const fallback = find('sublocality', 'sublocality_level_1') || find('locality') || '';
+  console.log('[neighborhood] resolved from fallback:', fallback);
+  return fallback;
 }
 
 async function buildSaveObjFromPlace(place) {
   const placeObj = place.toJSON();
   const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
   const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+  console.log('[neighborhood] buildSaveObjFromPlace placeObj:', placeObj);
   const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
+  console.log('[neighborhood] final neighborhood for', displayName, '=', neighborhood);
 
   return {
     location: { lat, lng },
@@ -1911,7 +1926,9 @@ async function enrichPlaceDetails(saveObj) {
     const placeObj = place.toJSON();
 
     saveObj.displayName = saveObj.displayName || placeObj.displayName;
+    console.log('[neighborhood] enrichPlaceDetails placeObj:', placeObj, 'saveObj.location:', saveObj.location);
     saveObj.neighborhood = saveObj.neighborhood || await extractNeighborhood(placeObj.addressComponents || [], saveObj.location?.lat, saveObj.location?.lng);
+    console.log('[neighborhood] enrichPlaceDetails resolved neighborhood for', saveObj.displayName, '=', saveObj.neighborhood);
     saveObj.editorialSummary = placeObj.editorialSummary;
     saveObj.address = placeObj.formattedAddress || '';
     saveObj.rating = placeObj.rating ?? saveObj.rating ?? null;
