@@ -93,11 +93,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, { once: true });
   }
 
-  document.querySelector('[data-ak="go-back-to-step1"]')?.addEventListener('click', e => {
-    e.preventDefault();
-    window.location.href = '/itinerary-maker/itinerary-maker';
-  });
-
   document.querySelector('[data-ak="continue-to-step3"]')?.addEventListener('click', e => {
     e.preventDefault();
     window.location.href = '/itinerary-maker/verify-itinerary';
