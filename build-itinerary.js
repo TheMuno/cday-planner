@@ -183,10 +183,21 @@ window.addEventListener('load', async () => {
     $continueBtn.innerHTML = continueBtnOriginalHTML;
   }
 
+  function resetStepLink($link) {
+    delete $link.dataset.akSaving;
+    $link.style.opacity = '';
+    const $text = $link.querySelector('.u-body-cod');
+    $text?.classList.remove('ak-step2-btn-loading');
+    $text?.querySelector('.ak-step2-spinner')?.remove();
+  }
+
   // Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated away,
-  // so without this the button can come back stuck mid-spinner if they hit back after clicking it.
+  // so without this the button (and the "Calc" breadcrumb link) can come back stuck mid-spinner if
+  // they hit back after clicking it.
   window.addEventListener('pageshow', e => {
-    if (e.persisted) resetContinueBtn();
+    if (!e.persisted) return;
+    resetContinueBtn();
+    document.querySelectorAll('[href="/itinerary-maker/pass-calculator"]').forEach(resetStepLink);
   });
 
   $continueBtn?.addEventListener('click', async e => {
@@ -237,6 +248,55 @@ window.addEventListener('load', async () => {
   document.querySelector('.itinerary_ui_bulk_finish')?.addEventListener('click', e => {
     e.preventDefault();
     handleBulkImport();
+  });
+
+  // The "Calc" step breadcrumb link points straight at pass-calculator — without this it navigates
+  // before the trip is saved, same gap continue-to-step2 used to have.
+  document.querySelectorAll('[href="/itinerary-maker/pass-calculator"]').forEach($link => {
+    $link.addEventListener('click', async e => {
+      e.preventDefault();
+      if ($link.dataset.akSaving) return;
+      $link.dataset.akSaving = 'true';
+      $link.style.opacity = '0.8';
+
+      if (!document.getElementById('ak-step2-spinner-style')) {
+        const style = document.createElement('style');
+        style.id = 'ak-step2-spinner-style';
+        style.textContent = `
+          @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+          .ak-step2-spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid currentColor; border-top-color: transparent;
+            border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+            opacity: 0.8; flex-shrink: 0;
+          }
+          .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+        `;
+        document.head.appendChild(style);
+      }
+
+      // Insert the spinner right before the "Calc" text itself, not just anywhere in the link,
+      // since the link also contains the step-number bubble before it.
+      const $text = $link.querySelector('.u-body-cod');
+      const $spinner = document.createElement('span');
+      $spinner.className = 'ak-step2-spinner';
+      if ($text) {
+        $text.classList.add('ak-step2-btn-loading');
+        $text.insertBefore($spinner, $text.firstChild);
+      }
+
+      const stepLinkTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+      try {
+        await Promise.race([saveAttractionsDB(), stepLinkTimeout]);
+        window.location.href = $link.getAttribute('href');
+      } catch (err) {
+        console.error(err);
+        resetStepLink($link);
+        alertify.alert(navigator.onLine
+          ? "We couldn't save your trip. Please try again in a moment."
+          : "You're offline — please check your internet connection and try again.");
+      }
+    });
   });
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
