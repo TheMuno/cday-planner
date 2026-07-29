@@ -325,6 +325,11 @@ function updatePassBox($box, result, individualTotal) {
   const $contain = $box.querySelector('.calc_packages_box_contain');
   if (!$contain) return;
 
+  // Single price -> black background; range -> orange (the current default).
+  const isSingle = result?.shape === 'single';
+  $box.classList.toggle('is-black', isSingle);
+  $box.classList.toggle('is-orange-gdrn', !isSingle);
+
   if (!result) {
     renderSinglePriceShape($contain, '$0');
     updateBoxContent($box, '', 'No attractions on this pass');
