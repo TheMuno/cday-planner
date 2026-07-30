@@ -331,6 +331,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
     let isLoading = false;
 
+    // [data-ak-download-guide] is a Webflow component wrapper (.btn_main_wrap
+    // carries the button's background/border) around a text label
+    // ([data-ak="popup-action-label"]) — swapping the whole button's
+    // innerHTML wipes .btn_main_wrap out, leaving a bare spinner+text with no
+    // button chrome. Swap just the label instead so the chrome stays intact.
+    const getLabelEl = btn => btn.querySelector('[data-ak="popup-action-label"]') || btn;
+
     $downloadBtns.forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -341,10 +348,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Only the clicked button shows the spinner/text; the rest are just
         // disabled so a second PDF generation can't be started mid-flight.
-        const originals = Array.from($downloadBtns).map(b => b.innerHTML);
+        const originals = Array.from($downloadBtns).map(b => getLabelEl(b).innerHTML);
         $downloadBtns.forEach(b => { b.disabled = true; });
         btn.style.minWidth = `${btn.getBoundingClientRect().width}px`;
-        btn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
+        getLabelEl(btn).innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
         $itineraryWrap?.classList.add('disable');
 
         try {
@@ -363,7 +370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           console.error('Download error:', err);
         } finally {
           isLoading = false;
-          $downloadBtns.forEach((b, i) => { b.disabled = false; b.innerHTML = originals[i]; });
+          $downloadBtns.forEach((b, i) => { b.disabled = false; getLabelEl(b).innerHTML = originals[i]; });
           btn.style.minWidth = '';
           $itineraryWrap?.classList.remove('disable');
         }
