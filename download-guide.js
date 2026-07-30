@@ -6,14 +6,18 @@
  *   data-ak="trip-heading"        — trip heading line, user's name gets filled in
  *   data-ak="trip-heading-date"   — travel date range, gets filled in
  *   data-ak="download-ez-guide"   — free itinerary PDF download button(s)
- *   data-ak-download-guide        — Smart Guide (paid) PDF download button(s),
- *                                    hidden until purchase is confirmed
+ *
+ * data-ak-download-guide (Smart Guide) is NOT handled here — stripe-purchase.js runs
+ * sitewide and already wires/reveals that button once purchase is confirmed. Wiring it
+ * again here would double-fire the PDF generation on click.
+ *
+ * data-ak="download-google-maps-btn" is NOT handled here either — wired directly by
+ * the KMLExport scripts.js embed (window.akWireGoogleMapsBtn), included on this page
+ * alongside its kml-export/*.js helpers.
  */
 
 import { initializeApp, getApps, getApp }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFunctions, httpsCallable }
@@ -31,13 +35,11 @@ const firebaseConfig = {
 
 const app       = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth      = getAuth(app);
-const db        = getFirestore(app);
 const functions = getFunctions(app);
 
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine    = document.querySelector('[data-ak="trip-heading-date"]');
 const $ezGuideBtns     = document.querySelectorAll('[data-ak="download-ez-guide"]');
-const $smartGuideBtns  = document.querySelectorAll('[data-ak-download-guide]');
 
 // Mirrors get-guide.js / verify-itinerary.js / build-itinerary.js's restoreTripHeading().
 function restoreTripHeading() {
@@ -192,48 +194,6 @@ function wireEzGuideButton(user) {
   });
 }
 
-// --- Smart Guide PDF (requires hasPurchasedPlan) ---
-function wireSmartGuideButton(user) {
-  if (!$smartGuideBtns.length) return;
-  let isLoading = false;
-
-  $smartGuideBtns.forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      if (isLoading) return;
-      isLoading = true;
-
-      injectPdfSpinnerStyle();
-
-      // Only the clicked button shows the spinner/text; the rest are just
-      // disabled so a second PDF generation can't be started mid-flight.
-      const originals = Array.from($smartGuideBtns).map(b => b.innerHTML);
-      $smartGuideBtns.forEach(b => { b.disabled = true; });
-      btn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
-
-      try {
-        const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
-        const { data } = await generateGuide({ userId: `user-${user.email}` });
-
-        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-        const blob  = new Blob([bytes], { type: 'application/pdf' });
-        const url   = URL.createObjectURL(blob);
-        const a     = document.createElement('a');
-        a.href      = url;
-        a.download  = data.filename || 'smart-guide.pdf';
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (err) {
-        console.error('Smart guide download failed:', err);
-        alert('Failed to generate PDF. Please try again.');
-      } finally {
-        isLoading = false;
-        $smartGuideBtns.forEach((b, i) => { b.disabled = false; b.innerHTML = originals[i]; });
-      }
-    });
-  });
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
@@ -247,21 +207,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 
   wireEzGuideButton(user);
-
-  // Smart Guide button already starts hidden via data-ak-hidden in Webflow;
-  // only reveal it once purchase is confirmed.
-  try {
-    const userSnap  = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
-    const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
-
-    if (purchased) {
-      $smartGuideBtns.forEach(btn => {
-        btn.removeAttribute('data-ak-hidden');
-        btn.style.display = ''; // clear any Webflow inline display:none
-      });
-      wireSmartGuideButton(user);
-    }
-  } catch (err) {
-    console.error('Purchase check failed:', err);
-  }
 });
