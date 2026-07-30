@@ -20,6 +20,7 @@ const auth = getAuth(app);
 const $downloadBtns = document.querySelectorAll('[data-ak="download-ez-guide"]');
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
+const $proceedToDownloadBtns = document.querySelectorAll('[data-ak="proceed-to-download"]');
 
 // Mirrors verify-itinerary.js / build-itinerary.js's restoreTripHeading().
 function restoreTripHeading() {
@@ -109,6 +110,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   restoreTripHeading();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
+  $proceedToDownloadBtns.forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      window.location.href = '/itinerary-maker/download-your-smart-guide';
+    });
+  });
 });
 
 // --- Download as PDF ---
