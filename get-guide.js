@@ -151,13 +151,15 @@ if ($downloadBtns.length) {
       isLoading = true;
       injectPdfSpinnerStyle();
 
+      // Only the clicked button shows the spinner/text; the rest are just
+      // disabled so a second PDF generation can't be started mid-flight.
       const originals = Array.from($downloadBtns).map(b => b.innerHTML);
       $downloadBtns.forEach(b => {
-        b.style.minWidth = `${b.getBoundingClientRect().width}px`;
-        b.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
         b.disabled = true;
         b.style.opacity = '0.8';
       });
+      btn.style.minWidth = `${btn.getBoundingClientRect().width}px`;
+      btn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
 
       try {
         const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");

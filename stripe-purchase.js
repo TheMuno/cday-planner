@@ -254,16 +254,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (isLoading) return;
         isLoading = true;
 
-        // Replace each button's content with a spinner (originals captured above)
-        $buyButtons.forEach(b => {
-          b.style.minWidth = `${b.getBoundingClientRect().width}px`;
-          b.disabled = true;
-          b.innerHTML = `
-            <div style="display:inline-flex;align-items:center;justify-content:center;gap:8px;">
-              <div style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:currentColor;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
-              <span>Processing...</span>
-            </div>`;
-        });
+        // Only the clicked button shows the spinner/text; the rest are just
+        // disabled so a second checkout can't be started mid-flight.
+        $buyButtons.forEach(b => { b.disabled = true; });
+        btn.style.minWidth = `${btn.getBoundingClientRect().width}px`;
+        btn.innerHTML = `
+          <div style="display:inline-flex;align-items:center;justify-content:center;gap:8px;">
+            <div style="width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:currentColor;border-radius:50%;animation:ak-spin 0.7s linear infinite;flex-shrink:0;"></div>
+            <span>Processing...</span>
+          </div>`;
 
         try {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
@@ -340,11 +339,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         injectPdfSpinnerStyle();
 
+        // Only the clicked button shows the spinner/text; the rest are just
+        // disabled so a second PDF generation can't be started mid-flight.
         const originals = Array.from($downloadBtns).map(b => b.innerHTML);
-        $downloadBtns.forEach(b => {
-          b.disabled = true;
-          b.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
-        });
+        $downloadBtns.forEach(b => { b.disabled = true; });
+        btn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
         $itineraryWrap?.classList.add('disable');
 
         try {
