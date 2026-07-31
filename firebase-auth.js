@@ -480,10 +480,10 @@ function showHotelReferralModal(hotel) {
 
     const perksList = document.createElement("ul");
     Object.assign(perksList.style, {
-      margin: "0 0 20px", padding: "0", listStyle: "none",
+      margin: "0 0 20px", padding: "0 0 0 20px", listStyle: "disc",
       fontSize: "14px", color: "#111", lineHeight: "1.8",
     });
-    ["🗺️ Curated neighborhood & transit guide", "⚡ Priority check-in & room coordination", "🎁 Exclusive guest discounts"]
+    ["Curated neighborhood & transit guide", "Priority check-in & room coordination", "Exclusive guest discounts"]
       .forEach((text) => {
         const li = document.createElement("li");
         li.textContent = text;
