@@ -1018,7 +1018,7 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
   const $location = $listName.querySelector('[data-ak="attraction-location"]').cloneNode(true);
   $location.removeAttribute('data-ak-hidden');
   $location.querySelector('[data-ak="location-title"]').textContent = name;
-  $location.querySelector('[data-ak="location-link-text"]').textContent = name;
+  $location.querySelector('[data-ak="location-link-text"]').textContent = saveObj.neighborhood || name;
   $location.marker = marker;
   $location.saveObj = saveObj;
 
