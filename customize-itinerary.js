@@ -1349,7 +1349,7 @@ function setupHotelNAirports(hotel, arrivalAirport, departureAirport) {
       markerObj[location === arrivalAirport ? 'airport-arrival' : 'airport-departure'] = marker;
     }
 
-    addLocationToResultWrap(displayName, marker, $resultWrap);
+    addLocationToResultWrap(displayName, marker, $resultWrap, saveObj);
   }
 }
 
@@ -1363,7 +1363,7 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
   const $location = $listName.querySelector('[data-ak="attraction-location"]').cloneNode(true);
   $location.classList.remove('hidden');
   $location.querySelector('[data-ak="location-title"]').textContent = name;
-  $location.querySelector('[data-ak="location-link-text"]').textContent = name;
+  $location.querySelector('[data-ak="location-link-text"]').textContent = saveObj.neighborhood || name;
   $location.marker = marker;
   $location.saveObj = saveObj;
 
@@ -2170,25 +2170,26 @@ function capitalize(str) {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
 
     map.panTo(place.viewport || place.location);
 
     const placeObj = place.toJSON();
     const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
 
     const $userInputWrap = res.target?.Zg;
     const $userInput = $userInputWrap?.querySelector('input');
     if ($userInput) $userInput.value = '';
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+    const saveObj = { displayName, location: { lat, lng }, neighborhood, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
     markerObj['hotel'] = marker;
 
-    addLocationToResultWrap(displayName, marker, document.querySelector('[data-ak="hotel-search-result"]'));
+    addLocationToResultWrap(displayName, marker, document.querySelector('[data-ak="hotel-search-result"]'), saveObj);
     setUnsavedChangesFlag();
 
     localStorage['ak-hotel'] = JSON.stringify(saveObj);
@@ -2212,19 +2213,20 @@ function capitalize(str) {
     placeAutocomplete.addEventListener('gmp-select', async res => {
       const { placePrediction } = res;
       const place = placePrediction.toPlace();
-      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
+      await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'addressComponents', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
 
       map.panTo(place.viewport || place.location);
 
       const placeObj = place.toJSON();
       const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
       const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+      const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
 
       const $userInputWrap = res.target?.Zg;
       const $userInput = $userInputWrap?.querySelector('input');
       if ($userInput) $userInput.value = '';
 
-      const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
+      const saveObj = { displayName, location: { lat, lng }, neighborhood, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl };
 
       const pin = getCorrectTransportationPinUrl(type);
       const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
@@ -2243,7 +2245,7 @@ function capitalize(str) {
       }
 
       const $resultWrap = autocomplete.closest('.form_row').querySelector('[data-ak="airport-search-result"]');
-      addLocationToResultWrap(displayName, marker, $resultWrap);
+      addLocationToResultWrap(displayName, marker, $resultWrap, saveObj);
       setUnsavedChangesFlag();
     });
   });
@@ -2256,11 +2258,11 @@ function getCorrectTransportationPinUrl(type) {
   return airportMarkerPinUrl;
 }
 
-function addLocationToResultWrap(name, marker, $resultWrap) {
+function addLocationToResultWrap(name, marker, $resultWrap, saveObj = {}) {
   const $location = document.querySelector('[data-ak="attraction-location"]').cloneNode(true);
   $location.classList.remove('hidden');
   $location.querySelector('[data-ak="location-title"]').textContent = name;
-  $location.querySelector('[data-ak="location-link-text"]').textContent = name;
+  $location.querySelector('[data-ak="location-link-text"]').textContent = saveObj.neighborhood || name;
   $location.marker = marker;
   $resultWrap.innerHTML = '';
   $resultWrap.append($location);
