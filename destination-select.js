@@ -1,7 +1,7 @@
 const $attractionsWrap = document.querySelector('[data-ak="attractions-wrap"]');
 
 // Same Places API (New) key & REST pattern customize-itinerary_dev.js uses for searchNearby
-const PLACES_API_KEY = 'AIzaSyCMmi6kGAOGfMzK4CBvNiVBB7T6OjGbsU4';
+const PLACES_API_KEY = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
 const PLACE_DETAILS_FIELDS = 'id,displayName,editorialSummary,types,addressComponents,formattedAddress,rating,websiteUri,nationalPhoneNumber,userRatingCount,photos';
 
 restoreSavedSelections();
