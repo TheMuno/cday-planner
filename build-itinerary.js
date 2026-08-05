@@ -24,6 +24,23 @@ try {
   db = getFirestore(app); // Firestore already initialized for this app elsewhere on the page
 }
 
+// Reveal sign-in-to-save/continue-to-step2 as soon as auth state is known, independent of
+// window 'load' (waits on every page resource, incl. images), mapReady (Maps script + library
+// loads), and syncWithDB (Firestore round-trip). Those can be slow/variable on a bad connection,
+// and none of them are actually needed to know which button to show — gating the reveal on them
+// left the buttons invisible long enough that users would think there was nothing there.
+onAuthStateChanged(auth, user => {
+  const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
+  const $signInBtn = document.querySelector('[data-ak="sign-in-to-save"]');
+  if (user) {
+    $continueBtn?.removeAttribute('data-ak-hidden');
+    $signInBtn?.setAttribute('data-ak-hidden', 'true');
+  } else {
+    $signInBtn?.removeAttribute('data-ak-hidden');
+    $continueBtn?.setAttribute('data-ak-hidden', 'true');
+  }
+});
+
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
 const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
@@ -159,12 +176,6 @@ window.addEventListener('load', async () => {
     else unwrapSectionsWithContent();
   });
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
-
-  if (auth.currentUser) {
-    document.querySelector('[data-ak="continue-to-step2"]')?.removeAttribute('data-ak-hidden');
-  } else {
-    document.querySelector('[data-ak="sign-in-to-save"]')?.removeAttribute('data-ak-hidden');
-  }
 
   document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
     e.preventDefault();

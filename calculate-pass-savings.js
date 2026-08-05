@@ -169,9 +169,27 @@ function showRedirectLoader(message) {
   document.body.appendChild(overlay);
 }
 
+// Attractions/Passes sheet data barely changes and step1->2->3 of the funnel can all fetch it
+// within the same sitting, so cache it in sessionStorage for a short window instead of re-hitting
+// the (slow, cold-start-prone) Cloud Run endpoint on every page load. sessionStorage keeps this
+// scoped to the current tab session — closing the tab always starts clean.
+const SHEET_CACHE_KEY = 'ak-sheet-data-cache';
+const SHEET_CACHE_TTL_MS = 10 * 60 * 1000;
+
 async function fetchSheetData() {
+  try {
+    const cached = JSON.parse(sessionStorage[SHEET_CACHE_KEY] || 'null');
+    if (cached && Date.now() - cached.ts < SHEET_CACHE_TTL_MS) return cached.data;
+  } catch (_) {}
+
   const res = await fetch(firebaseUrl);
-  return res.json();
+  const data = await res.json();
+
+  try {
+    sessionStorage[SHEET_CACHE_KEY] = JSON.stringify({ data, ts: Date.now() });
+  } catch (_) {}
+
+  return data;
 }
 
 // build-itinerary.js's continue-to-step2 never sets ak-y-total-attractions (that's only written by
