@@ -337,9 +337,10 @@ function updatePassBox($box, $purchaseBtn, result, individualTotal) {
   const $contain = $box.querySelector('.calc_packages_box_contain');
   if (!$contain) return;
 
-  // Single price -> black background; range -> orange (the current default). The purchase
-  // button below the box follows the same theme (dark for black, brand for orange).
-  const isSingle = result?.shape === 'single';
+  // Single price (including no attractions on this pass at all) -> black background; range ->
+  // orange. The purchase button below the box follows the same theme (dark for black, brand
+  // for orange).
+  const isSingle = !result || result.shape === 'single';
   $box.classList.toggle('is-black', isSingle);
   $box.classList.toggle('is-orange-gdrn', !isSingle);
   if ($purchaseBtn) {
