@@ -20,15 +20,6 @@ const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
 
-// Typing-indicator dots shown while $attractionsOnPasses carries data-ak-skeleton-pulse
-// (see loader.css) — injected once here since the box's own markup doesn't have them.
-if ($attractionsOnPasses) {
-  const $dots = document.createElement('div');
-  $dots.className = 'ak-typing-dots';
-  $dots.innerHTML = '<span></span><span></span><span></span>';
-  $attractionsOnPasses.appendChild($dots);
-}
-
 function hasStoredPlaceIds() {
   try {
     return JSON.parse(localStorage['ak-place-ids'] || '[]').length > 0;
@@ -126,20 +117,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles.
-  // The skeleton-pulse spinner is kept running until akRegisterReveal actually fires for
-  // 'attractions' below — that reveal can be held up further by buy-plan's own async check
-  // (stripe-purchase.js's Firestore lookup), so stopping the spinner any earlier here would leave
-  // a gap where the spinner is gone but the box (and its numbers) still isn't showing yet.
+  // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
+  // .finally() so Y still shows up even if the sheet fetch fails.
   populateOnPassTickets().catch(err => {
     console.error(err);
     // Fail-safe: X couldn't be computed (e.g. sheet fetch failed) before the reveal below ever
     // ran, so register a no-op here — otherwise buy-plan would wait forever for this key.
-    if ($attractionsOnPasses) {
-      akRegisterReveal('attractions', () => {
-        $attractionsOnPasses.removeAttribute('data-ak-skeleton-pulse');
-      });
-    }
+    if ($attractionsOnPasses) akRegisterReveal('attractions', () => {});
   }).finally(() => {
     renderInitTickets();
   });
@@ -271,7 +255,6 @@ async function populateOnPassTickets() {
   if ($onPassCounter) $onPassCounter.textContent = X;
   if ($attractionsOnPasses) {
     akRegisterReveal('attractions', () => {
-      $attractionsOnPasses.removeAttribute('data-ak-skeleton-pulse');
       if (X > 0) $attractionsOnPasses.removeAttribute('data-ak-hidden');
       else $attractionsOnPasses.setAttribute('data-ak-hidden', 'true');
     });

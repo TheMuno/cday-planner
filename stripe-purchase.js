@@ -80,15 +80,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Show spinners immediately while auth + Firestore check runs
   showSpinners($buyButtons);
 
-  // Fail-safe: remove spinners after 8s if auth or Firestore hasn't responded
+  // Fail-safe: force spinners off after 8s even if the combined reveal (below) never fires —
+  // e.g. attractions-on-passes' own sheet fetch hangs indefinitely.
   const spinnerTimeout = setTimeout(removeSpinners, 8000);
 
   try {
     const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
     if (!user) {
-      clearTimeout(spinnerTimeout);
-      removeSpinners();
       setUI(false);
       broadcastPurchaseStatus(false);
       wireBuyButtonsLoggedOut($buyButtons);
@@ -107,8 +106,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (plan.description) localStorage.setItem('ak-sm-desc',  plan.description);
     }
 
-    clearTimeout(spinnerTimeout);
-    removeSpinners();
     setUI(purchased);
     broadcastPurchaseStatus(purchased);
 
@@ -136,8 +133,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       wireGoogleMapsButton($downloadMapsBtns);
     }
   } catch (err) {
-    clearTimeout(spinnerTimeout);
-    removeSpinners();
     console.error('Purchase check failed:', err);
     // Can't confirm purchase status (Firestore unreachable/timed out) — degrade to the
     // not-purchased UI instead of leaving buy-plan/pre-purchase stuck hidden forever.
@@ -174,6 +169,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const onUpgradePage = window.location.pathname === '/upgrade';
 
     akRegisterReveal('buyPlan', () => {
+      // Spinners come down here, not as soon as this file's own auth/Firestore check settles —
+      // attractions-on-passes (calculate-pass-savings.js) can still be waiting on its own sheet
+      // fetch at that point, and removing the spinner early leaves a gap where it's gone but the
+      // box it was covering for is still hidden.
+      clearTimeout(spinnerTimeout);
+      removeSpinners();
+
       $buyButtons.forEach(btn => {
         if (purchased) {
           if (onUpgradePage) {
@@ -388,7 +390,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!document.querySelector('#ak-spinner-style')) {
       const style = document.createElement('style');
       style.id = 'ak-spinner-style';
-      style.textContent = '@keyframes ak-spin { to { transform: rotate(360deg); } }';
+      style.textContent = `
+        @keyframes ak-spin { to { transform: rotate(360deg); } }
+        @keyframes ak-typing-bounce {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-4px); opacity: 1; }
+        }
+      `;
       document.head.appendChild(style);
     }
 
@@ -417,6 +425,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       return spinner;
     };
 
+    // attractions-on-passes gets the typing-dots treatment; every other buy-plan spinner keeps
+    // the plain rotating circle above.
+    const makeTypingDotsSpinner = () => {
+      const spinner = document.createElement('div');
+      spinner.setAttribute('data-ak-spinner', '');
+      spinner.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:5px;padding:16px 0;';
+      const dotStyle = 'width:6px;height:6px;border-radius:50%;background:#B0ADA6;animation:ak-typing-bounce 1.2s infinite ease-in-out;';
+      spinner.innerHTML = `
+        <div style="${dotStyle}"></div>
+        <div style="${dotStyle}animation-delay:0.15s;"></div>
+        <div style="${dotStyle}animation-delay:0.3s;"></div>
+      `;
+      return spinner;
+    };
+
     $postPurchaseEls.forEach(el => {
       // This particular buy-plan button lives in the same section as attractions-on-passes — its
       // own spinner would be redundant with the one below, so skip it here.
@@ -428,7 +451,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // calculate-pass-savings.js) independent of the buy-plan check above — give its section a
     // spinner too, in place of the one skipped on its buy-plan button.
     const $attractionsOnPasses = document.querySelector('[data-ak="attractions-on-passes"]');
-    if ($attractionsOnPasses) $attractionsOnPasses.parentNode.insertBefore(makeSpinner(), $attractionsOnPasses);
+    if ($attractionsOnPasses) $attractionsOnPasses.parentNode.insertBefore(makeTypingDotsSpinner(), $attractionsOnPasses);
   }
 
   function removeSpinners() {
