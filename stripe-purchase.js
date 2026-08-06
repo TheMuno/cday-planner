@@ -7,6 +7,7 @@
  *   data-ak-pre-purchase     — any non-interactive element shown before purchase, hidden after
  *   data-ak-post-purchase    — any element revealed after purchase
  *   data-ak-download-guide   — download button(s) revealed after purchase
+ *   data-ak="download-flagship-smart-guide" — flagship smart guide download button(s), revealed after purchase
  *
  * All elements are queried after window.load so Webflow has fully rendered the page.
  *
@@ -72,6 +73,7 @@ function akRegisterReveal(key, reveal) {
 document.addEventListener('DOMContentLoaded', async () => {
   const $buyButtons      = document.querySelectorAll('[data-ak="buy-plan"]');
   const $downloadBtns    = document.querySelectorAll('[data-ak-download-guide]');
+  const $flagshipDownloadBtns = document.querySelectorAll('[data-ak="download-flagship-smart-guide"]');
   const $downloadMapsBtns = document.querySelectorAll('[data-ak="download-google-maps-btn"]');
   const $prePurchaseEls  = document.querySelectorAll('[data-ak-pre-purchase]');
   const $postPurchaseEls = document.querySelectorAll('[data-ak-post-purchase]');
@@ -122,7 +124,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (!purchased && isPurchaseReturn) {
-      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls);
+      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, $flagshipDownloadBtns);
       return;
     }
 
@@ -130,6 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       wireBuyButtons(user, $buyButtons);
     } else {
       wireDownloadButton(user, $downloadBtns);
+      wireDownloadButton(user, $flagshipDownloadBtns, 'generateFlagshipSmartGuidePdf', 'flagship-smart-guide.pdf');
       wireGoogleMapsButton($downloadMapsBtns);
     }
   } catch (err) {
@@ -209,6 +212,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     $downloadBtns.forEach(btn => {
+      if (purchased) {
+        btn.removeAttribute('data-ak-hidden');
+        btn.style.display = ''; // clear any Webflow inline display:none
+      } else {
+        btn.setAttribute('data-ak-hidden', '');
+      }
+    });
+
+    $flagshipDownloadBtns.forEach(btn => {
       if (purchased) {
         btn.removeAttribute('data-ak-hidden');
         btn.style.display = ''; // clear any Webflow inline display:none
@@ -327,7 +339,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.head.appendChild(style);
   }
 
-  function wireDownloadButton(user, $downloadBtns) {
+  function wireDownloadButton(user, $downloadBtns, functionName = 'generateAdvancedItineraryPdf', defaultFilename = 'smart-guide.pdf') {
     if (!$downloadBtns.length) return;
 
     const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
@@ -357,7 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         $itineraryWrap?.classList.add('disable');
 
         try {
-          const generateGuide = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
+          const generateGuide = httpsCallable(functions, functionName, { timeout: 120000 });
           const { data } = await generateGuide({ userId: `user-${user.email}` });
 
           const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
@@ -365,7 +377,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const url   = URL.createObjectURL(blob);
           const a     = document.createElement('a');
           a.href      = url;
-          a.download  = data.filename || 'smart-guide.pdf';
+          a.download  = data.filename || defaultFilename;
           a.click();
           URL.revokeObjectURL(url);
         } catch (err) {
@@ -468,7 +480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  async function pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, attempts = 0) {
+  async function pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, $flagshipDownloadBtns, attempts = 0) {
     if (attempts >= 10) return;
 
     await new Promise(r => setTimeout(r, 1000));
@@ -486,10 +498,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       setUI(true);
       broadcastPurchaseStatus(true);
       wireDownloadButton(user, $downloadBtns);
+      wireDownloadButton(user, $flagshipDownloadBtns, 'generateFlagshipSmartGuidePdf', 'flagship-smart-guide.pdf');
       wireGoogleMapsButton($downloadMapsBtns);
       history.replaceState(null, '', window.location.pathname);
     } else {
-      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, attempts + 1);
+      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, $flagshipDownloadBtns, attempts + 1);
     }
   }
 });
