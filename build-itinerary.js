@@ -522,6 +522,7 @@ async function setupHotelAutocomplete() {
 
     const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
     if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+    showRemoveIcon($hotelNameEl);
 
     localStorage['ak-hotel'] = JSON.stringify(saveObj);
     localStorage['ak-update-hotel'] = true;
@@ -582,6 +583,7 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
 
     const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
     if ($nameEl) $nameEl.textContent = displayName;
+    showRemoveIcon($nameEl);
 
     localStorage[storageKey] = JSON.stringify(saveObj);
     localStorage[updateKey] = true;
@@ -761,6 +763,21 @@ function findMapPopupField(marker) {
   return MAP_POPUP_FIELDS.find(({ markerKey }) => markerObj[markerKey] === marker) || null;
 }
 
+// The remove-location icon sits in .ci009_left-icons-wrap, a sibling of the name element inside
+// .flex-row — it starts [data-ak-hidden] in the markup since there's nothing to remove until a
+// hotel/airport is actually added, and shouldn't reappear for the default placeholder text.
+function getRemoveIconWrap($nameEl) {
+  return $nameEl?.closest('.flex-row')?.querySelector('.ci009_left-icons-wrap') || null;
+}
+
+function showRemoveIcon($nameEl) {
+  getRemoveIconWrap($nameEl)?.removeAttribute('data-ak-hidden');
+}
+
+function hideRemoveIcon($nameEl) {
+  getRemoveIconWrap($nameEl)?.setAttribute('data-ak-hidden', 'true');
+}
+
 function clearMapPopupField(field) {
   const marker = markerObj[field.markerKey];
   if (marker) marker.setMap(null);
@@ -771,6 +788,7 @@ function clearMapPopupField(field) {
 
   const $nameEl = document.querySelector(field.nameSelector);
   if ($nameEl) $nameEl.textContent = field.defaultText || '';
+  hideRemoveIcon($nameEl);
 
   setUnsavedChangesFlag();
 }
@@ -1255,6 +1273,7 @@ function restoreHotel() {
 
   const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
   if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+  showRemoveIcon($hotelNameEl);
 }
 
 function restoreAirports() {
@@ -1279,6 +1298,7 @@ function restoreAirports() {
 
     const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
     if ($nameEl) $nameEl.textContent = displayName;
+    showRemoveIcon($nameEl);
 
     AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
       const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
