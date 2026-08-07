@@ -1059,14 +1059,31 @@ function attractionExists(wrap, name) {
 
 function handleRemoveLocation(e) {
   if (!e.target.closest('[data-ak="remove-location"]')) return;
-  const $attraction = e.target.closest('[data-ak="attraction-location"]');
-  if (!$attraction || !isInAttractionsSlider($attraction)) return;
 
-  const name = $attraction.querySelector('[data-ak="location-title"]')?.textContent?.trim() || 'this location';
+  const $attraction = e.target.closest('[data-ak="attraction-location"]');
+  if ($attraction && isInAttractionsSlider($attraction)) {
+    const name = $attraction.querySelector('[data-ak="location-title"]')?.textContent?.trim() || 'this location';
+    alertify.confirm(
+      `Remove ${name}?`,
+      () => removeAttractionLocation($attraction),
+      () => {}
+    );
+    return;
+  }
+
+  // Hotel/airport fields aren't [data-ak="attraction-location"] items — their remove-location link is a
+  // sibling of the [data-ak-map-popup] trigger (e.g. [data-ak="map-hotel-name"]) inside .flex-row, not an
+  // ancestor, so look sideways for it and match the same way handleFieldMapPopup does off its data-ak.
+  const $fieldTrigger = e.target.closest('.flex-row')?.querySelector('[data-ak-map-popup]');
+  const triggerName = $fieldTrigger?.getAttribute('data-ak');
+  const field = triggerName && MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
+  if (!field) return;
+
+  const name = document.querySelector(field.nameSelector)?.textContent?.trim() || 'this location';
 
   alertify.confirm(
     `Remove ${name}?`,
-    () => removeAttractionLocation($attraction),
+    () => clearMapPopupField(field),
     () => {}
   );
 }
