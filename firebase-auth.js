@@ -43,7 +43,7 @@ const firebaseConfig = {
 };
 
 // ── 2. WHERE TO SEND THE USER AFTER LOGIN ───────────────────
-const REDIRECT_AFTER_LOGIN = localStorage.getItem('ak-login-redirect') || '/itinerary-maker/itinerary-maker-open';
+const REDIRECT_AFTER_LOGIN = localStorage.getItem('ak-login-redirect') || '/smart-guide/itinerary';
 
 // ── 2b. MAKE.COM WEBHOOK (fires once per genuine sign-in) ────
 const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd02um';

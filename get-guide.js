@@ -61,7 +61,7 @@ function restoreTripHeading() {
 // Mirrors verify-itinerary.js / calculate-pass-savings.js's redirectToStep1().
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker-open'; }, 1500);
+  setTimeout(() => { window.location.href = '/smart-guide/itinerary'; }, 1500);
 }
 
 // Mirrors verify-itinerary.js / calculate-pass-savings.js's showRedirectLoader().
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $proceedToDownloadBtns.forEach(btn => {
     btn.addEventListener('click', e => {
       e.preventDefault();
-      window.location.href = '/itinerary-maker/download-your-smart-guide';
+      window.location.href = '/smart-guide/download-your-smart-guide';
     });
   });
 });

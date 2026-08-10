@@ -70,7 +70,7 @@ function restoreTripHeading() {
 // Mirrors calculate-pass-savings.js's redirectToStep1().
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker-open'; }, 1500);
+  setTimeout(() => { window.location.href = '/smart-guide/itinerary'; }, 1500);
 }
 
 // Mirrors calculate-pass-savings.js's showRedirectLoader().
@@ -279,7 +279,7 @@ function injectPdfSpinnerStyle() {
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
-  window.location.href = '/itinerary-maker/get-the-guide';
+  window.location.href = '/smart-guide/get-the-guide';
 });
 
 if ($downloadBtns.length) {

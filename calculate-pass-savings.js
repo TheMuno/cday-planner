@@ -52,7 +52,7 @@ function noAttractionsAdded() {
 
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/itinerary-maker/itinerary-maker-open'; }, 1500);
+  setTimeout(() => { window.location.href = '/smart-guide/itinerary'; }, 1500);
 }
 
 // Shared with stripe-purchase.js: attractions-on-passes and buy-plan each run their own async
@@ -95,7 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.querySelector('[data-ak="continue-to-step3"]')?.addEventListener('click', e => {
     e.preventDefault();
-    window.location.href = '/itinerary-maker/verify-itinerary';
+    window.location.href = '/smart-guide/verify-itinerary';
   });
 
   document.querySelectorAll('[data-ak="scroll-to-buy-btn"]').forEach(btn => {

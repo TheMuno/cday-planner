@@ -208,7 +208,7 @@ window.addEventListener('load', async () => {
   window.addEventListener('pageshow', e => {
     if (!e.persisted) return;
     resetContinueBtn();
-    document.querySelectorAll('[href="/itinerary-maker/pass-calculator"]').forEach(resetStepLink);
+    document.querySelectorAll('[href="/smart-guide/pass-calculator"]').forEach(resetStepLink);
   });
 
   $continueBtn?.addEventListener('click', async e => {
@@ -241,7 +241,7 @@ window.addEventListener('load', async () => {
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
-      window.location.href = '/itinerary-maker/pass-calculator';
+      window.location.href = '/smart-guide/pass-calculator';
     } catch (err) {
       console.error(err);
       $btn.innerHTML = 'Failed, try again!';
@@ -263,7 +263,7 @@ window.addEventListener('load', async () => {
 
   // The "Calc" step breadcrumb link points straight at pass-calculator — without this it navigates
   // before the trip is saved, same gap continue-to-step2 used to have.
-  document.querySelectorAll('[href="/itinerary-maker/pass-calculator"]').forEach($link => {
+  document.querySelectorAll('[href="/smart-guide/pass-calculator"]').forEach($link => {
     $link.addEventListener('click', async e => {
       e.preventDefault();
       if ($link.dataset.akSaving) return;
