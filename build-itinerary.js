@@ -330,7 +330,8 @@ window.addEventListener('load', async () => {
 
   // Mirrors customize-itinerary.js's .ak-toggle-wrap.transit toggle, adapted to a real checkbox
   // input (checked state drives the layer directly instead of an odd/even click counter).
-  const $subwayToggle = document.querySelector('[data-ak="toggle-subway"]');
+  // data-ak="toggle-subway" sits on the <label> wrapper in the markup, not the <input> itself.
+  const $subwayToggle = document.querySelector('[data-ak="toggle-subway"] input[type="checkbox"]');
   let transitLayer = null;
   $subwayToggle?.addEventListener('change', () => {
     if ($subwayToggle.checked) {
