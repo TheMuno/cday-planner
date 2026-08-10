@@ -328,6 +328,19 @@ window.addEventListener('load', async () => {
     refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
   });
 
+  // Mirrors customize-itinerary.js's .ak-toggle-wrap.transit toggle, adapted to a real checkbox
+  // input (checked state drives the layer directly instead of an odd/even click counter).
+  const $subwayToggle = document.querySelector('[data-ak="toggle-subway"]');
+  let transitLayer = null;
+  $subwayToggle?.addEventListener('change', () => {
+    if ($subwayToggle.checked) {
+      transitLayer = transitLayer || new google.maps.TransitLayer();
+      transitLayer.setMap(map);
+    } else {
+      transitLayer?.setMap(null);
+    }
+  });
+
   document.body.addEventListener('click', handleRemoveLocation);
   document.body.addEventListener('click', handlePopupOpen);
   document.body.addEventListener('click', handleFieldMapPopup);
