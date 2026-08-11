@@ -67,10 +67,19 @@ function restoreTripHeading() {
   if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
 }
 
+// Derives a sibling page URL from this page's own URL instead of hardcoding the folder prefix —
+// e.g. on "/xyz/verify-itinerary" this resolves 'itinerary' to "/xyz/itinerary", so it keeps
+// working no matter what that prefix is or if it ever changes.
+function siblingPagePath(targetSlug) {
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  segments[segments.length - 1] = targetSlug;
+  return '/' + segments.join('/');
+}
+
 // Mirrors calculate-pass-savings.js's redirectToStep1().
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/smart-guide/itinerary'; }, 1500);
+  setTimeout(() => { window.location.href = siblingPagePath('itinerary'); }, 1500);
 }
 
 // Mirrors calculate-pass-savings.js's showRedirectLoader().
@@ -279,7 +288,7 @@ function injectPdfSpinnerStyle() {
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
-  window.location.href = '/smart-guide/get-the-guide';
+  window.location.href = siblingPagePath('get-the-guide');
 });
 
 if ($downloadBtns.length) {

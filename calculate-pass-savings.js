@@ -50,9 +50,18 @@ function noAttractionsAdded() {
   return !localStorage['ak-place-ids'] && !localStorage['ak-attractions-saved'];
 }
 
+// Derives a sibling page URL from this page's own URL instead of hardcoding the folder prefix —
+// e.g. on "/xyz/pass-calculator" this resolves 'itinerary' to "/xyz/itinerary", so it keeps
+// working no matter what that prefix is or if it ever changes.
+function siblingPagePath(targetSlug) {
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  segments[segments.length - 1] = targetSlug;
+  return '/' + segments.join('/');
+}
+
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = '/smart-guide/itinerary'; }, 1500);
+  setTimeout(() => { window.location.href = siblingPagePath('itinerary'); }, 1500);
 }
 
 // Shared with stripe-purchase.js: attractions-on-passes and buy-plan each run their own async
@@ -95,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.querySelector('[data-ak="continue-to-step3"]')?.addEventListener('click', e => {
     e.preventDefault();
-    window.location.href = '/smart-guide/verify-itinerary';
+    window.location.href = siblingPagePath('verify-itinerary');
   });
 
   document.querySelectorAll('[data-ak="scroll-to-buy-btn"]').forEach(btn => {
