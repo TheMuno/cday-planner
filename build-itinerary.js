@@ -778,20 +778,18 @@ function findMapPopupField(marker) {
 }
 
 // The remove-location icon sits in .ci009_left-icons-wrap, a sibling of the name element inside
-// .flex-row — it starts [data-ak-visibility-hidden] in the markup since there's nothing to remove
+// .flex-row — it starts [data-ak-hidden] in the markup since there's nothing to remove
 // until a hotel/airport is actually added, and shouldn't reappear for the default placeholder text.
-// Uses visibility (not [data-ak-hidden]'s display:none) so hiding/showing it doesn't reflow the
-// placeholder text next to it.
 function getRemoveIconWrap($nameEl) {
   return $nameEl?.closest('.flex-row')?.querySelector('.ci009_left-icons-wrap') || null;
 }
 
 function showRemoveIcon($nameEl) {
-  getRemoveIconWrap($nameEl)?.removeAttribute('data-ak-visibility-hidden');
+  getRemoveIconWrap($nameEl)?.removeAttribute('data-ak-hidden');
 }
 
 function hideRemoveIcon($nameEl) {
-  getRemoveIconWrap($nameEl)?.setAttribute('data-ak-visibility-hidden', 'true');
+  getRemoveIconWrap($nameEl)?.setAttribute('data-ak-hidden', 'true');
 }
 
 function clearMapPopupField(field) {
