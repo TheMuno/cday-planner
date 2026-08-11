@@ -1167,6 +1167,7 @@ function handleFieldMapPopup(e) {
     return;
   }
 
+  map.panTo(saveObj.location);
   openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
   scrollToMapPopupTop();
 }
