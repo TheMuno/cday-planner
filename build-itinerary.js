@@ -185,11 +185,13 @@ window.addEventListener('load', async () => {
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
-  // Derive the pass-calculator URL from this page's own URL rather than hardcoding the "/smart-guide/"
+  // Derive the next-step URL from this page's own URL rather than hardcoding the "/smart-guide/"
   // prefix — e.g. on "/xyz/itinerary" this resolves to "/xyz/pass-calculator", so it keeps working
-  // if that folder segment ever changes.
+  // if that folder segment ever changes. Demo-hotel slugs skip the pass calculator entirely and go
+  // straight to verify-itinerary instead.
   const pathSegments = window.location.pathname.split('/').filter(Boolean);
-  pathSegments[pathSegments.length - 1] = 'pass-calculator';
+  const isDemoHotel = pathSegments.includes('demo-hotel');
+  pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
   const passCalculatorHref = '/' + pathSegments.join('/');
 
   function resetContinueBtn() {
