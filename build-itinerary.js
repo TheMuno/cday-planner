@@ -185,6 +185,12 @@ window.addEventListener('load', async () => {
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
+  // Read the real pass-calculator link's href straight from the page (the "Calc" breadcrumb link
+  // below) instead of hardcoding the "/smart-guide/" prefix here — if that folder segment ever
+  // changes, this stays correct without needing an edit. Falls back to the current prefix only if
+  // that link is somehow missing from the page.
+  const passCalculatorHref = document.querySelector('a[href$="/pass-calculator"]')?.getAttribute('href') || '/smart-guide/pass-calculator';
+
   function resetContinueBtn() {
     if (!$continueBtn) return;
     $continueBtn.classList.remove('ak-saving');
@@ -208,7 +214,7 @@ window.addEventListener('load', async () => {
   window.addEventListener('pageshow', e => {
     if (!e.persisted) return;
     resetContinueBtn();
-    document.querySelectorAll('[href="/smart-guide/pass-calculator"]').forEach(resetStepLink);
+    document.querySelectorAll('[href$="/pass-calculator"]').forEach(resetStepLink);
   });
 
   $continueBtn?.addEventListener('click', async e => {
@@ -241,7 +247,7 @@ window.addEventListener('load', async () => {
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
-      window.location.href = '/smart-guide/pass-calculator';
+      window.location.href = passCalculatorHref;
     } catch (err) {
       console.error(err);
       $btn.innerHTML = 'Failed, try again!';
@@ -263,7 +269,7 @@ window.addEventListener('load', async () => {
 
   // The "Calc" step breadcrumb link points straight at pass-calculator — without this it navigates
   // before the trip is saved, same gap continue-to-step2 used to have.
-  document.querySelectorAll('[href="/smart-guide/pass-calculator"]').forEach($link => {
+  document.querySelectorAll('[href$="/pass-calculator"]').forEach($link => {
     $link.addEventListener('click', async e => {
       e.preventDefault();
       if ($link.dataset.akSaving) return;
