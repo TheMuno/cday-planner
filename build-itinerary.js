@@ -185,11 +185,12 @@ window.addEventListener('load', async () => {
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
-  // Read the real pass-calculator link's href straight from the page (the "Calc" breadcrumb link
-  // below) instead of hardcoding the "/smart-guide/" prefix here — if that folder segment ever
-  // changes, this stays correct without needing an edit. Falls back to the current prefix only if
-  // that link is somehow missing from the page.
-  const passCalculatorHref = document.querySelector('a[href$="/pass-calculator"]')?.getAttribute('href') || '/smart-guide/pass-calculator';
+  // Derive the pass-calculator URL from this page's own URL rather than hardcoding the "/smart-guide/"
+  // prefix — e.g. on "/xyz/itinerary" this resolves to "/xyz/pass-calculator", so it keeps working
+  // if that folder segment ever changes.
+  const pathSegments = window.location.pathname.split('/').filter(Boolean);
+  pathSegments[pathSegments.length - 1] = 'pass-calculator';
+  const passCalculatorHref = '/' + pathSegments.join('/');
 
   function resetContinueBtn() {
     if (!$continueBtn) return;
