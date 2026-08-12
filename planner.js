@@ -34,6 +34,13 @@ if (conf) {
     sendConfToSheet(conf);
     window.addEventListener('pagehide', () => sendConfBeacon(conf), { once: true });
   }
+
+  // Drop "conf" from the visible URL now that it's captured — history.replaceState only
+  // rewrites the address bar (no reload, no new history entry), so it can't lose the value
+  // that's already saved above.
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete('conf');
+  window.history.replaceState(window.history.state, '', cleanUrl);
 }
 
 async function sendConfToSheet(value, attempt = 1) {
