@@ -48,6 +48,10 @@ const REDIRECT_AFTER_LOGIN = localStorage.getItem('ak-login-redirect') || '/smar
 // ── 2b. MAKE.COM WEBHOOK (fires once per genuine sign-in) ────
 const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd02um';
 
+// ── 2c. HOTEL CONF "SAVES" SHEET (fires once per conf, on login) ────
+const SAVE_HOTEL_CONF_LOGIN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConfOnLogin';
+const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
+
 // ── 3. INIT ─────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -701,6 +705,7 @@ function onUserLoginSuccess(user) {
     });
   }
   sendToMake(user);
+  recordHotelConfSave(user);
 }
 
 function sendToMake(user) {
@@ -728,6 +733,33 @@ function sendToMake(user) {
     keepalive: true,
     body: JSON.stringify(payload),
   }).catch(err => console.error('Failed to send data to Make.com:', err));
+}
+
+// Records one "Saves" row (Date saved, Conf, Email) per hotel-conf value —
+// gated on ak-hotel-conf (set by the trip-planner page's own conf capture),
+// separate from ak-conf/ak-ref above which drive the unrelated Make.com send.
+//
+// The synced flag is set *before* the request goes out, not after it resolves:
+// this call has to survive window.location.replace() firing right after
+// onUserLoginSuccess (same reason sendToMake above uses keepalive instead of
+// awaiting a response), so there's no reliable point after send to mark success
+// without risking the page unloading first. The tradeoff is a failed request
+// still gets marked synced and won't retry on the next login.
+function recordHotelConfSave(user) {
+  const conf = localStorage.getItem('ak-hotel-conf');
+  if (!conf) return;
+  if (localStorage.getItem(HOTEL_CONF_SAVE_SYNCED_KEY) === conf) return;
+
+  const email = user?.email || localStorage.getItem('ak-userMail') || '';
+  if (!email) return;
+
+  localStorage.setItem(HOTEL_CONF_SAVE_SYNCED_KEY, conf);
+  fetch(SAVE_HOTEL_CONF_LOGIN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({ conf, email }),
+  }).catch(err => console.error('Failed to record hotel conf save:', err));
 }
 
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
