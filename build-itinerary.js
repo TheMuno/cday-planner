@@ -153,6 +153,12 @@ window.addEventListener('load', async () => {
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
+  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
+  if (auth.currentUser) localStorage['ak-userMail'] = auth.currentUser.email;
+
+  if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
+  addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
+
   // Travel dates/trip name come from localStorage (picked upstream, before this page ever loads)
   // or, once syncWithDB() below fills a gap, the DB — neither needs the Maps library chain or a
   // Firestore round trip to render, so show them now instead of leaving the skeleton up through
@@ -161,18 +167,15 @@ window.addEventListener('load', async () => {
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 
-  await mapReady;
-
-  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
-  if (auth.currentUser) localStorage['ak-userMail'] = auth.currentUser.email;
-
-  if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
-  addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
-
   await syncWithDB();
   restoreTripHeading(); // re-run in case travelDates/tripName only existed in the DB
 
-  restoreTripDaySlides(() => {
+  // restoreTripDaySlides() itself only clones slides and sets day/date text from localStorage — no
+  // map access — so it runs here without waiting on mapReady. Only its callback needs the map (to
+  // drop markers via createMarker()), so mapReady is awaited there instead, letting the Maps library
+  // chain finish loading in parallel with the slide setup + syncWithDB() above rather than after them.
+  restoreTripDaySlides(async () => {
+    await mapReady;
     restoreAttractions();
     restoreHotel();
     restoreAirports();
