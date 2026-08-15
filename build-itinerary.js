@@ -152,6 +152,15 @@ window.addEventListener('load', async () => {
   setupAirportAutocomplete();
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
+
+  // Travel dates/trip name come from localStorage (picked upstream, before this page ever loads)
+  // or, once syncWithDB() below fills a gap, the DB — neither needs the Maps library chain or a
+  // Firestore round trip to render, so show them now instead of leaving the skeleton up through
+  // mapReady + syncWithDB, which is what stalled this section on slow mobile connections.
+  restoreTripHeading();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
   await mapReady;
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
@@ -161,10 +170,8 @@ window.addEventListener('load', async () => {
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
   await syncWithDB();
+  restoreTripHeading(); // re-run in case travelDates/tripName only existed in the DB
 
-  restoreTripHeading();
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
   restoreTripDaySlides(() => {
     restoreAttractions();
     restoreHotel();
