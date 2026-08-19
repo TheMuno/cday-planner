@@ -86,8 +86,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // e.g. attractions-on-passes' own sheet fetch hangs indefinitely.
   const spinnerTimeout = setTimeout(removeSpinners, 8000);
 
+  // Hoisted out of the try block so the catch below can still wire the buy buttons for a user
+  // whose auth resolved fine but whose Firestore purchase check then failed/timed out.
+  let user;
   try {
-    const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
+    user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
     if (!user) {
       setUI(false);
@@ -142,6 +145,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     // persist:false — don't clobber a previously cached "true" with an unconfirmed "false".
     setUI(false);
     broadcastPurchaseStatus(false, { persist: false });
+    // Without this, setUI(false) reveals the buy button but nothing ever wires its click
+    // handler, so it just sits there dead. Only reachable when auth resolved but the
+    // Firestore check itself failed — a still-unresolved `user` means wireBuyButtonsLoggedOut()
+    // already ran (and returned) before this could ever throw.
+    if (user) wireBuyButtons(user, $buyButtons);
   }
 
   function withTimeout(promise, ms, message) {
@@ -278,25 +286,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             <span>Processing...</span>
           </div>`;
 
+        // itinerary-list now requires a shareToken (not a raw email) to load — mint/reuse the
+        // caller's own token so the post-checkout redirect lands on a working link. This is
+        // purely cosmetic for the redirect URL, so its own failure (network blip, cold start)
+        // must never block the actual checkout below — isolated in its own try/catch instead
+        // of sharing the one around createPlanCheckout.
+        let shareToken = null;
+        if (window.location.pathname === '/itinerary-list') {
+          try {
+            const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
+            shareToken = (await getMyShareToken()).data.shareToken;
+          } catch (err) {
+            console.error('getMyShareToken failed, continuing without it:', err);
+          }
+        }
+
         try {
           const createPlanCheckout = httpsCallable(functions, 'createPlanCheckout');
           const { data } = await createPlanCheckout({
             userEmail:  user.email,
             successUrl: (() => {
               const base = window.location.origin + window.location.pathname + '?purchase=success';
-              if (window.location.pathname === '/itinerary-list') {
-                const mail = localStorage['ak-userMail'];
-                return base + (mail ? '&id=' + encodeURIComponent(mail) : '');
-              }
-              return base;
+              return base + (shareToken ? '&token=' + encodeURIComponent(shareToken) : '');
             })(),
             cancelUrl: (() => {
               const base = window.location.origin + window.location.pathname;
-              if (window.location.pathname === '/itinerary-list') {
-                const mail = localStorage['ak-userMail'];
-                return base + (mail ? '?id=' + encodeURIComponent(mail) : '');
-              }
-              return base;
+              return base + (shareToken ? '?token=' + encodeURIComponent(shareToken) : '');
             })(),
           });
           window.location.href = data.url;
@@ -484,8 +499,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (attempts >= 10) return;
 
     await new Promise(r => setTimeout(r, 1000));
-    const userSnap  = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
-    const purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
+
+    let userSnap, purchased;
+    try {
+      userSnap  = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
+      purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
+    } catch (err) {
+      console.error('pollForPurchase check failed:', err);
+      // A transient Firestore error here would otherwise throw inside this unawaited recursive
+      // call and silently kill the whole poll loop — a user who just paid could be stuck on the
+      // pre-purchase UI until they manually reload. Retry instead, same as a not-yet-purchased result.
+      pollForPurchase(user, $buyButtons, $downloadBtns, $downloadMapsBtns, $postPurchaseEls, $flagshipDownloadBtns, attempts + 1);
+      return;
+    }
 
     if (purchased) {
       const userData = userSnap.data();

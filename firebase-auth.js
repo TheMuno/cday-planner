@@ -1093,17 +1093,17 @@ if (forgotSubmitBtn) {
 
     try {
       try {
-        const snap = await getDoc(doc(db, "users", userDocId(email)));
-        if (snap.exists()) {
-          const provider = snap.data().provider;
-          const providerNames = { "google.com": "Google", "facebook.com": "Facebook" };
-          if (providerNames[provider]) {
-            showError(`This account uses ${providerNames[provider]} to sign in. No password to reset.`);
-            return;
-          }
+        // Firebase Auth's own pre-login lookup, not a Firestore read: /users get
+        // is self-only now, so this can no longer go through userDocId(email).
+        const methods = await fetchSignInMethodsForEmail(auth, email);
+        const providerNames = { "google.com": "Google", "facebook.com": "Facebook" };
+        const provider = providerNames[methods[0]];
+        if (provider) {
+          showError(`This account uses ${provider} to sign in. No password to reset.`);
+          return;
         }
       } catch (_) {
-        // Firestore read failed (e.g. permission denied for unauthenticated user) — skip the check
+        // Lookup failed — skip the check, fall through to sendPasswordResetEmail
       }
       await sendPasswordResetEmail(auth, email);
       showSuccess("Reset email sent! Check your inbox — and your spam folder if you don't see it.");

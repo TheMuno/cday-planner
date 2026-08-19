@@ -3,6 +3,7 @@ import { getFirestore, doc, setDoc, getDoc,
     updateDoc, deleteField,
     arrayUnion, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
@@ -14,9 +15,10 @@ const firebaseConfig = {
     measurementId: "G-Z7F4NJ4PHW"
 };
 
-const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = getFirestore(app);
+const app       = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth      = getAuth(app);
+const db        = getFirestore(app);
+const functions = getFunctions(app);
 
 let map;
 let infoWindow;
@@ -92,6 +94,15 @@ async function initMap(center) {
 
 
 window.addEventListener('load', async () => {
+
+  // logSheetData() is a static spreadsheet fetch with no auth/DB dependency — kick it off
+  // immediately instead of leaving it to start only after the auth check, the Firestore
+  // sync chain, and ~450 lines of UI wiring below have all finished. Awaited further down,
+  // right where Attractions/Passes are actually needed. The no-op catch just stops a fetch
+  // failure from logging a stray "Uncaught (in promise)" during that long gap — the real
+  // error still surfaces at the await site below.
+  const sheetDataPromise = logSheetData();
+  sheetDataPromise.catch(() => {});
 
   const $userSearchForm = document.getElementById('user-search-form');
   if ($userSearchForm) {
@@ -387,7 +398,11 @@ window.addEventListener('load', async () => {
     localStorage.removeItem('ak-update-merge-db');
 
     function combineArrays(savedArr, localArr) {
-      return [...new Map([...savedArr, ...localArr].map(obj => [obj.displayName, obj])).values()];
+      // Key on placeId when available — two distinct places sharing a display name (common in
+      // NYC, e.g. two different "Joe's Pizza" branches) would otherwise collapse into one entry,
+      // silently dropping whichever side didn't win the Map's last-write-wins overwrite. Notes
+      // items have no placeId, so they still fall back to displayName.
+      return [...new Map([...savedArr, ...localArr].map(obj => [obj.placeId || obj.displayName, obj])).values()];
     }
   }
 
@@ -460,7 +475,10 @@ window.addEventListener('load', async () => {
     const currentTimeslot = timeslotKeyMap[$dropZone.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim()];
     const savedAttractions = localStorage['ak-attractions-saved'] ? JSON.parse(localStorage['ak-attractions-saved']) : {};
     const mappedFromTimeslot = timeslotKeyMap[fromTimeslot] || fromTimeslot;
-    const savedtimeslotAttractions = savedAttractions[`slide${slideIndex}`][mappedFromTimeslot];
+    // Optional-chained — after a referrer merge, ak-attractions-saved can have fewer slide
+    // entries than the currently-rendered day slider (mergelocalNDBAttractions only special-cases
+    // slide1/slide2), so slide<slideIndex> here isn't guaranteed to exist for every visible day.
+    const savedtimeslotAttractions = savedAttractions[`slide${slideIndex}`]?.[mappedFromTimeslot];
 
     if (savedtimeslotAttractions) {
       const savedAttr = savedtimeslotAttractions.find(attr => data.includes(attr.displayName.toLowerCase().trim()));
@@ -518,8 +536,16 @@ window.addEventListener('load', async () => {
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) return;
 
+      // Remove this departing user's own email from the referrer's co-traveler list — not
+      // referrerMail itself, which by construction never appears in the referrer's own list
+      // (indexOf would return -1, and splice(-1, 1) would silently drop the wrong entry: the
+      // last co-traveler instead of the one actually leaving).
       const { secondaryMail } = userSnap.data();
-      secondaryMail.splice(secondaryMail.indexOf(referrerMail), 1);
+      if (!Array.isArray(secondaryMail)) return;
+      const userMail = localStorage['ak-userMail'];
+      const idx = secondaryMail.indexOf(userMail);
+      if (idx === -1) return;
+      secondaryMail.splice(idx, 1);
       await updateDoc(userRef, { ModifiedAt: serverTimestamp(), secondaryMail });
     }
   }
@@ -579,7 +605,7 @@ window.addEventListener('load', async () => {
   });
 
 
-  const { Attractions, Passes } = await logSheetData();
+  const { Attractions, Passes } = await sheetDataPromise;
   localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
 
   const $ticketsTotalPrice = document.querySelector('[data-ak="tickets-total-price"]');
@@ -637,7 +663,15 @@ window.addEventListener('load', async () => {
       const $result = $attractionSample.cloneNode(true);
       $result.placeId = place_id;
       $result.removeAttribute('data-ak');
-      $result.querySelector('[data-ak="ticket-name"]').innerHTML = `${attraction_name}<span class="attraction-cost"> - $${cost}</span>`;
+      // Built via textContent/DOM nodes rather than an innerHTML template literal — attraction_name
+      // comes from the internal pricing spreadsheet, and a stray '<'/'>' typed into a sheet cell
+      // shouldn't be interpreted as markup.
+      const $ticketNameEl = $result.querySelector('[data-ak="ticket-name"]');
+      $ticketNameEl.textContent = attraction_name;
+      const $costSpan = document.createElement('span');
+      $costSpan.className = 'attraction-cost';
+      $costSpan.textContent = ` - $${cost}`;
+      $ticketNameEl.append($costSpan);
 
       const $buyBtn = $result.querySelector('[data-ak="ticket-buy-btn"]');
       $buyBtn.setAttribute('buy-link', ticket_url);
@@ -1038,7 +1072,10 @@ window.addEventListener('load', async () => {
     ? '/attraction-savings'
     : '/customize-itinerary-page-2';
   const ITINERARY_LIST_URL = '/itinerary-list';
-  document.querySelector('[data-ak="continue-to-step2"]')?.addEventListener('click', async e => {
+  const $continueToStep2Btn = document.querySelector('[data-ak="continue-to-step2"]');
+  const continueToStep2OriginalHTML = $continueToStep2Btn?.innerHTML;
+
+  $continueToStep2Btn?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
     if ($btn.classList.contains('ak-saving')) return;
@@ -1076,7 +1113,6 @@ window.addEventListener('load', async () => {
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
 
-    const originalHTML = $btn.innerHTML;
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([saveAttractionsDB(), step2Timeout]);
@@ -1086,12 +1122,15 @@ window.addEventListener('load', async () => {
       $btn.disabled = false;
       $btn.style.opacity = '';
       $btn.innerHTML = 'Failed, try again!';
-      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
+      setTimeout(() => { $btn.innerHTML = continueToStep2OriginalHTML; }, 1000);
     }
   });
 
 
-  document.querySelector('[data-ak="go-to-itinerary"]')?.addEventListener('click', async e => {
+  const $goToItineraryBtn = document.querySelector('[data-ak="go-to-itinerary"]');
+  const goToItineraryOriginalHTML = $goToItineraryBtn?.innerHTML;
+
+  $goToItineraryBtn?.addEventListener('click', async e => {
     e.preventDefault();
     const $btn = e.currentTarget;
     if ($btn.disabled) return;
@@ -1112,7 +1151,6 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
-    const originalHTML = $btn.innerHTML;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Loading Itinerary...</span>`;
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
@@ -1120,13 +1158,38 @@ window.addEventListener('load', async () => {
 
     const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
-      await Promise.race([saveAttractionsDB(), saveTimeout]);
-      window.location.href = `${ITINERARY_LIST_URL}?id=${localStorage['ak-userMail']}`;
+      const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
+      const [, tokenResult] = await Promise.race([
+        Promise.all([saveAttractionsDB(), getMyShareToken()]),
+        saveTimeout,
+      ]);
+      window.location.href = `${ITINERARY_LIST_URL}?token=${tokenResult.data.shareToken}`;
     } catch {
       $btn.disabled = false;
       $btn.style.opacity = '';
       $btn.innerHTML = 'Failed, try again!';
-      setTimeout(() => { $btn.innerHTML = originalHTML; }, 1000);
+      setTimeout(() => { $btn.innerHTML = goToItineraryOriginalHTML; }, 1000);
+    }
+  });
+
+  // Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated
+  // away, so without this these buttons can come back stuck mid-spinner/disabled if the user hits
+  // back after clicking one (mirrors build-itinerary.js's continue-to-step2 handling). Also fixes
+  // continue-to-step2's originalHTML previously being captured *after* the spinner markup had
+  // already overwritten $btn.innerHTML, so "Failed, try again!" used to revert back to the
+  // spinner instead of the button's real resting label.
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted) return;
+    if ($continueToStep2Btn) {
+      $continueToStep2Btn.classList.remove('ak-saving');
+      $continueToStep2Btn.disabled = false;
+      $continueToStep2Btn.style.opacity = '';
+      $continueToStep2Btn.innerHTML = continueToStep2OriginalHTML;
+    }
+    if ($goToItineraryBtn) {
+      $goToItineraryBtn.disabled = false;
+      $goToItineraryBtn.style.opacity = '';
+      $goToItineraryBtn.innerHTML = goToItineraryOriginalHTML;
     }
   });
 
@@ -1160,8 +1223,10 @@ window.addEventListener('load', async () => {
 // end window.addEventListener('load')
 
 
+// Not a full RFC 5322 validator — just enough to reject obviously-wrong input (missing '@',
+// no domain, no TLD, embedded whitespace) before it gets saved to Firestore as a co-traveler email.
 function isValidEmail(mail) {
-  return /.@./.test(mail);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail);
 }
 
 function highlight(inp) {
@@ -2380,7 +2445,9 @@ function handleSliderRemoveLocation(e) {
     const attrName = $attraction.querySelector('[data-ak="location-title"]').textContent.toLowerCase().trim();
     const savedAttractionsParsed = JSON.parse(savedAttractions);
     const timeslot = timeslotKeyMap[$removeBtn.closest('[data-ak-timeslot-wrap]').getAttribute('data-ak-timeslot-wrap').toLowerCase().trim()];
-    const timeslotArr = savedAttractionsParsed[`slide${slideIndex}`][timeslot];
+    // Optional-chained — same reasoning as handleDrop(): a referrer-merged trip can have fewer
+    // saved slide entries than the currently-rendered day slider.
+    const timeslotArr = savedAttractionsParsed[`slide${slideIndex}`]?.[timeslot];
     const attrMatch = timeslotArr?.find(attr => attrName.includes(attr.displayName.toLowerCase().trim()));
     if (attrMatch) timeslotArr.splice(timeslotArr.indexOf(attrMatch), 1);
     localStorage['ak-attractions-saved'] = JSON.stringify(savedAttractionsParsed);

@@ -10,6 +10,29 @@
  *        adults defaults to 1
  */
 
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
+  authDomain: "askkhonsu-map.firebaseapp.com",
+  projectId: "askkhonsu-map",
+  storageBucket: "askkhonsu-map.appspot.com",
+  messagingSenderId: "266031876218",
+  appId: "1:266031876218:web:ec93411f1c13d9731e93c3",
+};
+
+const app       = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth      = getAuth(app);
+const functions = getFunctions(app);
+
+// Page 1 (customize-itinerary.js) already established the session; this just waits for
+// Firebase Auth to finish restoring it here so the ID token is attached to getMyShareToken.
+const authReadyPromise = new Promise(resolve => {
+  const unsubscribe = onAuthStateChanged(auth, user => { unsubscribe(); resolve(user); });
+});
+
 const page1Url    = '/customize-itinerary';
 const firebaseUrl = 'https://getspreadsheetdata-qqhcjhxuda-uc.a.run.app';
 
@@ -20,7 +43,6 @@ async function initPage2() {
   localStorage['ak-sheet-attractions'] = JSON.stringify(Attractions);
   _passes = Passes;
   preCalculatePassStats(Attractions, Passes);
-  setupPassCalculator();
 }
 
 async function fetchSheetData() {
@@ -189,7 +211,10 @@ if (noAttractions || notLoggedIn) {
   setTimeout(() => { window.location.href = page1Url; }, 1500);
 }
 
-initPage2();
+// Wired immediately — its click handler reads localStorage/_passes fresh at click
+// time, so it doesn't need to wait on the sheet-data fetch below to be usable.
+setupPassCalculator();
+initPage2().catch(err => console.error('Failed to load sheet data:', err));
 
 // Page Title
 
@@ -233,11 +258,16 @@ function setupPassCalculator() {
   document.querySelector('[data-ak="calculate-passes"]')?.addEventListener('click', async e => {
     e.preventDefault();
 
-    const attractions = JSON.parse(localStorage['ak-sheet-attractions']);
-    if (!attractions) {
+    // ak-sheet-attractions is localStorage, not sessionStorage, so a stale value can still be
+    // sitting there from an earlier visit even though this page's own fetchSheetData() (which
+    // is what sets _passes) hasn't resolved yet — guard on both, not just the raw string, or
+    // Object.entries(_passes) below throws on a still-null _passes.
+    const rawAttractions = localStorage['ak-sheet-attractions'];
+    if (!rawAttractions || !_passes) {
       console.log('No saved sheet attractions!');
       return;
     }
+    const attractions = JSON.parse(rawAttractions);
 
     $individualResultsContainer.innerHTML = '';
     $gocityResultsContainer.innerHTML = '';
@@ -275,7 +305,15 @@ function setupPassCalculator() {
       const $result = $attractionSample.cloneNode(true);
       $result.placeId = place_id;
       $result.removeAttribute('data-ak');
-      $result.querySelector('[data-ak="ticket-name"]').innerHTML = `${attraction_name}<span class="attraction-cost"> - $${cost}</span>`;
+      // Built via textContent/DOM nodes rather than an innerHTML template literal — attraction_name
+      // comes from the internal pricing spreadsheet, and a stray '<'/'>' typed into a sheet cell
+      // shouldn't be interpreted as markup.
+      const $ticketNameEl = $result.querySelector('[data-ak="ticket-name"]');
+      $ticketNameEl.textContent = attraction_name;
+      const $costSpan = document.createElement('span');
+      $costSpan.className = 'attraction-cost';
+      $costSpan.textContent = ` - $${cost}`;
+      $ticketNameEl.append($costSpan);
 
       const $buyBtn = $result.querySelector('[data-ak="ticket-buy-btn"]');
       $buyBtn.setAttribute('buy-link', ticket_url);
@@ -541,7 +579,7 @@ function setupPassCalculator() {
 }
 
 const $gotoItineraryList = document.querySelector('[data-ak="open-itinerary-list"]');
-$gotoItineraryList.addEventListener('click', e => {
+$gotoItineraryList.addEventListener('click', async e => {
   e.preventDefault();
   if ($gotoItineraryList.disabled) return;
 
@@ -575,9 +613,11 @@ $gotoItineraryList.addEventListener('click', e => {
   const timeoutId = setTimeout(failAndRestore, 10000);
 
   try {
-    const userMail = localStorage['ak-userMail'];
+    await authReadyPromise;
+    const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
+    const { data } = await getMyShareToken();
     const targetPath = $gotoItineraryList.getAttribute('href');
-    window.location.href = `${targetPath}?id=${userMail}`;
+    window.location.href = `${targetPath}?token=${encodeURIComponent(data.shareToken)}`;
   } catch {
     clearTimeout(timeoutId);
     failAndRestore();

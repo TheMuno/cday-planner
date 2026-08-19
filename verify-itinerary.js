@@ -31,19 +31,28 @@ const $downloadBtns = document.querySelectorAll('[data-ak="download-ez-guide"]')
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
-// Mirrors calculate-pass-savings.js / build-itinerary.js's restoreTripHeading().
-function restoreTripHeading() {
-  if (auth.currentUser) {
-    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-    if ($headingH2) {
-      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-      if (tripName) {
-        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
-      }
-    }
-  }
+// Captured once, before populateVerifyContent() ever mutates the DOM — now that it can run
+// twice (immediately, then again after syncWithDB()), re-querying '.verify_block_wrap' live
+// would grab an already-populated (and possibly section-hidden) day block as the template for
+// the second pass instead of the pristine sample markup.
+const $verifyContainer = document.querySelector('.verify_content');
+const $verifyDayTemplate = $verifyContainer?.querySelector('.verify_block_wrap')?.cloneNode(true) || null;
 
+// Mirrors calculate-pass-savings.js / build-itinerary.js's restoreTripHeading(), split into two
+// halves so the date line (no auth dependency) can be restored immediately on DOMContentLoaded
+// instead of waiting on the Firebase auth round-trip.
+function restoreTripHeadingName() {
+  if (!auth.currentUser) return;
+  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+  if (!$headingH2) return;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+  }
+}
+
+function restoreTripDateLine() {
   if (!$tripDateLine || !localStorage['ak-travel-days']) return;
 
   let flatpickrDate;
@@ -202,15 +211,13 @@ function populateVerifyTable($tableWrap, items) {
 }
 
 function populateVerifyContent() {
-  const $container = document.querySelector('.verify_content');
-  const $dayTemplate = $container?.querySelector('.verify_block_wrap');
-  if (!$dayTemplate) return;
+  if (!$verifyContainer || !$verifyDayTemplate) return;
 
-  const $template = $dayTemplate.cloneNode(true);
+  const $template = $verifyDayTemplate.cloneNode(true);
   const days = getTravelDayDates();
   const savedAttractions = getSavedAttractions();
 
-  $container.querySelectorAll('.verify_block_wrap').forEach($el => $el.remove());
+  $verifyContainer.querySelectorAll('.verify_block_wrap').forEach($el => $el.remove());
 
   days.forEach((date, i) => {
     const slide = savedAttractions[`slide${i + 1}`] || {};
@@ -239,11 +246,18 @@ function populateVerifyContent() {
       populateVerifyTable($tableWrap, items);
     });
 
-    $container.appendChild($day);
+    $verifyContainer.appendChild($day);
   });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Neither depends on auth — both read only localStorage, which is already populated in the
+  // common case (syncWithDB() below only backfills it when missing) — so show them immediately
+  // instead of leaving the skeleton up through the auth round-trip and the Firestore sync.
+  restoreTripDateLine();
+  populateVerifyContent();
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
     redirectToStep1('User not logged in');
@@ -252,11 +266,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
   localStorage['ak-userMail'] = user.email;
-  await syncWithDB();
-  restoreTripHeading();
-  populateVerifyContent();
+  restoreTripHeadingName();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
+  await syncWithDB();
+  // Re-run in case travelDates/tripName/savedAttractions only existed in the DB.
+  restoreTripHeadingName();
+  restoreTripDateLine();
+  populateVerifyContent();
 });
 
 // --- Download as PDF ---

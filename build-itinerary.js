@@ -151,6 +151,13 @@ window.addEventListener('load', async () => {
   setupHotelAutocomplete();
   setupAirportAutocomplete();
 
+  // Travel dates come from localStorage (picked upstream, before this page ever loads) and have
+  // no auth dependency — neither the auth round-trip below nor the Maps library chain nor a
+  // Firestore round trip is needed to render them, so show them now instead of leaving the
+  // skeleton up through all of that, which is what stalled this section on slow mobile connections.
+  restoreTripDateLine();
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
@@ -159,16 +166,12 @@ window.addEventListener('load', async () => {
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
-  // Travel dates/trip name come from localStorage (picked upstream, before this page ever loads)
-  // or, once syncWithDB() below fills a gap, the DB — neither needs the Maps library chain or a
-  // Firestore round trip to render, so show them now instead of leaving the skeleton up through
-  // mapReady + syncWithDB, which is what stalled this section on slow mobile connections.
-  restoreTripHeading();
+  restoreTripHeadingName();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 
   await syncWithDB();
-  restoreTripHeading(); // re-run in case travelDates/tripName only existed in the DB
+  restoreTripHeadingName(); // re-run in case tripName only existed in the DB
+  restoreTripDateLine();    // re-run in case travelDates only existed in the DB
 
   // restoreTripDaySlides() itself only clones slides and sets day/date text from localStorage — no
   // map access — so it runs here without waiting on mapReady. Only its callback needs the map (to
@@ -337,14 +340,19 @@ window.addEventListener('load', async () => {
   // 'idle' fires once after the user stops panning/zooming, but also after things that don't move the
   // viewport at all (e.g. the map container resizing when the popup panel opens/closes) — bail out unless
   // the bounds actually changed, so those no-op idles don't burn a Places API call per active chip.
-  let lastIdleBoundsKey = null;
-  map.addListener('idle', () => {
-    const boundsKeyNow = boundsKey(map.getBounds());
-    if (boundsKeyNow === lastIdleBoundsKey) return;
-    lastIdleBoundsKey = boundsKeyNow;
+  // Wired via mapReady.then(...) rather than touching the bare `map` variable directly — the Maps
+  // library chain can still be loading here on a slow connection, and touching `map` before it resolves
+  // would throw and skip every listener wired below it (drag-and-drop, popups, autosave, etc.).
+  mapReady.then(map => {
+    let lastIdleBoundsKey = null;
+    map.addListener('idle', () => {
+      const boundsKeyNow = boundsKey(map.getBounds());
+      if (boundsKeyNow === lastIdleBoundsKey) return;
+      lastIdleBoundsKey = boundsKeyNow;
 
-    refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
-    refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+      refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+      refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+    });
   });
 
   // Mirrors customize-itinerary.js's .ak-toggle-wrap.transit toggle, adapted to a real checkbox
@@ -638,7 +646,7 @@ function getCorrectTransportationPinUrl(type) {
 function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
   const markerPinImg = document.createElement('img');
   const isRestaurant = type.includes('restaurant') || type.includes('food');
-  markerPinImg.src = isRestaurant ? foodForkPinUrl : markerPinSrc;
+  markerPinImg.src = isRestaurant && markerPinSrc !== hotelMarkerPinUrl ? foodForkPinUrl : markerPinSrc;
   markerPinImg.className = 'ak-marker-pin';
 
   const marker = new google.maps.marker.AdvancedMarkerElement({
@@ -831,6 +839,10 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = n
   const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
 
   const { $currentSlide, slideIndex } = slide || getCurrentSlideInfo();
+  if (!$currentSlide) {
+    console.error('No current slide found — cannot add attraction.');
+    return 'error';
+  }
   const $typeSection = $currentSlide.querySelector(`[data-ak-type="${isRestaurant ? 'eat' : 'visit'}"]`);
   const $typeWrap = $typeSection.querySelector('[data-ak-type-dropzone]');
 
@@ -1016,9 +1028,20 @@ async function handleBulkImport() {
   const skipped = [];
   const newDayLabels = [];
 
+  const { $currentSlide: $startSlide, slideIndex: startIndex } = getCurrentSlideInfo();
+
   outer:
   for (let i = 0; i < dayGroups.length; i++) {
-    const slide = i === 0 ? getCurrentSlideInfo() : (() => {
+    // Reuse the day-slide already at this position (starting from the current day) if one exists;
+    // only append a brand-new slide once existing days actually run out — otherwise bulk-importing
+    // into a trip that already has enough days duplicates/extends it instead of filling them in.
+    const slide = (() => {
+      if (i === 0) return { $currentSlide: $startSlide, slideIndex: startIndex };
+
+      const targetIndex = startIndex + i;
+      const $existingSlide = $attractionsSliderMask.querySelectorAll('.w-slide')[targetIndex - 1];
+      if ($existingSlide) return { $currentSlide: $existingSlide, slideIndex: targetIndex };
+
       const created = createNextDaySlide();
       newDayLabels.push(created.label);
       return { $currentSlide: created.$currentSlide, slideIndex: created.slideIndex };
@@ -1066,7 +1089,9 @@ async function handleBulkImport() {
       : `Couldn't add any locations.`,
   ];
   if (newDayLabels.length) summaryParts.push(`Added in\n${newDayLabels.join('\n')}`);
-  if (failed.length) summaryParts.push(`Couldn't add: ${failed.join(', ')}.`);
+  // failed lines are the user's own raw bulk-import textarea input echoed back — escaped in case
+  // this alertify build renders its message via innerHTML rather than as plain text.
+  if (failed.length) summaryParts.push(`Couldn't add: ${failed.map(escapeHtml).join(', ')}.`);
   alertify.alert(summaryParts.join('\n\n'));
 
   if (addedCount) {
@@ -1532,18 +1557,20 @@ function restoreTripDaySlides(onSettled) {
   }
 }
 
-function restoreTripHeading() {
-  if (auth.currentUser) {
-    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-    if ($headingH2) {
-      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-      if (tripName) {
-        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
-      }
-    }
+// Split into two halves so the date line (no auth dependency) can be restored immediately
+// on 'load' instead of waiting on the Firebase auth round-trip.
+function restoreTripHeadingName() {
+  if (!auth.currentUser) return;
+  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+  if (!$headingH2) return;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
   }
+}
 
+function restoreTripDateLine() {
   const $dateWrap = document.querySelector('[data-ak="trip-heading-date"]');
   if (!$dateWrap || !localStorage['ak-travel-days']) return;
 
@@ -1719,6 +1746,12 @@ async function saveAttractionsDB() {
 function format(str) {
   if (!str) return;
   return str.trim().split(/\s+/).map(capitalize).join(' ');
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 function capitalize(str) {

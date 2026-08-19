@@ -83,6 +83,22 @@ function akRegisterReveal(key, reveal) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Neither the date line nor the on-pass ticket count/sheet fetch depends on auth — start them
+  // immediately instead of waiting on the auth round-trip below.
+  restoreTripDateLine();
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
+  // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
+  // .finally() so Y still shows up even if the sheet fetch fails.
+  populateOnPassTickets().catch(err => {
+    console.error(err);
+    // Fail-safe: X couldn't be computed (e.g. sheet fetch failed) before the reveal below ever
+    // ran, so register a no-op here — otherwise buy-plan would wait forever for this key.
+    if ($attractionsOnPasses) akRegisterReveal('attractions', () => {});
+  }).finally(() => {
+    renderInitTickets();
+  });
+
   // Not-logged-in takes priority over everything else on this page — checked first, before any
   // other wiring or the purchased/attractions check below (which would otherwise be able to fire
   // off a stale cached purchase value ahead of confirming the user is even signed in).
@@ -126,20 +142,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // X (on-pass-tickets) must land first; Y (init-tickets-num) only renders once that settles —
-  // .finally() so Y still shows up even if the sheet fetch fails.
-  populateOnPassTickets().catch(err => {
-    console.error(err);
-    // Fail-safe: X couldn't be computed (e.g. sheet fetch failed) before the reveal below ever
-    // ran, so register a no-op here — otherwise buy-plan would wait forever for this key.
-    if ($attractionsOnPasses) akRegisterReveal('attractions', () => {});
-  }).finally(() => {
-    renderInitTickets();
-  });
-
-  restoreTripHeading();
+  restoreTripHeadingName();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 });
 
 // Mirrors customize-itinerary_dev_pg2.js's showRedirectLoader().
@@ -313,6 +317,14 @@ function citypass5EligibilityCheck(cityPassAttractions) {
   return excluded === 0 && required >= 2;
 }
 
+// lowerLabel/upperLabel are pass_name values from the internal pricing spreadsheet — escaped
+// before going into innerHTML so a stray '<'/'>' in a sheet cell can't be interpreted as markup.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 function renderSinglePriceShape($contain, priceText) {
   $contain.innerHTML = `<div class="u-size-120-64 w-richtext"><p>${priceText}<sub></sub></p></div>`;
 }
@@ -321,11 +333,11 @@ function renderRangePriceShape($contain, lowerPriceText, lowerLabel, upperPriceT
   $contain.innerHTML = `
     <div class="calc_packages_box_inner">
       <div class="u-size-56-28 w-richtext"><p>${lowerPriceText}</p></div>
-      <div class="u-body">${lowerLabel}</div>
+      <div class="u-body">${escapeHtml(lowerLabel)}</div>
     </div>
     <div class="calc_packages_box_inner">
       <div class="u-size-56-28 w-richtext"><p>${upperPriceText}</p></div>
-      <div class="u-body">${upperLabel}</div>
+      <div class="u-body">${escapeHtml(upperLabel)}</div>
     </div>`;
 }
 
@@ -494,18 +506,20 @@ function populatePackagesGrid(matched, Passes) {
   });
 }
 
-function restoreTripHeading() {
-  if (auth.currentUser) {
-    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-    if ($headingH2) {
-      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-      if (tripName) {
-        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
-      }
-    }
+// Split into two halves so the date line (no auth dependency) can be restored immediately on
+// DOMContentLoaded instead of waiting on the Firebase auth round-trip.
+function restoreTripHeadingName() {
+  if (!auth.currentUser) return;
+  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+  if (!$headingH2) return;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
   }
+}
 
+function restoreTripDateLine() {
   if (!$tripDateLine || !localStorage['ak-travel-days']) return;
 
   let flatpickrDate;

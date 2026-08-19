@@ -22,19 +22,21 @@ const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 const $proceedToDownloadBtns = document.querySelectorAll('[data-ak="proceed-to-download"]');
 
-// Mirrors verify-itinerary.js / build-itinerary.js's restoreTripHeading().
-function restoreTripHeading() {
-  if (auth.currentUser) {
-    const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-    if ($headingH2) {
-      let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-      if (tripName) {
-        tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-        $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
-      }
-    }
+// Mirrors verify-itinerary.js / build-itinerary.js's restoreTripHeading(), split into two
+// halves so the date line (no auth dependency) can be restored immediately on DOMContentLoaded
+// instead of waiting on the Firebase auth round-trip.
+function restoreTripHeadingName() {
+  if (!auth.currentUser) return;
+  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
+  if (!$headingH2) return;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
   }
+}
 
+function restoreTripDateLine() {
   if (!$tripDateLine || !localStorage['ak-travel-days']) return;
 
   let flatpickrDate;
@@ -109,6 +111,11 @@ function showRedirectLoader(message) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // No auth dependency — restore this right away instead of waiting on the
+  // Firebase auth round-trip below.
+  restoreTripDateLine();
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
     redirectToStep1('User not logged in');
@@ -116,9 +123,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   localStorage['ak-userMail'] = user.email;
-  restoreTripHeading();
+  restoreTripHeadingName();
   $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 
   $proceedToDownloadBtns.forEach(btn => {
     btn.addEventListener('click', e => {

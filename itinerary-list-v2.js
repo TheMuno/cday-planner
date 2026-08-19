@@ -1,7 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-functions.js";
-
-const page1Url = '/customize-itinerary';
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js";
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -16,6 +15,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app);
+const auth = getAuth(app);
 
 const $itineraryWrap = document.querySelector('[data-ak="itinerary-list"]');
 const $downloadBtns = document.querySelectorAll('[data-ak="download-btn-v2"]');
@@ -23,10 +23,10 @@ const $downloadBtns = document.querySelectorAll('[data-ak="download-btn-v2"]');
 let itineraryText = "";
 
 // --- Callable function wrapper ---
-async function getDataById(userId) {
+async function getDataByToken(shareToken) {
   const getUserData = httpsCallable(functions, "getUserData");
   try {
-    const res = await getUserData({ userId });
+    const res = await getUserData({ shareToken });
     const { data } = res;
     return data.user;
   } catch (err) {
@@ -124,29 +124,79 @@ function renderTxtStyle(data, preliminaryStr='') {
   $itineraryWrap?.classList.remove("disable");
   }
 
+// --- Regenerate share link ---
+// getMyShareToken always mints/replaces a token for the *caller's own* account, regardless of
+// whose itinerary is on screen — so calling it is harmless even if this somehow fired for a non-
+// owner. The visibility gate below is purely so a friend viewing someone else's shared itinerary
+// doesn't see a confusing "regenerate MY link" button that (silently, harmlessly) wouldn't affect
+// what they're looking at.
+function wireRegenerateShareLink(userObj) {
+  const $btn = document.querySelector('[data-ak="regenerate-share-link"]');
+  if (!$btn) return;
+
+  onAuthStateChanged(auth, user => {
+    if (user && `user-${user.email}` === userObj.id) {
+      $btn.removeAttribute('data-ak-hidden');
+    }
+  });
+
+  $btn.addEventListener('click', async e => {
+    e.preventDefault();
+    if ($btn.disabled) return;
+    $btn.disabled = true;
+    const original = $btn.textContent;
+    $btn.textContent = 'Generating...';
+
+    let resultText = 'Failed, try again';
+    try {
+      const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
+      const { data } = await getMyShareToken({ regenerate: true });
+
+      const params = new URLSearchParams(window.location.search);
+      params.set('token', data.shareToken);
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      history.replaceState(null, '', newUrl);
+      const fullUrl = `${window.location.origin}${newUrl}`;
+
+      try {
+        await navigator.clipboard.writeText(fullUrl);
+        resultText = 'Copied new link!';
+      } catch {
+        alert(`Your new share link (old links no longer work):\n${fullUrl}`);
+        resultText = original;
+      }
+    } catch (err) {
+      console.error('Failed to regenerate share link:', err);
+    } finally {
+      $btn.textContent = resultText;
+      setTimeout(() => { $btn.textContent = original; $btn.disabled = false; }, 2000);
+    }
+  });
+}
+
 // --- Main ---
 async function renderData() {
   showLoading();
 
   const params = new URLSearchParams(window.location.search);
-  const encodedEmail = params.get("id") || params.get("userId");
-  const userEmail = encodedEmail ? decodeURIComponent(encodedEmail) : null;
+  const shareToken = params.get("token");
 
-  if (!userEmail) {
-    showError("No user id detected in URL.");
+  if (!shareToken) {
+    showError("No share link detected in URL.");
     return;
   }
 
-  const userObj = await getDataById(`user-${userEmail}`);
+  const userObj = await getDataByToken(shareToken);
   if (!userObj) {
-    showError(`No data found for ${userEmail}`);
+    showError("No itinerary found for this link.");
     return;
   }
 
+  wireRegenerateShareLink(userObj);
   localStorage['ak-user-db-object'] = JSON.stringify(userObj);
 
   if (!userObj.savedAttractions) {
-    showError(`No saved itinerary found for ${userEmail}`);
+    showError("No saved itinerary found for this link.");
     return;
   }
 
@@ -159,9 +209,12 @@ async function renderData() {
             departureAirport,
             savedAttractions } = userObj;
 
-    const displayName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    // tripName can be empty/undefined (e.g. no name ever saved for this trip) — unconditionally
+    // calling .charAt(0) on it would throw and get misreported downstream as corrupted itinerary
+    // data, blocking an otherwise perfectly valid itinerary from loading.
+    const displayName = tripName ? tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase() : 'Traveler';
     preliminaryStr += `${displayName}'s Trip To N.Y.C.\n`;
-    localStorage['ak-tripName'] = tripName;
+    localStorage['ak-tripName'] = tripName || '';
     const titleDatesStr = processTitleDates(travelDates);
     preliminaryStr += `${titleDatesStr ? titleDatesStr + '\n\n' : ''}`;
 
@@ -182,12 +235,12 @@ async function renderData() {
   }
   catch (err) {
     console.error("Error parsing savedAttractions JSON:", err);
-    showError(`Itinerary data for ${userEmail} is invalid or corrupted.`);
+    showError("This itinerary's data is invalid or corrupted.");
     return;
   }
 
   if (!attractionLocations || typeof attractionLocations !== "object" || Object.keys(attractionLocations).length === 0) {
-    showError(`Itinerary for ${userEmail} is empty.`);
+    showError("This itinerary is empty.");
     return;
   }
 
@@ -195,48 +248,12 @@ async function renderData() {
 }
 
 // --- Auto-run ---
+// No login requirement — this page is meant to be viewable via a shared link (the shareToken in
+// the URL is itself the access credential) without the viewer needing an account.
 if (location.hostname !== 'ask-khonsu.webflow.io' && location.hostname !== 'www.askkhonsu.com') {
-  if (!localStorage['ak-userMail']) {
-    showRedirectLoader('User not logged in');
-    setTimeout(() => { window.location.href = page1Url; }, 1500);
-  } else {
-    renderData();
-  }
+  renderData();
 }
 
-function showRedirectLoader(message) {
-  if (!document.getElementById('il-spinner-style')) {
-    const style = document.createElement('style');
-    style.id = 'il-spinner-style';
-    style.textContent = "@keyframes il-spin { to { transform: rotate(360deg); } }";
-    document.head.appendChild(style);
-  }
-  const overlay = document.createElement('div');
-  overlay.id = 'il-loader-overlay';
-  Object.assign(overlay.style, {
-    position: 'fixed', inset: '0',
-    background: 'rgba(255,255,255,0.5)',
-    display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center',
-    gap: '12px', zIndex: '9999',
-  });
-  const redirecting = document.createElement('p');
-  redirecting.textContent = 'Redirecting...';
-  Object.assign(redirecting.style, { margin: '0', fontSize: '14px', color: '#111' });
-  overlay.appendChild(redirecting);
-  const label = document.createElement('p');
-  label.textContent = message;
-  Object.assign(label.style, { margin: '0', fontSize: '14px', color: '#111' });
-  overlay.appendChild(label);
-  const spinner = document.createElement('div');
-  Object.assign(spinner.style, {
-    width: '40px', height: '40px',
-    border: '4px solid #e5e7eb', borderTopColor: '#111',
-    borderRadius: '50%', animation: 'il-spin 0.7s linear infinite',
-  });
-  overlay.appendChild(spinner);
-  document.body.appendChild(overlay);
-}
 
 // --- Download as PDF ---
 function injectPdfSpinnerStyle() {
@@ -272,8 +289,11 @@ if ($downloadBtns.length) {
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
       if (isLoading) return;
-      const userMail = localStorage['ak-userMail'];
-      if (!userMail) return;
+      // The share token already in the URL is what's actually being viewed on this page — using
+      // it here (rather than the viewer's own ak-userMail) is what lets a friend download the PDF
+      // for the itinerary they're looking at, not whatever's tied to their own account.
+      const shareToken = new URLSearchParams(window.location.search).get('token');
+      if (!shareToken) return;
 
       isLoading = true;
       injectPdfSpinnerStyle();
@@ -288,7 +308,7 @@ if ($downloadBtns.length) {
 
       try {
         const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");
-        const { data } = await generateItineraryPdf({ userId: `user-${userMail}` });
+        const { data } = await generateItineraryPdf({ shareToken });
 
         const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
         const blob = new Blob([bytes], { type: "application/pdf" });

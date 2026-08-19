@@ -10,7 +10,10 @@ function restoreSavedSelections() {
   const saved = localStorage['ak-attractions-saved'];
   if (!saved) return;
   const attractions = JSON.parse(saved)?.slide1?.attractions || [];
-  const savedNames = new Set(attractions.map(a => a.displayName.toLowerCase().trim()));
+  // A saved record missing displayName would otherwise throw here and abort the rest of this
+  // script — including the checkbox change-listener wiring below — silently breaking saving
+  // for the whole page.
+  const savedNames = new Set(attractions.map(a => (a.displayName || '').toLowerCase().trim()));
 
   let anyChecked = false;
   $attractionsWrap?.querySelectorAll('input[type="checkbox"]').forEach($input => {
@@ -47,7 +50,7 @@ async function saveSelectedAttractions() {
   const existing = localStorage['ak-attractions-saved'] ? JSON.parse(localStorage['ak-attractions-saved']) : {};
   const existingSlide1 = existing.slide1 || {};
   const existingAttractions = existingSlide1.attractions || [];
-  const existingByName = new Map(existingAttractions.map(a => [a.displayName.toLowerCase().trim(), a]));
+  const existingByName = new Map(existingAttractions.map(a => [(a.displayName || '').toLowerCase().trim(), a]));
 
   // Fetch one place at a time (mirrors the autocomplete flow in customize-itinerary_dev.js,
   // which only ever resolves a single place per user action) — firing them all in parallel
