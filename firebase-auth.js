@@ -139,7 +139,14 @@ function formatHotelName(slug) {
 
 let isSignUpMode = false;
 let pendingCredential = null;
-let isSigningIn = false;
+// Carries "a sign-in was in flight" across the reload triggered by the
+// popup-closed-by-user branches below, so the onAuthStateChanged backstop
+// still attributes a cross-tab sign-in that lands post-reload as a real
+// sign-in (analytics + hotel-referral opt-in) instead of silently treating it
+// as an already-logged-in page load — see PENDING_SIGNIN_KEY usage below.
+const PENDING_SIGNIN_KEY = 'ak-pending-signin';
+let isSigningIn = sessionStorage.getItem(PENDING_SIGNIN_KEY) === '1';
+sessionStorage.removeItem(PENDING_SIGNIN_KEY);
 let redirectHandled = false; // ensures only one sign-in flow (a button/form handler or the onAuthStateChanged backstop) finishes and navigates per sign-in
 
 // ── DOUBLE-CLICK / CROSS-BUTTON GUARD ────────────────────────
@@ -894,14 +901,15 @@ if (googleBtn) {
           showLoader();
           await finishGoogleSignIn(auth.currentUser);
         } else {
-          redirectHandled = false;
-          // A background sign-in may still complete via the onAuthStateChanged
-          // backstop (cross-tab sync), but that lands in well under a second
-          // if it's going to at all — it's not worth making the user wait out
-          // the full 30s double-click-guard timeout to retry. Re-lock with a
-          // short grace period instead so the buttons feel responsive again
-          // quickly once it's clear nothing is still in flight.
-          lockAuthButtons(1500);
+          // Reload instead of re-locking: this resets authButtonsLocked
+          // deterministically, and if a cross-tab sign-in was genuinely in
+          // flight (the mobile no-opener race described above), Firebase's
+          // persisted auth state will already reflect it by the time the
+          // fresh page re-initializes — so it isn't lost. PENDING_SIGNIN_KEY
+          // carries isSigningIn's intent across the reload so the backstop
+          // still attributes that completion correctly.
+          sessionStorage.setItem(PENDING_SIGNIN_KEY, '1');
+          window.location.reload();
         }
         return;
       }
@@ -1023,10 +1031,10 @@ if (facebookBtn) {
           showLoader();
           await finishFacebookSignIn(auth.currentUser);
         } else {
-          redirectHandled = false;
-          // Short grace period instead of the full lock — see the matching
-          // comment in the Google handler above.
-          lockAuthButtons(1500);
+          // Reload instead of re-locking — see the matching comment in the
+          // Google handler above.
+          sessionStorage.setItem(PENDING_SIGNIN_KEY, '1');
+          window.location.reload();
         }
         return;
       }
