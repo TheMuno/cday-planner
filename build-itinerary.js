@@ -203,7 +203,7 @@ window.addEventListener('load', async () => {
   // matter what that prefix is or if it ever changes. Demo-hotel slugs skip the pass calculator
   // entirely and go straight to verify-itinerary instead.
   const pathSegments = window.location.pathname.split('/').filter(Boolean);
-  const isDemoHotel = window.location.href.includes('demo-hotel');
+  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('carlton-arms');
   pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
   const passCalculatorHref = '/' + pathSegments.join('/');
 
