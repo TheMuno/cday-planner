@@ -305,7 +305,7 @@ function injectPdfSpinnerStyle() {
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
-  const isDemoHotel = window.location.href.includes('demo-hotel');
+  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('carlton-arms');
   window.location.href = isDemoHotel ? '/demo-hotel/download-your-smart-guide' : siblingPagePath('get-the-guide');
 });
 
