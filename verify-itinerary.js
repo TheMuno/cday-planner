@@ -305,7 +305,8 @@ function injectPdfSpinnerStyle() {
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
-  window.location.href = siblingPagePath('get-the-guide');
+  const isDemoHotel = window.location.href.includes('demo-hotel');
+  window.location.href = isDemoHotel ? '/demo-hotel/download-your-smart-guide' : siblingPagePath('get-the-guide');
 });
 
 if ($downloadBtns.length) {
