@@ -622,6 +622,7 @@ async function promptHotelReferralOptIn(email) {
   } catch (_) {}
   if (accepted) localStorage.removeItem("ak-hotel-referral");
 
+  console.log("promptHotelReferralOptIn: post-modal state", { hotel, accepted, referralConf, email }); // TEMP DEBUG — remove once Saves logging is confirmed working
   if (referralConf && accepted) recordHotelReferralSave(referralConf, email);
 }
 
@@ -798,12 +799,15 @@ function recordHotelConfSave(user) {
 // on acceptance, so this can never fire twice for the same referral.
 function recordHotelReferralSave(conf, email) {
   if (!conf || !email) return;
+  console.log("recordHotelReferralSave: dispatching", { conf, email }); // TEMP DEBUG — remove once Saves logging is confirmed working
   fetch(SAVE_HOTEL_CONF_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     keepalive: true,
     body: JSON.stringify({ conf, email }),
-  }).catch(err => console.error('Failed to record hotel referral save:', err));
+  })
+    .then(res => console.log("recordHotelReferralSave: response", res.status)) // TEMP DEBUG
+    .catch(err => console.error('Failed to record hotel referral save:', err));
 }
 
 // Records one "Views" row (Date Captured, Hotel Confirmation) the first time a hotel
