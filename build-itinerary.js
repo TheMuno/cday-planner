@@ -581,18 +581,21 @@ async function setupHotelAutocomplete() {
 }
 
 // Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
-// Nearby Search around carlton_arms's known coords instead of a user-picked autocomplete
+// a name search biased to carlton_arms's known coords instead of a user-picked autocomplete
 // prediction — carlton-arms pages have a fixed hotel, so there's nothing for the user to pick.
+// Text Search (by name) is used rather than Nearby Search (by proximity) because the nearest
+// lodging result to these coords isn't reliably Carlton Arms itself (e.g. Freehand New York
+// sits closer to this exact point) — searching by name pins down the actual named hotel.
 async function autoSetCarltonArmsHotel() {
   if (!window.location.href.includes('carlton-arms')) return;
 
   await google.maps.importLibrary('places');
 
-  const { places } = await google.maps.places.Place.searchNearby({
-    locationRestriction: { center: carlton_arms, radius: 100 },
-    includedPrimaryTypes: ['lodging', 'hotel'],
-    maxResultCount: 1,
+  const { places } = await google.maps.places.Place.searchByText({
+    textQuery: 'Carlton Arms Hotel',
     fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+    locationBias: { radius: 200.0, center: carlton_arms },
+    maxResultCount: 1,
   });
 
   const place = places?.[0];
