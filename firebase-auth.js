@@ -584,11 +584,6 @@ async function promptHotelReferralOptIn(email) {
   let hotel = findUnconsentedHotel(hotelReferrals);
   let existing = hotel ? hotelReferrals[hotel] : null;
 
-  // Tracks whether `hotel` came from ak-hotel-referral specifically (vs. the DB-priority
-  // path above) — the Views/Saves sheet writes below are scoped to that source only, so a
-  // DB-driven modal for an unrelated hotel can never log a referral-sheet row.
-  let referralConf = null;
-
   if (!hotel) {
     const localHotel = localStorage.getItem("ak-hotel-referral");
     if (!localHotel) return;
@@ -611,8 +606,16 @@ async function promptHotelReferralOptIn(email) {
     }
 
     hotel = localHotel;
-    referralConf = localHotel;
   }
+
+  // Tracks whether `hotel` matches ak-hotel-referral specifically — the Views/Saves sheet
+  // writes below are scoped to that source only, so a DB-priority hotel that's genuinely
+  // unrelated to the current referral flag can never log a referral-sheet row. This is
+  // checked by value (not by which branch above supplied `hotel`): once a first login has
+  // written a hotelReferrals.<hotel> entry via saveHotelReferral below, every later login
+  // for the *same* hotel gets picked up by the DB-priority scan above instead of the
+  // localStorage-fallback branch — but it's still the same referral, so it must still count.
+  const referralConf = hotel === localStorage.getItem("ak-hotel-referral") ? hotel : null;
 
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
   const accepted = await showHotelReferralModal(hotel);
@@ -622,7 +625,6 @@ async function promptHotelReferralOptIn(email) {
   } catch (_) {}
   if (accepted) localStorage.removeItem("ak-hotel-referral");
 
-  console.log("promptHotelReferralOptIn: post-modal state", { hotel, accepted, referralConf, email }); // TEMP DEBUG — remove once Saves logging is confirmed working
   if (referralConf && accepted) recordHotelReferralSave(referralConf, email);
 }
 
@@ -799,15 +801,12 @@ function recordHotelConfSave(user) {
 // on acceptance, so this can never fire twice for the same referral.
 function recordHotelReferralSave(conf, email) {
   if (!conf || !email) return;
-  console.log("recordHotelReferralSave: dispatching", { conf, email }); // TEMP DEBUG — remove once Saves logging is confirmed working
   fetch(SAVE_HOTEL_CONF_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     keepalive: true,
     body: JSON.stringify({ conf, email }),
-  })
-    .then(res => console.log("recordHotelReferralSave: response", res.status)) // TEMP DEBUG
-    .catch(err => console.error('Failed to record hotel referral save:', err));
+  }).catch(err => console.error('Failed to record hotel referral save:', err));
 }
 
 // Records one "Views" row (Date Captured, Hotel Confirmation) the first time a hotel
