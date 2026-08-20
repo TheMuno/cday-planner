@@ -117,6 +117,10 @@ if (localStorage['ak-user-destination']) {
   mapCenter = locations[localStorage['ak-user-destination']];
 }
 
+// Carlton Arms pages skip hotel-autocomplete entirely — the hotel is fixed, so its Place is
+// resolved from these known coords instead of user input (see autoSetCarltonArmsHotel()).
+const carlton_arms = { lat: 40.7401607, lng: -73.9852042 };
+
 const mapReady = initMap(mapCenter);
 async function initMap(center) {
   const $map = document.querySelector('[data-ak="map"]');
@@ -181,6 +185,7 @@ window.addEventListener('load', async () => {
     await mapReady;
     restoreAttractions();
     restoreHotel();
+    autoSetCarltonArmsHotel();
     restoreAirports();
     restoreTripNotes();
     // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
@@ -573,6 +578,45 @@ async function setupHotelAutocomplete() {
 
   wireOverflowEscapeOnFocus(placeAutocomplete);
   moveWhenVisible($wrap, placeAutocomplete);
+}
+
+// Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
+// Nearby Search around carlton_arms's known coords instead of a user-picked autocomplete
+// prediction — carlton-arms pages have a fixed hotel, so there's nothing for the user to pick.
+async function autoSetCarltonArmsHotel() {
+  if (!window.location.href.includes('carlton-arms')) return;
+
+  await google.maps.importLibrary('places');
+
+  const { places } = await google.maps.places.Place.searchNearby({
+    locationRestriction: { center: carlton_arms, radius: 100 },
+    includedPrimaryTypes: ['lodging', 'hotel'],
+    maxResultCount: 1,
+    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+  });
+
+  const place = places?.[0];
+  if (!place) return;
+
+  map.panTo(place.location);
+
+  const placeObj = place.toJSON();
+  const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+  const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+
+  const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+  markerObj['hotel'] = marker;
+
+  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+  showRemoveIcon($hotelNameEl);
+
+  localStorage['ak-hotel'] = JSON.stringify(saveObj);
+  localStorage['ak-update-hotel'] = true;
+  setUnsavedChangesFlag();
 }
 
 async function setupAirportAutocomplete() {
