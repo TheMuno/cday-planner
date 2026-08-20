@@ -155,12 +155,17 @@ window.addEventListener('load', async () => {
   setupHotelAutocomplete();
   setupAirportAutocomplete();
 
-  // Travel dates come from localStorage (picked upstream, before this page ever loads) and have
-  // no auth dependency — neither the auth round-trip below nor the Maps library chain nor a
-  // Firestore round trip is needed to render them, so show them now instead of leaving the
-  // skeleton up through all of that, which is what stalled this section on slow mobile connections.
+  // Travel dates and trip name both come from localStorage (picked upstream, before this page
+  // ever loads) and have no auth dependency — neither the auth round-trip below nor the Maps
+  // library chain nor a Firestore round trip is needed to render them, so show them now instead
+  // of leaving the skeletons up through all of that, which is what stalled these sections on slow
+  // mobile connections (the trip name used to be gated behind the auth round-trip specifically —
+  // auth.currentUser is only needed as a fallback when ak-user-name isn't set yet).
   restoreTripDateLine();
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+
+  restoreTripHeadingName();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
 
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
@@ -169,9 +174,6 @@ window.addEventListener('load', async () => {
 
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
-
-  restoreTripHeadingName();
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
 
   await syncWithDB();
   restoreTripHeadingName(); // re-run in case tripName only existed in the DB
@@ -1608,10 +1610,9 @@ function restoreTripDaySlides(onSettled) {
 // Split into two halves so the date line (no auth dependency) can be restored immediately
 // on 'load' instead of waiting on the Firebase auth round-trip.
 function restoreTripHeadingName() {
-  if (!auth.currentUser) return;
   const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
   if (!$headingH2) return;
-  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
+  let tripName = localStorage['ak-user-name'] || auth.currentUser?.displayName?.split(/\s+/)[0] || auth.currentUser?.email?.split('@')[0] || '';
   if (tripName) {
     tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
     $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
