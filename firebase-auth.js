@@ -143,13 +143,15 @@ let redirectHandled = false; // ensures only one sign-in flow (a button/form han
 let authButtonsLocked = false;
 let authButtonsLockTimer = null;
 
-function lockAuthButtons() {
+function lockAuthButtons(ms = 30000) {
   authButtonsLocked = true;
   clearTimeout(authButtonsLockTimer);
   // Long enough that it won't fire mid-attempt on a real popup (2FA, a slow
   // network, an account picker), short enough that an abandoned attempt
-  // doesn't leave the page feeling stuck for long.
-  authButtonsLockTimer = setTimeout(() => { authButtonsLocked = false; }, 30000);
+  // doesn't leave the page feeling stuck for long. Callers that already know
+  // they're only waiting out a brief cross-tab sync race (not a live popup)
+  // pass a much shorter ms — see the popup-closed-by-user branches below.
+  authButtonsLockTimer = setTimeout(() => { authButtonsLocked = false; }, ms);
 }
 
 function unlockAuthButtons() {
@@ -882,9 +884,13 @@ if (googleBtn) {
           await finishGoogleSignIn(auth.currentUser);
         } else {
           redirectHandled = false;
-          // Leave authButtonsLocked as-is: a background sign-in may still
-          // complete via the onAuthStateChanged backstop, and its timeout is
-          // the safety valve if it never does.
+          // A background sign-in may still complete via the onAuthStateChanged
+          // backstop (cross-tab sync), but that lands in well under a second
+          // if it's going to at all — it's not worth making the user wait out
+          // the full 30s double-click-guard timeout to retry. Re-lock with a
+          // short grace period instead so the buttons feel responsive again
+          // quickly once it's clear nothing is still in flight.
+          lockAuthButtons(1500);
         }
         return;
       }
@@ -1007,8 +1013,9 @@ if (facebookBtn) {
           await finishFacebookSignIn(auth.currentUser);
         } else {
           redirectHandled = false;
-          // Leave authButtonsLocked as-is — see the matching comment in the
-          // Google handler above.
+          // Short grace period instead of the full lock — see the matching
+          // comment in the Google handler above.
+          lockAuthButtons(1500);
         }
         return;
       }
