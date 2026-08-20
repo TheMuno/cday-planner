@@ -203,7 +203,7 @@ window.addEventListener('load', async () => {
   // matter what that prefix is or if it ever changes. Demo-hotel slugs skip the pass calculator
   // entirely and go straight to verify-itinerary instead.
   const pathSegments = window.location.pathname.split('/').filter(Boolean);
-  const isDemoHotel = pathSegments.includes('demo-hotel');
+  const isDemoHotel = window.location.href.includes('demo-hotel');
   pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
   const passCalculatorHref = '/' + pathSegments.join('/');
 
@@ -254,8 +254,9 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
+    const loadingText = isDemoHotel ? 'Verifying...' : 'Calculating Savings...';
     $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
-    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Calculating Savings...</span>`;
+    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>${loadingText}</span>`;
     $btn.classList.add('ak-saving');
     $btn.disabled = true;
     $btn.style.opacity = '0.8';
