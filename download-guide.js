@@ -205,6 +205,43 @@ function wireEzGuideButton(user) {
   });
 }
 
+// --- Cross-button click lock: Smart Guide download + Google Maps export share this ---
+// [data-ak-download-guide="true"] buttons (stripe-purchase.js) and the
+// [data-ak="download-google-maps-btn"] button (KMLExport/scripts.js) each already
+// disable buttons *within* their own group during their async flow, and flip
+// `.disabled` back to false via a `finally` block when done. This just extends that
+// lock across both groups on click — using the clicked button's own `disabled`
+// attribute as the signal that its owning script's flow has finished, so this file
+// never has to touch that flow itself.
+function wireDownloadButtonLock() {
+  const selector = '[data-ak-download-guide="true"], [data-ak="download-google-maps-btn"]';
+
+  document.addEventListener('click', e => {
+    const $clicked = e.target.closest(selector);
+    if (!$clicked || $clicked.disabled) return;
+
+    const $others = Array.from(document.querySelectorAll(selector)).filter(b => b !== $clicked);
+    if (!$others.length) return;
+
+    $others.forEach(b => {
+      b.disabled = true;
+      b.style.opacity = '0.9';
+    });
+    $clicked.disabled = true;
+
+    const observer = new MutationObserver(() => {
+      if ($clicked.disabled) return;
+      $others.forEach(b => {
+        b.disabled = false;
+        b.style.opacity = '';
+      });
+      observer.disconnect();
+    });
+    observer.observe($clicked, { attributes: true, attributeFilter: ['disabled'] });
+  }, true);
+}
+wireDownloadButtonLock();
+
 document.addEventListener('DOMContentLoaded', async () => {
   // No auth dependency — restore this right away instead of waiting on the
   // Firebase auth round-trip below.
