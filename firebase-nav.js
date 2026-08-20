@@ -49,7 +49,12 @@ const PROVIDER_LABELS  = {
 
 let currentUser      = null;
 let currentUserEmail = null;
-const LOGIN_PAGE_URL = '/log-in';
+// Fast-path cached user (below) can render the avatar before onAuthStateChanged
+// resolves — on a slow mobile connection that gap is wide enough for a tap to
+// land while currentUser is still null. Keep the cached data so the modal has
+// something to show instead of silently no-oping until Firebase catches up.
+let cachedUser        = null;
+const LOGIN_PAGE_URL  = '/log-in';
 
 // Firestore doc IDs are "user-<email>" (see firebase-auth.js), not the Auth
 // UID, so a user with no email on their auth object (e.g. Facebook without
@@ -66,6 +71,7 @@ const cached = localStorage.getItem(USER_STORAGE_KEY);
 if (cached) {
   try {
     const u = JSON.parse(cached);
+    cachedUser = u;
     if ($navLoginBtn) $navLoginBtn.classList.add('visibility-hidden');
     renderAvatar(u.photoURL, u.displayName || u.email);
   } catch (_) {
@@ -95,11 +101,13 @@ onAuthStateChanged(auth, async (user) => {
       photoURL:    user.photoURL,
       providerId:  user.providerData[0]?.providerId || 'password',
     }));
+    cachedUser = null;
     if ($navLoginBtn) $navLoginBtn.classList.add('visibility-hidden');
     renderAvatar(user.photoURL, user.displayName || email);
   } else {
     currentUser      = null;
     currentUserEmail = null;
+    cachedUser       = null;
     localStorage.removeItem(USER_STORAGE_KEY);
     if ($navLoginBtn) $navLoginBtn.classList.remove('visibility-hidden');
     if ($userAvatar) $userAvatar.innerHTML = '';
@@ -126,18 +134,24 @@ function renderAvatar(photoURL, nameOrEmail) {
 
 // ── USER MODAL ───────────────────────────────────────────────
 function showUserModal() {
-  if (!currentUser) return;
-  const user      = currentUser;
-  const email     = currentUserEmail;
-  const provider  = PROVIDER_LABELS[user.providerData[0]?.providerId] || 'Email & Password';
-  const avatarSrc = user.photoURL
-    || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName || email || 'U')}&background=ff7f34&color=fff`;
+  // currentUser lags behind the avatar render on a slow connection (it's only
+  // set once onAuthStateChanged resolves), so fall back to the cached data the
+  // avatar was actually rendered from rather than silently doing nothing.
+  if (!currentUser && !cachedUser) return;
+
+  const displayName = currentUser ? currentUser.displayName : cachedUser.displayName;
+  const email       = currentUser ? currentUserEmail : cachedUser.email;
+  const providerId  = currentUser ? currentUser.providerData[0]?.providerId : cachedUser.providerId;
+  const photoURL    = currentUser ? currentUser.photoURL : cachedUser.photoURL;
+  const provider    = PROVIDER_LABELS[providerId] || 'Email & Password';
+  const avatarSrc = photoURL
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || email || 'U')}&background=ff7f34&color=fff`;
 
   Swal.fire({
     html: `
       <div style="font-family:'Neuemontreal',sans-serif;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 0;">
         <img src="${avatarSrc}" alt="avatar" style="width:72px;height:72px;border-radius:50%;object-fit:cover;" />
-        ${user.displayName ? `<div style="font-size:1.1rem;font-weight:600;">${user.displayName}</div>` : ''}
+        ${displayName ? `<div style="font-size:1.1rem;font-weight:600;">${displayName}</div>` : ''}
         ${email ? `<div style="font-size:0.9rem;color:#666;">${email}</div>` : ''}
         <div style="font-size:0.8rem;background:#f3f3f3;padding:4px 12px;border-radius:999px;">${provider}</div>
         <button id="swal-logout-btn" style="margin-top:8px;padding:8px 24px;border:none;border-radius:999px;background:#ff7f34;color:#fff;font-family:'Neuemontreal',sans-serif;font-size:0.9rem;cursor:pointer;">Log out</button>
