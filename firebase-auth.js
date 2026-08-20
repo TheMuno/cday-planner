@@ -27,6 +27,7 @@ import {
   fetchSignInMethodsForEmail,
   sendPasswordResetEmail,
   signOut,
+  getRedirectResult,
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 
 // ── 1. YOUR FIREBASE CONFIG ─────────────────────────────────
@@ -65,6 +66,16 @@ const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.ne
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+
+// Warm up the popup/redirect resolver now, in the background, instead of
+// waiting for the user to click Google/Facebook. signInWithPopup only loads
+// and initializes its auth-helper iframe (+ gapi postMessage relay) the
+// first time it's used — that's real network + init work, and it's exactly
+// why the first click stalls before the popup shows while every click after
+// is instant (already warm). getRedirectResult() triggers that same
+// resolver init and just resolves to null here since there's no pending
+// redirect, so it's a free way to pay that cost during page load instead.
+getRedirectResult(auth).catch(() => {});
 
 // ── 3b. DOC ID HELPERS ───────────────────────────────────────
 // Firestore doc IDs are "user-<email>" (not the Firebase Auth UID), so an
