@@ -77,6 +77,17 @@ const db   = getFirestore(app);
 // redirect, so it's a free way to pay that cost during page load instead.
 getRedirectResult(auth).catch(() => {});
 
+// Browsers can restore this page from bfcache on back/forward navigation
+// instead of re-running this script — e.g. the user clicks a Google/Facebook
+// button, cancels, navigates away, then hits Back. That restores whatever
+// in-memory state (isSigningIn, authButtonsLocked, etc.) existed at the
+// moment they left, which can leave the buttons looking stuck with no fresh
+// script run to reset them. Force a real reload in that case so the page
+// always comes back in a clean state.
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) window.location.reload();
+});
+
 // ── 3b. DOC ID HELPERS ───────────────────────────────────────
 // Firestore doc IDs are "user-<email>" (not the Firebase Auth UID), so an
 // admin can find a user by scanning/searching the console. Email is
