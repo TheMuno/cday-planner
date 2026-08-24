@@ -527,7 +527,7 @@ function showHotelReferralModal(hotel) {
       margin: "0 0 20px", padding: "0 0 0 20px", listStyle: "disc",
       fontSize: "14px", color: "#111", lineHeight: "1.8",
     });
-    ["Curated neighborhood & transit guide", "Priority check-in & room coordination", "Exclusive guest discounts"]
+    ["Priority check-in & room coordination", "Curated neighborhood & transit guide", "Exclusive guest discounts"]
       .forEach((text) => {
         const li = document.createElement("li");
         li.textContent = text;
