@@ -305,8 +305,11 @@ function injectPdfSpinnerStyle() {
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
-  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('carlton-arms');
-  window.location.href = isDemoHotel ? '/demo-hotel/download-your-smart-guide' : siblingPagePath('get-the-guide');
+  const href = window.location.href;
+  const target = href.includes('carlton-arms') ? '/carlton-arms/download-your-smart-guide'
+    : href.includes('demo-hotel') ? '/demo-hotel/download-your-smart-guide'
+    : siblingPagePath('get-the-guide');
+  window.location.href = target;
 });
 
 if ($downloadBtns.length) {
