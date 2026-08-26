@@ -55,10 +55,6 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-// Warm the Firestore module in the background now (it'll be needed shortly by syncWithDB() on
-// 'load') without making anything above wait on it.
-getDb();
-
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
 const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
