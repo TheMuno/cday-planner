@@ -1364,6 +1364,8 @@ function restoreAttractions() {
       });
     });
   });
+
+  updateActiveChipTags();
 }
 
 function restoreHotel() {
@@ -1652,6 +1654,20 @@ function updateAttractionsCount(sign) {
 function saveAttractionLocal() {
   localStorage['ak-attractions-saved'] = getCurrentUserAttractions();
   localStorage['ak-update-attractions'] = true;
+  updateActiveChipTags();
+}
+
+// Recomputes ak-activity-chips (e.g. ["Gluten Free"]) from the attractions actually in the
+// itinerary, rather than incrementing/decrementing a counter — that way a chip's tag can never
+// linger after the last activity added through it is removed, no matter which code path removed it.
+function updateActiveChipTags() {
+  const tags = new Set();
+  $attractionsSlider.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($attraction => {
+    const tag = $attraction.saveObj?._chipTag;
+    if (tag) tags.add(tag);
+  });
+  localStorage['ak-activity-chips'] = JSON.stringify([...tags]);
+  return tags;
 }
 
 function getCurrentUserAttractions() {
@@ -1970,7 +1986,11 @@ function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
       // that's already been added, or the dense marker there gets covered by this fresh dim one.
       markerCache[slug] = results
         .filter(({ saveObj }) => !findItineraryMatch(saveObj))
-        .map(({ title, position, saveObj }) => createSearchMarker(title, position, saveObj, pinUrl));
+        .map(({ title, position, saveObj }) => {
+          saveObj._chipSlug = slug;
+          saveObj._chipTag = config.curatedTag;
+          return createSearchMarker(title, position, saveObj, pinUrl);
+        });
     } catch (e) {
       if (e.name === 'AbortError') return; // superseded by a newer viewport — not a real failure
       console.warn(`Viewport refresh failed for "${slug}":`, e);
@@ -2023,7 +2043,11 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
       // once the chip is later deactivated and this fresh dim marker is the one that gets removed.
       markerCache[slug] = results
         .filter(({ saveObj }) => !findItineraryMatch(saveObj))
-        .map(({ title, position, saveObj }) => createSearchMarker(title, position, saveObj, pinUrl));
+        .map(({ title, position, saveObj }) => {
+          saveObj._chipSlug = slug;
+          saveObj._chipTag = config.curatedTag;
+          return createSearchMarker(title, position, saveObj, pinUrl);
+        });
     } catch (e) {
       if (e.name === 'AbortError') return; // superseded — not a real failure, leave UI as the newer trigger left it
       console.warn(`Chip search failed for "${slug}":`, e);
