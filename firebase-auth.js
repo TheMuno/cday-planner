@@ -53,15 +53,6 @@ const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd
 const SAVE_HOTEL_CONF_LOGIN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConfOnLogin';
 const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
 
-// ── 2d. HOTEL REFERRAL "VIEWS"/"SAVES" SHEET (tied to the referral's DB/modal state) ──
-// Same two Cloud Functions/tabs as 2c above (saveHotelConf → "Views", saveHotelConfOnLogin →
-// "Saves"), reused here for the ak-hotel-referral flow: a hotel with no Firestore
-// hotelReferrals entry yet logs a "Views" row (Date Captured + Hotel Confirmation) the first
-// time it's seen; accepting the opt-in modal (first time or on a later re-prompt) logs a
-// "Saves" row (Date Saved + Hotel Confirmation + Email). See promptHotelReferralOptIn below
-// for where these fire.
-const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConf';
-
 // ── 3. INIT ─────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -620,33 +611,14 @@ async function promptHotelReferralOptIn(email) {
     if (!localHotel) return;
     existing = hotelReferrals?.[localHotel] ?? null;
 
-    if (existing) {
-      // Already has a DB record — already consented means there's nothing left
-      // to ask, ever. Saved-but-not-consented falls through to the modal below,
-      // but doesn't re-log a View: that already happened the first time this
-      // hotel had no DB record at all (the `else` branch, below).
-      if (existing.optedIn) {
-        localStorage.removeItem("ak-hotel-referral");
-        return;
-      }
-    } else {
-      // No DB record yet for this hotel — first time this referral has been
-      // seen for this user, so it's a "View" regardless of what they do with
-      // the modal about to be shown.
-      recordHotelReferralView(localHotel);
+    if (existing?.optedIn) {
+      // Already has a DB record and already consented — nothing left to ask, ever.
+      localStorage.removeItem("ak-hotel-referral");
+      return;
     }
 
     hotel = localHotel;
   }
-
-  // Tracks whether `hotel` matches ak-hotel-referral specifically — the Views/Saves sheet
-  // writes below are scoped to that source only, so a DB-priority hotel that's genuinely
-  // unrelated to the current referral flag can never log a referral-sheet row. This is
-  // checked by value (not by which branch above supplied `hotel`): once a first login has
-  // written a hotelReferrals.<hotel> entry via saveHotelReferral below, every later login
-  // for the *same* hotel gets picked up by the DB-priority scan above instead of the
-  // localStorage-fallback branch — but it's still the same referral, so it must still count.
-  const referralConf = hotel === localStorage.getItem("ak-hotel-referral") ? hotel : null;
 
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
   const accepted = await showHotelReferralModal(hotel);
@@ -655,8 +627,6 @@ async function promptHotelReferralOptIn(email) {
     await saveHotelReferral(email, hotel, accepted, existing);
   } catch (_) {}
   if (accepted) localStorage.removeItem("ak-hotel-referral");
-
-  if (referralConf && accepted) recordHotelReferralSave(referralConf, email);
 }
 
 function setMode(signUp) {
@@ -824,36 +794,6 @@ function recordHotelConfSave(user) {
     keepalive: true,
     body: JSON.stringify({ conf, email }),
   }).catch(err => console.error('Failed to record hotel conf save:', err));
-}
-
-// Records one "Saves" row (Date Saved, Hotel Confirmation, Email) for an *accepted*
-// hotel-referral modal — called from promptHotelReferralOptIn once the user opts in.
-// No synced-flag/dedupe needed: promptHotelReferralOptIn already clears ak-hotel-referral
-// on acceptance, so this can never fire twice for the same referral.
-function recordHotelReferralSave(conf, email) {
-  if (!conf || !email) return;
-  fetch(SAVE_HOTEL_CONF_LOGIN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    keepalive: true,
-    body: JSON.stringify({ conf, email }),
-  }).catch(err => console.error('Failed to record hotel referral save:', err));
-}
-
-// Records one "Views" row (Date Captured, Hotel Confirmation) the first time a hotel
-// referral is seen for this user — called from promptHotelReferralOptIn only when Firestore
-// has no hotelReferrals entry for this hotel yet. No separate dedupe flag needed: right
-// after this, saveHotelReferral() always creates that Firestore entry (accepted or not), so
-// on any later login `existing` is truthy and this branch is never reached again for the
-// same hotel.
-function recordHotelReferralView(conf) {
-  if (!conf) return;
-  fetch(SAVE_HOTEL_CONF_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    keepalive: true,
-    body: JSON.stringify({ conf }),
-  }).catch(err => console.error('Failed to record hotel referral view:', err));
 }
 
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
