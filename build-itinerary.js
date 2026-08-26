@@ -1,5 +1,4 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -15,13 +14,28 @@ const firebaseConfig = {
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
-// connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
-let db;
-try {
-  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
-} catch (e) {
-  db = getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+// firebase-firestore.js is only actually needed once a Firestore read/write happens
+// (retrieveDBData/saveAttractionsDB). As a static import it used to be fetched — and block
+// evaluation of this entire module, including the onAuthStateChanged registration below that
+// reveals sign-in-to-save/continue-to-step2 — before any code here could run at all. That's
+// what made the sign-in button take so long to appear on slow mobile connections. Loading it
+// lazily keeps that registration's critical path down to just firebase-app + firebase-auth.
+let dbPromise = null;
+function getDb() {
+  if (!dbPromise) {
+    dbPromise = import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js").then(mod => {
+      // Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+      // connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+      let db;
+      try {
+        db = mod.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      } catch (e) {
+        db = mod.getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+      }
+      return { ...mod, db };
+    });
+  }
+  return dbPromise;
 }
 
 // Reveal sign-in-to-save/continue-to-step2 as soon as auth state is known, independent of
@@ -40,6 +54,10 @@ onAuthStateChanged(auth, user => {
     $continueBtn?.setAttribute('data-ak-hidden', 'true');
   }
 });
+
+// Warm the Firestore module in the background now (it'll be needed shortly by syncWithDB() on
+// 'load') without making anything above wait on it.
+getDb();
 
 const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
@@ -138,6 +156,13 @@ async function initMap(center) {
   return map;
 }
 
+// Carlton Arms pages have a fixed hotel that doesn't depend on auth, Firestore sync, or trip-day
+// slide restoration — it used to be nested inside the 'load' handler's restoreTripDaySlides()
+// callback, behind syncWithDB() and slide setup, which added several unrelated network round-trips
+// in front of it and made the hotel name show up late on mobile. Kick it off as soon as the map
+// itself is ready instead, in parallel with all of that.
+mapReady.then(() => autoSetCarltonArmsHotel());
+
 
 window.addEventListener('load', async () => {
   document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
@@ -186,8 +211,10 @@ window.addEventListener('load', async () => {
   restoreTripDaySlides(async () => {
     await mapReady;
     restoreAttractions();
-    restoreHotel();
-    autoSetCarltonArmsHotel();
+    // Carlton Arms pages get their hotel from autoSetCarltonArmsHotel() (already kicked off in
+    // parallel above, as soon as mapReady resolved) — restoring from localStorage here would race
+    // it and could clobber the fixed hotel with a stale saved value.
+    if (!window.location.href.includes('carlton-arms')) restoreHotel();
     restoreAirports();
     restoreTripNotes();
     // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
@@ -1707,6 +1734,7 @@ function removeUnsavedChangesFlag() {
 }
 
 async function retrieveDBData(userMail) {
+  const { db, doc, getDoc } = await getDb();
   const userRef = doc(db, 'locationsData', `user-${userMail}`);
   const docSnap = await getDoc(userRef);
   return docSnap.exists() ? docSnap.data() : null;
@@ -1783,6 +1811,7 @@ async function syncWithDB() {
 async function saveAttractionsDB() {
   if (!localStorage['ak-userMail']) return;
   const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  const { db, doc, setDoc, serverTimestamp } = await getDb();
   const userRef = doc(db, 'locationsData', `user-${userMail}`);
 
   const saveObj = {
