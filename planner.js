@@ -38,7 +38,16 @@ function captureHotelReferral() {
   }
 
   const hotel = new URLSearchParams(window.location.search).get('hotel');
-  if (hotel) localStorage.setItem('ak-hotel-referral', hotel);
+  if (!hotel) return;
+
+  localStorage.setItem('ak-hotel-referral', hotel);
+
+  // Drop "hotel" from the visible URL now that it's captured — history.replaceState only
+  // rewrites the address bar (no reload, no new history entry), so it can't lose the value
+  // that's already saved above.
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete('hotel');
+  window.history.replaceState(window.history.state, '', cleanUrl);
 }
 
 const conf = new URLSearchParams(window.location.search).get('conf');
