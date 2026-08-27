@@ -44,15 +44,19 @@ const $ezGuideBtns     = document.querySelectorAll('[data-ak="download-ez-guide"
 // Mirrors get-guide.js / verify-itinerary.js / build-itinerary.js's restoreTripHeading(),
 // split into two halves so the date line (no auth dependency) can be restored immediately
 // on DOMContentLoaded instead of waiting on the Firebase auth round-trip.
-function restoreTripHeadingName() {
-  if (!auth.currentUser) return;
+//
+// Takes `user` as a param instead of reading auth.currentUser so the cached-name case below
+// doesn't have to wait on the auth round-trip either — only the displayName/email fallback
+// actually needs the Firebase user object, and that's only reached when localStorage has
+// nothing yet.
+function restoreTripHeadingName(user) {
   const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
   if (!$headingH2) return;
-  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-  if (tripName) {
-    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
-  }
+  let tripName = localStorage['ak-user-name'] || user?.displayName?.split(/\s+/)[0] || user?.email?.split('@')[0] || '';
+  if (!tripName) return;
+  tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+  $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
 }
 
 function restoreTripDateLine() {
@@ -243,10 +247,11 @@ function wireDownloadButtonLock() {
 wireDownloadButtonLock();
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // No auth dependency — restore this right away instead of waiting on the
+  // No auth dependency — restore these right away instead of waiting on the
   // Firebase auth round-trip below.
   restoreTripDateLine();
   $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+  restoreTripHeadingName();
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
@@ -255,8 +260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   localStorage['ak-userMail'] = user.email;
-  restoreTripHeadingName();
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  restoreTripHeadingName(user);
 
   wireEzGuideButton(user);
 });

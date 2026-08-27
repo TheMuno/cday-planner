@@ -79,6 +79,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const $postPurchaseEls = document.querySelectorAll('[data-ak-post-purchase]');
 
 
+  // Optimistic paint: a returning purchased user already has this cached from a prior page
+  // load, so show their download buttons immediately instead of making them wait through a
+  // fresh auth + Firestore round-trip just to see a button they're entitled to every time.
+  // Click handlers still only get wired once the real check below confirms it — and if the
+  // cache turns out stale (e.g. a refund), setUI(false) further down hides these again.
+  if (localStorage.getItem(PURCHASE_STORAGE_KEY) === 'true') {
+    [...$downloadBtns, ...$flagshipDownloadBtns, ...$downloadMapsBtns].forEach(el => {
+      el.removeAttribute('data-ak-hidden');
+      el.style.display = '';
+    });
+  }
+
   // Show spinners immediately while auth + Firestore check runs
   showSpinners($buyButtons);
 
