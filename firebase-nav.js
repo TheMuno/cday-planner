@@ -18,7 +18,6 @@ import {
   onAuthStateChanged,
   signOut,
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
-import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
 // ── CONFIG ───────────────────────────────────────────────────
 const firebaseConfig = {
@@ -34,7 +33,29 @@ const firebaseConfig = {
 // Safe init — won't conflict if firebase-auth.js also loads on the login page
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db   = getFirestore(app);
+
+// firebase-firestore.js is only actually needed by findUserDocByUid below, which itself only
+// runs for the rare case of a signed-in user with no email on their auth object. As a static
+// import it used to be fetched — and block evaluation of this entire module, including the
+// onAuthStateChanged registration below — before any code here could run at all. This script
+// loads sitewide via Site Settings on every single page, ahead of each page's own embeds, so
+// that blocking delayed every page-specific sign-in-state reveal behind it (e.g.
+// build-itinerary.js's sign-in-to-save button). Loading it lazily removes that entirely.
+let dbPromise = null;
+function getDb() {
+  if (!dbPromise) {
+    dbPromise = import("https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js").then(mod => {
+      let db;
+      try {
+        db = mod.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      } catch (e) {
+        db = mod.getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+      }
+      return { ...mod, db };
+    });
+  }
+  return dbPromise;
+}
 
 // ── ELEMENT REFS ─────────────────────────────────────────────
 const $navLoginBtn = document.querySelector('[data-ak="login"]');
@@ -61,6 +82,7 @@ const LOGIN_PAGE_URL  = '/log-in';
 // the email scope) can't be looked up by doc ID directly — fall back to a
 // query on the stored uid field instead.
 async function findUserDocByUid(uid) {
+  const { collection, query, where, getDocs, db } = await getDb();
   const snap = await getDocs(query(collection(db, "users"), where("uid", "==", uid)));
   return snap.empty ? null : snap.docs[0];
 }
