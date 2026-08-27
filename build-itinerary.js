@@ -2155,14 +2155,20 @@ function getCuratedByTag(tagLabel, expectedType) {
     }));
 }
 
+// Retries once on failure — a burst of these fired concurrently (one per curated place in a tag)
+// occasionally flakes with a transient transport error on the first attempt; a lone retry almost
+// always succeeds since it's no longer racing its siblings.
 async function resolveCuratedLocation(place) {
   if (place.location) return place.location;
-  try {
-    const p = new google.maps.places.Place({ id: place.placeId });
-    await p.fetchFields({ fields: ['location'] });
-    place.location = p.location ? { lat: p.location.lat(), lng: p.location.lng() } : null;
-  } catch (e) {
-    console.warn('Could not resolve location for', place.displayName, e);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const p = new google.maps.places.Place({ id: place.placeId });
+      await p.fetchFields({ fields: ['location'] });
+      place.location = p.location ? { lat: p.location.lat(), lng: p.location.lng() } : null;
+      return place.location;
+    } catch (e) {
+      if (attempt === 2) console.warn('Could not resolve location for', place.displayName, e);
+    }
   }
   return place.location;
 }
