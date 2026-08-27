@@ -20,8 +20,6 @@
 
 import { initializeApp, getApps, getApp }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, doc, getDoc }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFunctions, httpsCallable }
@@ -38,8 +36,33 @@ const firebaseConfig = {
 
 const app       = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth      = getAuth(app);
-const db        = getFirestore(app);
 const functions = getFunctions(app);
+
+// firebase-firestore.js is only actually needed once the purchase check below runs. As a
+// static import it used to be fetched — and block evaluation of this entire module, including
+// the onAuthStateChanged registration inside DOMContentLoaded, before any code here could run
+// at all. This script is a sitewide embed (also loaded on pages like build-itinerary), and
+// module scripts execute in document order like defer scripts — so this alone was enough to
+// re-delay build-itinerary.js's own sign-in-to-save button behind stripe-purchase's Firestore
+// fetch, even though build-itinerary.js's own Firestore import was already made lazy for
+// exactly this reason. Loading it lazily here too removes that cross-script dependency.
+let dbPromise = null;
+function getDb() {
+  if (!dbPromise) {
+    dbPromise = import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js").then(mod => {
+      // Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+      // connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+      let db;
+      try {
+        db = mod.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      } catch (e) {
+        db = mod.getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+      }
+      return { ...mod, db };
+    });
+  }
+  return dbPromise;
+}
 
 const PURCHASE_STORAGE_KEY = 'ak-has-purchased-plan';
 const PURCHASE_EVENT       = 'ak:purchase-status';
@@ -111,6 +134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    const { doc, getDoc, db } = await getDb();
     const userRef   = doc(db, 'locationsData', `user-${user.email}`);
     const userSnap  = await withTimeout(getDoc(userRef), 8000, 'Firestore purchase check timed out');
     const userData  = userSnap.exists() ? userSnap.data() : {};
@@ -514,6 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     let userSnap, purchased;
     try {
+      const { doc, getDoc, db } = await getDb(); // already resolved by the first check — instant here
       userSnap  = await getDoc(doc(db, 'locationsData', `user-${user.email}`));
       purchased = userSnap.exists() && userSnap.data().hasPurchasedPlan === true;
     } catch (err) {
