@@ -36,7 +36,10 @@ function siblingPagePath(targetSlug) {
 // Mirrors verify-itinerary.js's redirectToStep1()/showRedirectLoader().
 function redirectToStep1(message) {
   showRedirectLoader(message);
-  setTimeout(() => { window.location.href = siblingPagePath('itinerary'); }, 1500);
+  const target = window.location.host.includes('ask-khonsu-db0b39ec35e316889a947cb3ed90.webflow.io')
+    ? '/itinerary-maker/itinerary-maker'
+    : siblingPagePath('itinerary');
+  setTimeout(() => { window.location.href = target; }, 1500);
 }
 
 function showRedirectLoader(message) {
