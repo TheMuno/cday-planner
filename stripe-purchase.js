@@ -123,6 +123,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Hoisted out of the try block so the catch below can still wire the buy buttons for a user
   // whose auth resolved fine but whose Firestore purchase check then failed/timed out.
+  // Purchase gating only applies on /smart-guide/ pages — everywhere else (e.g. download-guide)
+  // Smart Guide access isn't paywalled, so the Firestore check below is skipped entirely and
+  // the buttons are revealed unconditionally instead.
+  const requiresPurchaseCheck = window.location.pathname.includes('/smart-guide/');
+
   let user;
   try {
     user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
@@ -131,6 +136,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       setUI(false);
       broadcastPurchaseStatus(false);
       wireBuyButtonsLoggedOut($buyButtons);
+      return;
+    }
+
+    if (!requiresPurchaseCheck) {
+      // persist:false — this page's "purchased" is a display default, not a real
+      // entitlement check, so it must never clobber a genuine cached status from
+      // a /smart-guide/ page visited earlier in the session.
+      setUI(true);
+      broadcastPurchaseStatus(true, { persist: false });
+      wireDownloadButton(user, $downloadBtns);
+      wireDownloadButton(user, $flagshipDownloadBtns, 'generateFlagshipSmartGuidePdf', 'flagship-smart-guide.pdf');
+      wireGoogleMapsButton($downloadMapsBtns);
       return;
     }
 
