@@ -140,6 +140,22 @@ let isSigningIn = sessionStorage.getItem(PENDING_SIGNIN_KEY) === '1';
 sessionStorage.removeItem(PENDING_SIGNIN_KEY);
 let redirectHandled = false; // ensures only one sign-in flow (a button/form handler or the onAuthStateChanged backstop) finishes and navigates per sign-in
 
+// isSigningIn restored true above means a prior attempt reloaded the page expecting the
+// cross-tab auth sync (onAuthStateChanged backstop near the bottom of this file) to land and
+// finish the job. That's a real race on mobile (popup-as-new-tab), but it isn't the only way
+// to get here — a browser silently blocking the popup's storage (e.g. Safari ITP) looks
+// identical up front and never actually signs the user in. Without this, that case leaves the
+// user dumped back on this page with zero feedback, indistinguishable from the button click
+// having done nothing at all. Give the sync a bounded window, then say so if it never lands.
+if (isSigningIn) {
+  setTimeout(() => {
+    if (!redirectHandled) {
+      isSigningIn = false;
+      showError("Sign-in didn't complete. Please try again.");
+    }
+  }, 6000);
+}
+
 // ── DOUBLE-CLICK / CROSS-BUTTON GUARD ────────────────────────
 // Deliberately separate from isSigningIn: isSigningIn is left true on purpose
 // in the popup-race punt branches below (so the onAuthStateChanged backstop
@@ -682,11 +698,14 @@ async function handleAuthError(err) {
   }
 
   const messages = {
-    "auth/wrong-password":       "Incorrect password.",
-    "auth/invalid-credential":   "Incorrect email or password.",
-    "auth/invalid-email":        "Please enter a valid email address.",
-    "auth/email-already-in-use": "An account with this email already exists.",
-    "auth/weak-password":        "Password must be at least 6 characters.",
+    "auth/wrong-password":         "Incorrect password.",
+    "auth/invalid-credential":     "Incorrect email or password.",
+    "auth/invalid-email":          "Please enter a valid email address.",
+    "auth/email-already-in-use":   "An account with this email already exists.",
+    "auth/weak-password":          "Password must be at least 6 characters.",
+    "auth/timeout":                "This is taking longer than expected. Please check your connection and try again.",
+    "auth/network-request-failed": "Network error. Please check your connection and try again.",
+    "auth/too-many-requests":      "Too many attempts. Please wait a moment and try again.",
   };
   showError(messages[err.code] || "Something went wrong. Please try again.");
 }
@@ -796,6 +815,19 @@ function recordHotelConfSave(user) {
   }).catch(err => console.error('Failed to record hotel conf save:', err));
 }
 
+// Guards against signInWithPopup hanging indefinitely — an ad blocker, extension, or
+// corporate firewall can silently kill the auth-helper iframe's postMessage relay without
+// signInWithPopup itself ever resolving or rejecting. Without this, a hung popup leaves the
+// buttons locked with zero feedback until the 30s lockAuthButtons timer eventually releases
+// them on its own — which just looks like "clicking the button does nothing."
+const POPUP_TIMEOUT_MS = 20000;
+function withPopupTimeout(promise) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject({ code: 'auth/timeout' }), POPUP_TIMEOUT_MS)),
+  ]);
+}
+
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
 // Shared by the normal popup-resolves path and the popup-race recovery path
 // below (auth/popup-closed-by-user firing even though auth.currentUser is
@@ -823,7 +855,7 @@ if (googleBtn) {
     // finishGoogleSignIn completes its writes.
     redirectHandled = true;
     try {
-      const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      const result = await withPopupTimeout(signInWithPopup(auth, new GoogleAuthProvider()));
       showLoader();
       await finishGoogleSignIn(result.user);
     } catch (err) {
@@ -955,7 +987,7 @@ if (facebookBtn) {
     lockAuthButtons();
     redirectHandled = true;
     try {
-      const result = await signInWithPopup(auth, fbProvider);
+      const result = await withPopupTimeout(signInWithPopup(auth, fbProvider));
       showLoader();
       await finishFacebookSignIn(result.user);
     } catch (err) {
