@@ -182,12 +182,15 @@ function formatFlightLabel(data) {
 // of curated tag strings, e.g. ["Gluten Free", "Pre-Theater"] — see updateActiveChipTags()).
 // Follows the site-wide data-ak-hidden convention (*[data-ak-hidden] { display: none; }): the
 // first [data-ak-hidden] on the page is the chip template, cloned once per active chip; its next
-// sibling is the "none selected" fallback. Doesn't depend on auth and ak-activity-chips never
-// changes over the course of this page's load, so this only needs to run once.
+// sibling is the "none selected" fallback. When there are no chips, the template's wrapper and
+// the "Search filters..." subtitle above it are hidden too, leaving only the fallback line.
+// Doesn't depend on auth and ak-activity-chips never changes over the course of this page's
+// load, so this only needs to run once.
 function populateActivityChips() {
   const $chipTemplate = document.querySelector('[data-ak-hidden]');
   if (!$chipTemplate) return;
   const $chipList = $chipTemplate.parentElement;
+  const $subtitle = $chipList.previousElementSibling;
   const $emptyFallback = $chipList.nextElementSibling;
 
   let chips = [];
@@ -208,6 +211,7 @@ function populateActivityChips() {
   } else {
     $chipTemplate.remove();
     $chipList.setAttribute('data-ak-hidden', '');
+    $subtitle?.setAttribute('data-ak-hidden', '');
     $emptyFallback?.removeAttribute('data-ak-hidden');
   }
 }
