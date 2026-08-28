@@ -160,6 +160,24 @@ function populateGuestName() {
   setAkText('guest-name', tripName);
 }
 
+// ak-arrival-airport/ak-departure-airport hold a JSON blob (place details + flight fields merged
+// in by build-itinerary.js's initAirportAutocomplete saveObj), not a plain airport name — parse it
+// so we can pull out just the pieces this report needs instead of dumping the raw blob as text.
+function getAirportData(storageKey) {
+  const raw = localStorage[storageKey];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function formatFlightLabel(data) {
+  if (!data) return '';
+  return [data.carrierName, data.flightNumber].filter(Boolean).join(' ');
+}
+
 // Everything here reads only from localStorage, so it doesn't need to wait on the Firebase auth
 // round-trip — called immediately on DOMContentLoaded (matching verify-itinerary.js's pattern)
 // so the report renders with real data on first paint instead of popping in all at once later.
@@ -168,15 +186,18 @@ function populateReport() {
   const childrenNum = Number(localStorage['ak-children-num']) || 0;
   const guestsNum = adultNum + childrenNum;
 
+  const arrivalAirport = getAirportData('ak-arrival-airport');
+  const departureAirport = getAirportData('ak-departure-airport');
+
   setAkText('guest-email', localStorage['ak-userMail']);
   setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf']);
   setAkText('room-type', localStorage['ak-room-type']);
-  setAkText('arrival-airport', localStorage['ak-arrival-airport']);
-  setAkText('departure-airport', localStorage['ak-departure-airport']);
-  setAkText('arrival-time', localStorage['ak-arrival-time']);
-  setAkText('departure-time', localStorage['ak-departure-time']);
-  setAkText('inbound-flight', localStorage['ak-inbound-flight']);
-  setAkText('outbound-flight', localStorage['ak-outbound-flight']);
+  setAkText('arrival-airport', arrivalAirport?.displayName);
+  setAkText('departure-airport', departureAirport?.displayName);
+  setAkText('arrival-time', arrivalAirport?.flightTime);
+  setAkText('departure-time', departureAirport?.flightTime);
+  setAkText('inbound-flight', formatFlightLabel(arrivalAirport));
+  setAkText('outbound-flight', formatFlightLabel(departureAirport));
   if (guestsNum > 0) setAkText('guests-num', String(guestsNum));
 
   const range = getTravelDateRange();
