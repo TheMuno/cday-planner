@@ -178,6 +178,38 @@ function formatFlightLabel(data) {
   return [data.carrierName, data.flightNumber].filter(Boolean).join(' ');
 }
 
+// Wires the "TRAVELER INTENT" section from build-itinerary.js's ak-activity-chips (a JSON array
+// of curated tag strings, e.g. ["Gluten Free", "Pre-Theater"] — see updateActiveChipTags()).
+// Follows the site-wide data-ak-hidden convention (*[data-ak-hidden] { display: none; }): the
+// first [data-ak-hidden] on the page is the chip template, cloned once per active chip; its next
+// sibling is the "none selected" fallback. Doesn't depend on auth and ak-activity-chips never
+// changes over the course of this page's load, so this only needs to run once.
+function populateActivityChips() {
+  const $chipTemplate = document.querySelector('[data-ak-hidden]');
+  if (!$chipTemplate) return;
+  const $chipList = $chipTemplate.parentElement;
+  const $emptyFallback = $chipList.nextElementSibling;
+
+  let chips = [];
+  try {
+    chips = JSON.parse(localStorage['ak-activity-chips'] || '[]');
+  } catch (e) {
+    chips = [];
+  }
+
+  if (chips.length > 0) {
+    chips.forEach(tag => {
+      const $chip = $chipTemplate.cloneNode(true);
+      $chip.textContent = tag;
+      $chip.removeAttribute('data-ak-hidden');
+      $chipList.appendChild($chip);
+    });
+    $chipTemplate.remove();
+  } else {
+    $emptyFallback?.removeAttribute('data-ak-hidden');
+  }
+}
+
 // Everything here reads only from localStorage, so it doesn't need to wait on the Firebase auth
 // round-trip — called immediately on DOMContentLoaded (matching verify-itinerary.js's pattern)
 // so the report renders with real data on first paint instead of popping in all at once later.
@@ -214,6 +246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // common case (syncWithDB() below only backfills it when missing) — so the report shows real
   // data immediately instead of leaving template/placeholder content up through the auth round-trip.
   populateReport();
+  populateActivityChips();
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
