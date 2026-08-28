@@ -150,7 +150,7 @@ function setAkText(selector, value) {
 // populateReport() and only ever called once auth has actually resolved.
 function populateGuestName() {
   if (!auth.currentUser) return;
-  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || '';
+  let tripName = auth.currentUser.displayName || localStorage['ak-user-name'] || auth.currentUser.email?.split('@')[0] || '';
   if (tripName) {
     tripName = tripName
       .split(/\s+/)
