@@ -129,6 +129,12 @@ function formatReportDate(date) {
   return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// Footer recap ([data-ak="check-in-date-short"]/"check-out-date-short") keeps the short weekday,
+// no-year format ("Mon, Oct 5") — only the header dates use formatReportDate's long form.
+function formatReportDateShort(date) {
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 // Sets an element's content from localStorage only when that key is actually present, leaving
 // the template's fallback markup untouched otherwise — matches the "if available" behavior of
 // the rest of this codebase (e.g. build-itinerary.js's syncWithDB()) rather than blanking fields
@@ -310,11 +316,15 @@ function populateReport() {
   if (range) {
     setAkText('check-in-date', formatReportDate(range.startDate));
     setAkText('check-out-date', formatReportDate(range.endDate));
+    setAkText('check-in-date-short', formatReportDateShort(range.startDate));
+    setAkText('check-out-date-short', formatReportDateShort(range.endDate));
     setAkText('stay-nights', String(range.nights));
   } else {
     const year = new Date().getFullYear();
     setAkText('check-in-date', `Monday, Jan 1, ${year}`);
     setAkText('check-out-date', `Tuesday, Jan 2, ${year}`);
+    setAkText('check-in-date-short', 'Mon, Jan 1');
+    setAkText('check-out-date-short', 'Tue, Jan 2');
     setAkText('stay-nights', '1');
   }
 }
