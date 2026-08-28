@@ -178,27 +178,86 @@ function formatFlightLabel(data) {
   return [data.carrierName, data.flightNumber].filter(Boolean).join(' ');
 }
 
-// Wires the "TRAVELER INTENT" section from build-itinerary.js's ak-activity-chips (a JSON array
-// of curated tag strings, e.g. ["Gluten Free", "Pre-Theater"] — see updateActiveChipTags()).
-// Follows the site-wide data-ak-hidden convention (*[data-ak-hidden] { display: none; }): the
-// first [data-ak-hidden] on the page is the chip template, cloned once per active chip; its next
-// sibling is the "none selected" fallback. When there are no chips, the template's wrapper and
-// the "Search filters..." subtitle above it are hidden too, leaving only the fallback line.
-// Doesn't depend on auth and ak-activity-chips never changes over the course of this page's
-// load, so this only needs to run once.
-function populateActivityChips() {
-  const $chipTemplate = document.querySelector('[data-ak-hidden]');
-  if (!$chipTemplate) return;
-  const $chipList = $chipTemplate.parentElement;
-  const $subtitle = $chipList.previousElementSibling;
-  const $emptyFallback = $chipList.nextElementSibling;
+// Per-tag actionable guidance for Module 3's "CONCIERGE TIP" copy, keyed by the same curatedTag
+// labels build-itinerary.js writes into ak-activity-chips (see the CURATED_EAT/SEE tag catalogs
+// around updateActiveChipTags()). A tag not listed here (new catalog entry) falls back to a
+// generic clause instead of leaving the tip blank.
+const CONCIERGE_TIP_ACTIONS = {
+  'Gluten Free': 'flag the kitchen before breakfast so gluten-free options are ready',
+  'Jewish': 'have kosher-friendly recommendations on hand',
+  'Classic NY': 'point them to the classic NY spots rather than tourist traps',
+  'Solo Dining': 'suggest counter or bar seating over a table for one',
+  'Big Groups': 'confirm large-party reservations ahead of time',
+  'Pre-Theater': 'have the pre-theater dining list ready before the evening curtain',
+  'Kid Friendly': 'offer early-seating recommendations rather than the late ones',
+  'Pizza': 'have a few go-to pizza spots ready to recommend',
+  'Italian': 'have Italian spots near the hotel on hand',
+  'Lunch Under 15': 'steer them toward the budget-friendly picks',
+  'LGBTQ': 'point them to LGBTQ-friendly spots nearby',
+  'Desserts': 'have dessert and sweet-shop recommendations ready',
+  'Coffee': 'point them to a good coffee spot near the hotel',
+  'Steak': 'have a steakhouse recommendation on hand',
+  'Meatless': 'flag the vegetarian/vegan-friendly options',
+  'Live Music': 'have live-music venue recommendations ready for the evening',
+  'Tours': 'have guided tour options ready to book',
+  'Museums': 'have museum hours and ticket info on hand',
+  'Historic': 'point them to nearby historic landmarks',
+  'Hidden Gems': 'have a few off-the-beaten-path picks ready',
+  'Observation Decks': 'have observation deck / rooftop view recommendations ready',
+  'Free': 'have free things-to-do recommendations on hand',
+  'Retail Stores': 'point them to nearby shopping',
+  'Popular': 'have the top-rated nearby attractions ready to recommend',
+  'Vintage Shopping': 'point them to nearby vintage/thrift shopping',
+};
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function joinWithAnd(items) {
+  if (items.length <= 1) return items.join('');
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+// Builds Module 3's "CONCIERGE TIP" copy from the same ak-activity-chips array populateActivityChips()
+// renders as pills, so the two stay in sync. Chip labels come from a closed catalog build-itinerary.js
+// controls, but they're still escaped before going into innerHTML as defense in depth.
+function conciergeTipHtml(chips) {
+  if (chips.length === 0) {
+    return "No search filters on this one &mdash; keep it general, and have the concierge desk's go-to recommendations ready at check-in.";
+  }
+  const names = chips.map(tag => `<b>${escapeHtml(tag)}</b>`);
+  const actions = chips.map(tag => CONCIERGE_TIP_ACTIONS[tag] || 'have relevant recommendations ready at the desk');
+  const actionText = joinWithAnd(actions);
+  const actionSentence = actionText.charAt(0).toUpperCase() + actionText.slice(1);
+  return `They filtered for ${joinWithAnd(names)} &mdash; ${actionSentence}.`;
+}
+
+// Wires the "TRAVELER INTENT" section and Module 3's "CONCIERGE TIP" from build-itinerary.js's
+// ak-activity-chips (a JSON array of curated tag strings, e.g. ["Gluten Free", "Pre-Theater"] —
+// see updateActiveChipTags()). Follows the site-wide data-ak-hidden convention
+// (*[data-ak-hidden] { display: none; }): the first [data-ak-hidden] on the page is the chip
+// template, cloned once per active chip; its next sibling is the "none selected" fallback. When
+// there are no chips, the template's wrapper and the "Search filters..." subtitle above it are
+// hidden too, leaving only the fallback line. Doesn't depend on auth and ak-activity-chips never
+// changes over the course of this page's load, so this only needs to run once.
+function populateActivityChips() {
   let chips = [];
   try {
     chips = JSON.parse(localStorage['ak-activity-chips'] || '[]');
   } catch (e) {
     chips = [];
   }
+
+  const $tip = document.querySelector('[data-ak="concierge-tip"]');
+  if ($tip) $tip.innerHTML = conciergeTipHtml(chips);
+
+  const $chipTemplate = document.querySelector('[data-ak-hidden]');
+  if (!$chipTemplate) return;
+  const $chipList = $chipTemplate.parentElement;
+  const $subtitle = $chipList.previousElementSibling;
+  const $emptyFallback = $chipList.nextElementSibling;
 
   if (chips.length > 0) {
     chips.forEach(tag => {
