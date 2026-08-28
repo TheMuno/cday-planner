@@ -145,16 +145,30 @@ function setAkText(selector, value) {
   });
 }
 
+// Mirrors verify-itinerary.js's restoreTripHeadingName() — the one field here that has no
+// localStorage-only source (it falls back to the Firebase user object), so it's kept out of
+// populateReport() and only ever called once auth has actually resolved.
+function populateGuestName() {
+  if (!auth.currentUser) return;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName || auth.currentUser.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName
+      .split(/\s+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  }
+  setAkText('guest-name', tripName);
+}
+
+// Everything here reads only from localStorage, so it doesn't need to wait on the Firebase auth
+// round-trip — called immediately on DOMContentLoaded (matching verify-itinerary.js's pattern)
+// so the report renders with real data on first paint instead of popping in all at once later.
 function populateReport() {
   const adultNum = Number(localStorage['ak-adult-num']) || 0;
   const childrenNum = Number(localStorage['ak-children-num']) || 0;
   const guestsNum = adultNum + childrenNum;
 
-  let tripName = localStorage['ak-user-name'] || auth.currentUser?.displayName?.split(/\s+/)[0] || auth.currentUser?.email?.split('@')[0] || '';
-  if (tripName) tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-
-  setAkText('guest-name', tripName);
-  setAkText('guest-email', localStorage['ak-userMail'] || auth.currentUser?.email);
+  setAkText('guest-email', localStorage['ak-userMail']);
   setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf']);
   setAkText('room-type', localStorage['ak-room-type']);
   setAkText('arrival-airport', localStorage['ak-arrival-airport']);
@@ -174,6 +188,11 @@ function populateReport() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // Doesn't depend on auth — read straight from localStorage, which is already populated in the
+  // common case (syncWithDB() below only backfills it when missing) — so the report shows real
+  // data immediately instead of leaving template/placeholder content up through the auth round-trip.
+  populateReport();
+
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
     redirectToStep1('User not logged in');
@@ -182,9 +201,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
   localStorage['ak-userMail'] = user.email;
-
+  populateGuestName();
   populateReport();
+
   await syncWithDB();
   // Re-run in case any fields only existed in the DB.
+  populateGuestName();
   populateReport();
 });
