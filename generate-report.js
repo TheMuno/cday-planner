@@ -192,7 +192,7 @@ function populateReport() {
 
   setAkText('guest-email', localStorage['ak-userMail']);
   setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf']);
-  setAkText('room-type', localStorage['ak-room-type']);
+  setAkText('room-type', localStorage['ak-room-type'] || 'Standard');
   setAkText('arrival-airport', arrivalAirport?.displayName);
   setAkText('departure-airport', departureAirport?.displayName);
   setAkText('arrival-time', arrivalAirport?.flightTime);
