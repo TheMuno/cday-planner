@@ -206,6 +206,8 @@ function populateActivityChips() {
     });
     $chipTemplate.remove();
   } else {
+    $chipTemplate.remove();
+    $chipList.setAttribute('data-ak-hidden', '');
     $emptyFallback?.removeAttribute('data-ak-hidden');
   }
 }
