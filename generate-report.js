@@ -126,7 +126,7 @@ function getTravelDateRange() {
 }
 
 function formatReportDate(date) {
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // Sets an element's content from localStorage only when that key is actually present, leaving
@@ -142,6 +142,15 @@ function setAkText(selector, value) {
     } else {
       $el.textContent = value;
     }
+  });
+}
+
+// Like setAkText, but writes through even on a falsy value (clearing to '' instead of leaving
+// the template placeholder in place) — for fields whose no-data default is blank, not the
+// placeholder example text.
+function setAkTextOrEmpty(selector, value) {
+  document.querySelectorAll(`[data-ak="${selector}"]`).forEach($el => {
+    $el.textContent = value || '';
   });
 }
 
@@ -288,13 +297,12 @@ function populateReport() {
   const departureAirport = getAirportData('ak-departure-airport');
 
   setAkText('guest-email', localStorage['ak-userMail']);
-  setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf']);
-  setAkText('room-type', localStorage['ak-room-type'] || 'Standard');
-  setAkText('arrival-airport', arrivalAirport?.displayName);
+  setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf'] || 'not-specified');
+  setAkTextOrEmpty('arrival-airport', arrivalAirport?.displayName);
   setAkText('departure-airport', departureAirport?.displayName);
-  setAkText('arrival-time', arrivalAirport?.flightTime);
-  setAkText('departure-time', departureAirport?.flightTime);
-  setAkText('inbound-flight', formatFlightLabel(arrivalAirport));
+  setAkText('arrival-time', arrivalAirport?.flightTime || '-');
+  setAkText('departure-time', departureAirport?.flightTime || '-');
+  setAkTextOrEmpty('inbound-flight', formatFlightLabel(arrivalAirport));
   setAkText('outbound-flight', formatFlightLabel(departureAirport));
   setAkText('guests-num', String(guestsNum));
 
@@ -303,6 +311,11 @@ function populateReport() {
     setAkText('check-in-date', formatReportDate(range.startDate));
     setAkText('check-out-date', formatReportDate(range.endDate));
     setAkText('stay-nights', String(range.nights));
+  } else {
+    const year = new Date().getFullYear();
+    setAkText('check-in-date', `Monday, Jan 1, ${year}`);
+    setAkText('check-out-date', `Tuesday, Jan 2, ${year}`);
+    setAkText('stay-nights', '1');
   }
 }
 
