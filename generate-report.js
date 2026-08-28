@@ -182,9 +182,10 @@ function formatFlightLabel(data) {
 // round-trip — called immediately on DOMContentLoaded (matching verify-itinerary.js's pattern)
 // so the report renders with real data on first paint instead of popping in all at once later.
 function populateReport() {
+  const hasGuestNums = localStorage['ak-adult-num'] != null || localStorage['ak-children-num'] != null;
   const adultNum = Number(localStorage['ak-adult-num']) || 0;
   const childrenNum = Number(localStorage['ak-children-num']) || 0;
-  const guestsNum = adultNum + childrenNum;
+  const guestsNum = hasGuestNums ? adultNum + childrenNum : 1;
 
   const arrivalAirport = getAirportData('ak-arrival-airport');
   const departureAirport = getAirportData('ak-departure-airport');
@@ -198,7 +199,7 @@ function populateReport() {
   setAkText('departure-time', departureAirport?.flightTime);
   setAkText('inbound-flight', formatFlightLabel(arrivalAirport));
   setAkText('outbound-flight', formatFlightLabel(departureAirport));
-  if (guestsNum > 0) setAkText('guests-num', String(guestsNum));
+  setAkText('guests-num', String(guestsNum));
 
   const range = getTravelDateRange();
   if (range) {
