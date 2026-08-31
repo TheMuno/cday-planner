@@ -1818,6 +1818,7 @@ async function saveAttractionsDB() {
     travelDates: localStorage['ak-travel-days'] || '',
     savedAttractions: getCurrentUserAttractions(),
     activityChips: localStorage['ak-activity-chips'] || '[]',
+    confirmationNum: localStorage['ak-hotel-conf'] || '',
   };
 
   saveObj.adultNum = localStorage['ak-adult-num'] ?? null;

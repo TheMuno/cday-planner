@@ -101,6 +101,7 @@ async function syncWithDB() {
   if (!localStorage['ak-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
   if (!localStorage['ak-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
   if (!localStorage['ak-activity-chips'] && dbData.activityChips) localStorage['ak-activity-chips'] = dbData.activityChips;
+  if (!localStorage['ak-conf'] && !localStorage['ak-hotel-conf'] && dbData.confirmationNum) localStorage['ak-hotel-conf'] = dbData.confirmationNum;
 }
 
 // --- data-ak population ---
