@@ -115,14 +115,31 @@ function getTravelDateRange() {
   }
   if (!flatpickrDate) return null;
 
+  // A single date with no " to " counterpart means the guest closed the picker after choosing
+  // only an arrival day (see pass-savings.txt's processDatePickrUserChoice) — treat that as a
+  // 1-night stay departing the next day, rather than duplicating the same date into a 0-night gap.
   const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
   const startDate = new Date(startRaw);
-  const endDate = new Date(endRaw || startRaw);
+  let endDate;
+  if (endRaw) {
+    endDate = new Date(endRaw);
+  } else {
+    endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 1);
+  }
   if (isNaN(startDate) || isNaN(endDate)) return null;
 
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const nights = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / msPerDay));
+  const nights = Math.max(0, daysBetween(startDate, endDate));
   return { startDate, endDate, nights };
+}
+
+// Diffs calendar days (not raw timestamps) so a DST transition between startDate/endDate can't
+// throw the ms delta off a whole day — Date.UTC on the Y/M/D components strips out time-of-day
+// and local-timezone offset entirely, leaving an exact multiple of a day to divide.
+function daysBetween(startDate, endDate) {
+  const startUTC = Date.UTC(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const endUTC = Date.UTC(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  return Math.round((endUTC - startUTC) / (24 * 60 * 60 * 1000));
 }
 
 function formatReportDate(date) {
@@ -172,7 +189,7 @@ function populateGuestName() {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
-  setAkText('guest-name', tripName);
+  setAkText('guest-name', tripName || 'Not Specified');
 }
 
 // ak-arrival-airport/ak-departure-airport hold a JSON blob (place details + flight fields merged
@@ -302,14 +319,14 @@ function populateReport() {
   const arrivalAirport = getAirportData('ak-arrival-airport');
   const departureAirport = getAirportData('ak-departure-airport');
 
-  setAkText('guest-email', localStorage['ak-userMail']);
+  setAkText('guest-email', localStorage['ak-userMail'] || 'mail@not-specified.com');
   setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf'] || 'not-specified');
   setAkTextOrEmpty('arrival-airport', arrivalAirport?.displayName);
-  setAkText('departure-airport', departureAirport?.displayName);
+  setAkTextOrEmpty('departure-airport', departureAirport?.displayName);
   setAkText('arrival-time', arrivalAirport?.flightTime || '-');
   setAkText('departure-time', departureAirport?.flightTime || '-');
   setAkTextOrEmpty('inbound-flight', formatFlightLabel(arrivalAirport));
-  setAkText('outbound-flight', formatFlightLabel(departureAirport));
+  setAkTextOrEmpty('outbound-flight', formatFlightLabel(departureAirport));
   setAkText('guests-num', String(guestsNum));
 
   const range = getTravelDateRange();
