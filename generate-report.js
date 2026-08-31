@@ -354,15 +354,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateActivityChips();
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
-  if (!user) {
-    redirectToStep1('User not logged in');
-    return;
-  }
+  // if (!user) {
+  //   redirectToStep1('User not logged in');
+  //   return;
+  // }
 
-  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
-  localStorage['ak-userMail'] = user.email;
-  populateGuestName();
-  populateReport();
+  if (user) {
+    // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
+    localStorage['ak-userMail'] = user.email;
+    populateGuestName();
+    populateReport();
+  }
 
   await syncWithDB();
   // Re-run in case any fields only existed in the DB.
