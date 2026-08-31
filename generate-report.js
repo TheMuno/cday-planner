@@ -100,6 +100,7 @@ async function syncWithDB() {
   if (!localStorage['ak-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
   if (!localStorage['ak-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
   if (!localStorage['ak-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
+  if (!localStorage['ak-activity-chips'] && dbData.activityChips) localStorage['ak-activity-chips'] = dbData.activityChips;
 }
 
 // --- data-ak population ---
@@ -210,6 +211,12 @@ function formatFlightLabel(data) {
   return [data.carrierName, data.flightNumber].filter(Boolean).join(' ');
 }
 
+// Lets a link (e.g. a server-side render with no browser session/localStorage of its own) pass
+// the confirmation number straight in via ?conf=..., since it has no DB home to fall back on.
+function getConfirmationParam() {
+  return new URLSearchParams(window.location.search).get('conf');
+}
+
 // Per-tag actionable guidance for Module 3's "CONCIERGE TIP" copy, keyed by the same curatedTag
 // labels build-itinerary.js writes into ak-activity-chips (see the CURATED_EAT/SEE tag catalogs
 // around updateActiveChipTags()). A tag not listed here (new catalog entry) falls back to a
@@ -272,8 +279,11 @@ function conciergeTipHtml(chips) {
 // (*[data-ak-hidden] { display: none; }): the first [data-ak-hidden] on the page is the chip
 // template, cloned once per active chip; its next sibling is the "none selected" fallback. When
 // there are no chips, the template's wrapper and the "Search filters..." subtitle above it are
-// hidden too, leaving only the fallback line. Doesn't depend on auth and ak-activity-chips never
-// changes over the course of this page's load, so this only needs to run once.
+// hidden too, leaving only the fallback line. Its DOM swap (consuming the [data-ak-hidden]
+// template) only runs safely once per page load, so this is called after syncWithDB() has had a
+// chance to backfill ak-activity-chips from the DB -- not immediately on DOMContentLoaded like
+// populateReport(), otherwise a DB-only chip set (e.g. viewing the report on a different device
+// than the one that built the itinerary) would never get picked up.
 function populateActivityChips() {
   let chips = [];
   try {
@@ -320,7 +330,7 @@ function populateReport() {
   const departureAirport = getAirportData('ak-departure-airport');
 
   setAkText('guest-email', localStorage['ak-userMail'] || 'mail@not-specified.com');
-  setAkText('confirmation-num', localStorage['ak-conf'] || localStorage['ak-hotel-conf'] || 'not-specified');
+  setAkText('confirmation-num', getConfirmationParam() || localStorage['ak-conf'] || localStorage['ak-hotel-conf'] || 'not-specified');
   setAkTextOrEmpty('arrival-airport', arrivalAirport?.displayName);
   setAkTextOrEmpty('departure-airport', departureAirport?.displayName);
   setAkText('arrival-time', arrivalAirport?.flightTime || '-');
@@ -351,7 +361,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // common case (syncWithDB() below only backfills it when missing) — so the report shows real
   // data immediately instead of leaving template/placeholder content up through the auth round-trip.
   populateReport();
-  populateActivityChips();
 
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   // if (!user) {
@@ -370,4 +379,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Re-run in case any fields only existed in the DB.
   populateGuestName();
   populateReport();
+  populateActivityChips();
 });
