@@ -55,7 +55,6 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
 const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
 const hotelMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879b831dec5947617d34e3__hotel.png';
@@ -67,14 +66,6 @@ const cameraPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADg
 const insiderTipsUrl = 'https://us-central1-askkhonsu-map.cloudfunctions.net/getInsiderTips';
 const placesApiKey = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
 const noPhotoPlaceholder = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" fill="#ece9e4"/><circle cx="400" cy="185" r="60" fill="none" stroke="#aaa" stroke-width="3"/><g transform="translate(380,165) scale(1.667)"><path d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2S13.77 8.8 12 8.8 8.8 10.23 8.8 12s1.43 3.2 3.2 3.2zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="#bbb"/></g></svg>')}`;
-
-const locations = {
-  new_york: { lat: 40.7580, lng: -73.9855 },
-  washington_dc: { lat: 38.89511, lng: -77.03637 },
-  los_angeles: { lat: 34.052235, lng: -118.243683 },
-  las_vegas: { lat: 36.175, lng: -115.136 },
-  miami: { lat: 25.7743, lng: -80.1937 },
-};
 
 const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
 const attractionslimit = 5;
@@ -126,27 +117,23 @@ const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 // Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
 window.chipMarkers = chipMarkers;
 
-// Carlton Arms pages skip hotel-autocomplete entirely — the hotel is fixed, so its Place is
-// resolved from these known coords instead of user input (see autoSetCarltonArmsHotel()).
+// This file only ever runs on Carlton Arms pages — the hotel is fixed, so hotel-autocomplete is
+// skipped entirely and its Place is resolved from these known coords instead of user input (see
+// autoSetCarltonArmsHotel()). Same coords are used as the initial map center so the hotel is
+// on-screen from first paint, rather than only after autoSetCarltonArmsHotel()'s Places round-trip
+// pans to it.
 const carlton_arms = { lat: 40.7401607, lng: -73.9852042 };
+const mapCenter = carlton_arms;
+const mapZoom = 14;
 
-let mapCenter = locationNYC;
-if (localStorage['ak-user-destination']) {
-  mapCenter = locations[localStorage['ak-user-destination']];
-}
-// Center on the known hotel coords from first paint instead of NYC/ak-user-destination — the
-// Places lookup in autoSetCarltonArmsHotel() still pans to the resolved Place afterward, but that
-// round-trip shouldn't be what puts the hotel on-screen initially.
-if (window.location.href.includes('carlton-arms')) mapCenter = carlton_arms;
-
-const mapReady = initMap(mapCenter);
-async function initMap(center) {
+const mapReady = initMap(mapCenter, mapZoom);
+async function initMap(center, zoom) {
   const $map = document.querySelector('[data-ak="map"]');
   const { Map, InfoWindow } = await google.maps.importLibrary('maps');
   await google.maps.importLibrary('marker');
   await google.maps.importLibrary('places');
   map = new Map($map, {
-    zoom: 12,
+    zoom,
     center,
     // mapId: 'd604d19d3ee253cb9ac6f7f8',
     mapId: 'DEMO_MAP_ID',
@@ -211,10 +198,9 @@ window.addEventListener('load', async () => {
   restoreTripDaySlides(async () => {
     await mapReady;
     restoreAttractions();
-    // Carlton Arms pages get their hotel from autoSetCarltonArmsHotel() (already kicked off in
-    // parallel above, as soon as mapReady resolved) — restoring from localStorage here would race
-    // it and could clobber the fixed hotel with a stale saved value.
-    if (!window.location.href.includes('carlton-arms')) restoreHotel();
+    // The hotel comes from autoSetCarltonArmsHotel() (already kicked off in parallel above, as
+    // soon as mapReady resolved), not from localStorage — restoring from localStorage here would
+    // race it and could clobber the fixed hotel with a stale saved value.
     restoreAirports();
     restoreTripNotes();
     // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
@@ -233,12 +219,11 @@ window.addEventListener('load', async () => {
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
   // Derive the next-step URL from this page's own URL rather than hardcoding the folder prefix —
-  // e.g. on "/xyz/itinerary" this resolves to "/xyz/pass-calculator", so it keeps working no
-  // matter what that prefix is or if it ever changes. Demo-hotel slugs skip the pass calculator
-  // entirely and go straight to verify-itinerary instead.
+  // e.g. on "/xyz/itinerary" this resolves to "/xyz/verify-itinerary", so it keeps working no
+  // matter what that prefix is or if it ever changes. Carlton Arms skips the pass calculator
+  // entirely and goes straight to verify-itinerary instead.
   const pathSegments = window.location.pathname.split('/').filter(Boolean);
-  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('carlton-arms');
-  pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
+  pathSegments[pathSegments.length - 1] = 'verify-itinerary';
   const passCalculatorHref = '/' + pathSegments.join('/');
 
   function resetContinueBtn() {
@@ -288,7 +273,7 @@ window.addEventListener('load', async () => {
       document.head.appendChild(style);
     }
 
-    const loadingText = isDemoHotel ? 'Verifying...' : 'Calculating Savings...';
+    const loadingText = 'Verifying...';
     $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
     $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>${loadingText}</span>`;
     $btn.classList.add('ak-saving');
@@ -616,8 +601,6 @@ async function setupHotelAutocomplete() {
 // lodging result to these coords isn't reliably Carlton Arms itself (e.g. Freehand New York
 // sits closer to this exact point) — searching by name pins down the actual named hotel.
 async function autoSetCarltonArmsHotel() {
-  if (!window.location.href.includes('carlton-arms')) return;
-
   await google.maps.importLibrary('places');
 
   const { places } = await google.maps.places.Place.searchByText({
@@ -1395,25 +1378,6 @@ function restoreAttractions() {
   updateActiveChipTags();
 }
 
-function restoreHotel() {
-  let saveObj;
-  try {
-    saveObj = JSON.parse(localStorage['ak-hotel'] || 'null');
-  } catch (e) {
-    return;
-  }
-  if (!saveObj?.location) return;
-
-  const { displayName, location, editorialSummary, type } = saveObj;
-  const marker = createMarker(displayName, location, editorialSummary, type, hotelMarkerPinUrl, saveObj);
-  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
-  markerObj['hotel'] = marker;
-
-  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
-  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
-  showRemoveIcon($hotelNameEl);
-}
-
 function restoreAirports() {
   AIRPORT_FIELDS.forEach(({ markerKey, storageKey, nameSelector, prefix, draftKey }) => {
     let saveObj;
@@ -1768,9 +1732,11 @@ function mergeAttractions(dbSavedAttractionsJSON, localSavedAttractionsJSON) {
 }
 
 // Restores whatever this user last saved to Firestore into localStorage, before restoreTripDaySlides()/
-// restoreAttractions()/restoreHotel()/restoreAirports()/restoreTripNotes() read those same keys — those
-// functions only ever look at localStorage, so without this a fresh login on an empty browser (nothing
-// cached locally yet) would show nothing despite the trip already being saved server-side.
+// restoreAttractions()/restoreAirports()/restoreTripNotes() read those same keys — those functions
+// only ever look at localStorage, so without this a fresh login on an empty browser (nothing cached
+// locally yet) would show nothing despite the trip already being saved server-side. ak-hotel itself
+// is still synced here (below) for round-tripping to Firestore, even though the hotel marker/name
+// always comes from autoSetCarltonArmsHotel() rather than being restored from this key.
 //
 // Anything the user already touched locally in *this* session (ak-update-hotel/arrival-airport/
 // departure-airport, or the ak-update-merge-local flag set when a guest adds attractions pre-login)
