@@ -293,5 +293,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   restoreTripHeadingName(user);
 
   wireEzGuideButton(user);
-  emailSmartGuideOnLanding(user);
+  // Disabled for now — Make/Gmail deliverability (spam) not sorted out yet. Re-enable
+  // once the sending setup is fixed (see emailSmartGuideOnLanding above).
+  // emailSmartGuideOnLanding(user);
 });
