@@ -603,12 +603,22 @@ async function setupHotelAutocomplete() {
 async function autoSetCarltonArmsHotel() {
   await google.maps.importLibrary('places');
 
-  const { places } = await google.maps.places.Place.searchByText({
-    textQuery: 'Carlton Arms Hotel',
-    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
-    locationBias: { radius: 200.0, center: carlton_arms },
-    maxResultCount: 1,
-  });
+  let places;
+  try {
+    ({ places } = await google.maps.places.Place.searchByText({
+      textQuery: 'Carlton Arms Hotel',
+      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+      locationBias: { radius: 200.0, center: carlton_arms },
+      maxResultCount: 1,
+    }));
+  } catch (e) {
+    // The map itself is already centered on carlton_arms regardless (see mapCenter/initMap
+    // above) — only the marker/hotel name/saved place data depend on this lookup succeeding.
+    alertify.alert(navigator.onLine
+      ? "We couldn't load the hotel details. Please reload the page to try again."
+      : "You're offline — please check your internet connection and reload the page.");
+    return;
+  }
 
   const place = places?.[0];
   if (!place) return;
