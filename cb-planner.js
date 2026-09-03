@@ -27,7 +27,7 @@ const SYNCED_KEY = 'ak-hotel-conf-synced';
 
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
-// Same href-substring style as the carlton-arms check in captureHotelReferral() below.
+// Same href-substring style as the compton check in captureHotelReferral() below.
 function detectHotelSheetTag() {
   if (window.location.href.includes('compton')) return 'compton-bentonville';
   return null;
@@ -35,13 +35,13 @@ function detectHotelSheetTag() {
 
 captureHotelReferral();
 
-// Carlton Arms is checked first, ahead of the generic ?hotel= param, since its demo pages are a
-// fixed URL (not driven by a query param) — see the matching carlton-arms checks in
+// Compton is checked first, ahead of the generic ?hotel= param, since its demo pages are a
+// fixed URL (not driven by a query param) — see the matching compton checks in
 // build-itinerary.js. Every other hotel is onboarded via a link carrying "?hotel=Hotel+Name"
 // instead of a dedicated URL/page.
 function captureHotelReferral() {
-  if (window.location.href.includes('carlton-arms')) {
-    localStorage.setItem('ak-hotel-referral', 'carlton-arms');
+  if (window.location.href.includes('compton')) {
+    localStorage.setItem('ak-hotel-referral', 'compton');
     return;
   }
 

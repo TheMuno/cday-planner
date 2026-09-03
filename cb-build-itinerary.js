@@ -137,9 +137,9 @@ if (localStorage['ak-user-destination']) {
   mapCenter = locations[localStorage['ak-user-destination']];
 }
 
-// Carlton Arms pages skip hotel-autocomplete entirely — the hotel is fixed, so its Place is
-// resolved from these known coords instead of user input (see autoSetCarltonArmsHotel()).
-const carlton_arms = { lat: 40.7401607, lng: -73.9852042 };
+// Compton Bentonville pages skip hotel-autocomplete entirely — the hotel is fixed, so its Place is
+// resolved from these known coords instead of user input (see autoSetComptonHotel()).
+const comptonBentonville = { lat: 36.3720385, lng: -94.2075697 };
 
 const mapReady = initMap(mapCenter);
 async function initMap(center) {
@@ -158,12 +158,12 @@ async function initMap(center) {
   return map;
 }
 
-// Carlton Arms pages have a fixed hotel that doesn't depend on auth, Firestore sync, or trip-day
+// Compton Bentonville pages have a fixed hotel that doesn't depend on auth, Firestore sync, or trip-day
 // slide restoration — it used to be nested inside the 'load' handler's restoreTripDaySlides()
 // callback, behind syncWithDB() and slide setup, which added several unrelated network round-trips
 // in front of it and made the hotel name show up late on mobile. Kick it off as soon as the map
 // itself is ready instead, in parallel with all of that.
-mapReady.then(() => autoSetCarltonArmsHotel());
+mapReady.then(() => autoSetComptonHotel());
 
 
 window.addEventListener('load', async () => {
@@ -213,10 +213,10 @@ window.addEventListener('load', async () => {
   restoreTripDaySlides(async () => {
     await mapReady;
     restoreAttractions();
-    // Carlton Arms pages get their hotel from autoSetCarltonArmsHotel() (already kicked off in
+    // Compton Bentonville pages get their hotel from autoSetComptonHotel() (already kicked off in
     // parallel above, as soon as mapReady resolved) — restoring from localStorage here would race
     // it and could clobber the fixed hotel with a stale saved value.
-    if (!window.location.href.includes('carlton-arms')) restoreHotel();
+    if (!window.location.href.includes('compton')) restoreHotel();
     restoreAirports();
     restoreTripNotes();
     // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
@@ -239,7 +239,7 @@ window.addEventListener('load', async () => {
   // matter what that prefix is or if it ever changes. Demo-hotel slugs skip the pass calculator
   // entirely and go straight to verify-itinerary instead.
   const pathSegments = window.location.pathname.split('/').filter(Boolean);
-  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('carlton-arms');
+  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('compton');
   pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
   const passCalculatorHref = '/' + pathSegments.join('/');
 
@@ -612,20 +612,20 @@ async function setupHotelAutocomplete() {
 }
 
 // Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
-// a name search biased to carlton_arms's known coords instead of a user-picked autocomplete
-// prediction — carlton-arms pages have a fixed hotel, so there's nothing for the user to pick.
+// a name search biased to comptonBentonville's known coords instead of a user-picked autocomplete
+// prediction — compton pages have a fixed hotel, so there's nothing for the user to pick.
 // Text Search (by name) is used rather than Nearby Search (by proximity) because the nearest
-// lodging result to these coords isn't reliably Carlton Arms itself (e.g. Freehand New York
-// sits closer to this exact point) — searching by name pins down the actual named hotel.
-async function autoSetCarltonArmsHotel() {
-  if (!window.location.href.includes('carlton-arms')) return;
+// lodging result to these coords isn't reliably The Compton Bentonville itself — searching by
+// name pins down the actual named hotel.
+async function autoSetComptonHotel() {
+  if (!window.location.href.includes('compton')) return;
 
   await google.maps.importLibrary('places');
 
   const { places } = await google.maps.places.Place.searchByText({
-    textQuery: 'Carlton Arms Hotel',
+    textQuery: 'The Compton Bentonville',
     fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
-    locationBias: { radius: 200.0, center: carlton_arms },
+    locationBias: { radius: 200.0, center: comptonBentonville },
     maxResultCount: 1,
   });
 

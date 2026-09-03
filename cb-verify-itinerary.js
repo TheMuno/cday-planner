@@ -311,7 +311,7 @@ function injectPdfSpinnerStyle() {
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
   e.preventDefault();
   const href = window.location.href;
-  const target = href.includes('carlton-arms') ? '/carlton-arms/download-your-smart-guide'
+  const target = href.includes('compton') ? '/compton/download-your-smart-guide'
     : href.includes('demo-hotel') ? '/demo-hotel/download-your-smart-guide'
     : siblingPagePath('get-the-guide');
   window.location.href = target;
