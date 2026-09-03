@@ -31,18 +31,18 @@ const $downloadBtns = document.querySelectorAll('[data-ak="download-ez-guide"]')
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
+// Captured once, before restoreTripHeadingName() ever mutates it — the Webflow markup's own
+// h2 text (e.g. "My Trip to N.Y.C") is the template; only its first word gets swapped, so the
+// rest of the sentence is whatever's authored in Webflow instead of a hardcoded destination.
+const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
+const headingTemplateText = $headingH2?.textContent ?? '';
+
 // Captured once, before populateVerifyContent() ever mutates the DOM — now that it can run
 // twice (immediately, then again after syncWithDB()), re-querying '.verify_block_wrap' live
 // would grab an already-populated (and possibly section-hidden) day block as the template for
 // the second pass instead of the pristine sample markup.
 const $verifyContainer = document.querySelector('.verify_content');
 const $verifyDayTemplate = $verifyContainer?.querySelector('.verify_block_wrap')?.cloneNode(true) || null;
-
-// Captured once, before restoreTripHeadingName() ever mutates it — the Webflow markup's own
-// h2 text (e.g. "My Trip to N.Y.C") is the template; only its first word gets swapped, so the
-// rest of the sentence is whatever's authored in Webflow instead of a hardcoded destination.
-const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
-const headingTemplateText = $headingH2?.textContent ?? '';
 
 // Mirrors calculate-pass-savings.js / build-itinerary.js's restoreTripHeading(), split into two
 // halves so the date line (no auth dependency) can be restored immediately on DOMContentLoaded

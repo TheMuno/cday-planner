@@ -22,17 +22,22 @@ const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 const $proceedToDownloadBtns = document.querySelectorAll('[data-ak="proceed-to-download"]');
 
+// Captured once, before restoreTripHeadingName() ever mutates it — the Webflow markup's own
+// h2 text (e.g. "My Trip to N.Y.C") is the template; only its first word gets swapped, so the
+// rest of the sentence is whatever's authored in Webflow instead of a hardcoded destination.
+const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
+const headingTemplateText = $headingH2?.textContent ?? '';
+
 // Mirrors verify-itinerary.js / build-itinerary.js's restoreTripHeading(), split into two
 // halves so the date line (no auth dependency) can be restored immediately on DOMContentLoaded
 // instead of waiting on the Firebase auth round-trip.
 function restoreTripHeadingName() {
   if (!auth.currentUser) return;
-  const $headingH2 = document.querySelector('[data-ak="trip-heading"] h2');
-  if (!$headingH2) return;
+  if (!$headingH2 || !headingTemplateText) return;
   let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
   if (tripName) {
     tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-    $headingH2.textContent = `${tripName}'s Trip to N.Y.C`;
+    $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
   }
 }
 
