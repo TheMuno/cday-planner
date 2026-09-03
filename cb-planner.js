@@ -96,6 +96,11 @@ const conf = new URLSearchParams(window.location.search).get('conf');
 
 if (conf) {
   localStorage['ak-hotel-conf'] = conf;
+  // Persisted alongside the conf itself so the login page's Saves write (firebase-auth.js's
+  // recordHotelConfSave) can route to the same spreadsheet as this Views write, instead of
+  // re-detecting the hotel from the login page's own URL — which doesn't reliably carry a
+  // hotel-identifying substring the way this trip-planner page's URL does.
+  localStorage['ak-hotel-conf-tag'] = detectHotelSheetTag() || '';
 
   if (localStorage[SYNCED_KEY] !== conf) {
     sendConfToSheet(conf);

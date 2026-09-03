@@ -53,6 +53,16 @@ const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd
 const SAVE_HOTEL_CONF_LOGIN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConfOnLogin';
 const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
 
+// Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
+// can route Compton-Bentonville rows to its own sheet instead of the shared default one.
+// Mirrors planner.js's detectHotelSheetTag() — kept independent (not read from
+// ak-hotel-referral) since that key can already be cleared by promptHotelReferralOptIn
+// before recordHotelConfSave runs.
+function detectHotelSheetTag() {
+  if (window.location.href.includes('compton')) return 'compton-bentonville';
+  return null;
+}
+
 // ── 3. INIT ─────────────────────────────────────────────────
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -806,12 +816,19 @@ function recordHotelConfSave(user) {
   const email = user?.email || localStorage.getItem('ak-userMail') || '';
   if (!email) return;
 
+  // Prefer the tag planner.js already resolved on the trip-planner page (its URL reliably
+  // carries the hotel-identifying substring) over re-detecting from this page's own URL,
+  // which won't carry it when login happens on a shared /log-in page. Falls back to a fresh
+  // detectHotelSheetTag() only for a conf value saved before this tag existed in localStorage.
+  const storedTag = localStorage.getItem('ak-hotel-conf-tag');
+  const hotel = storedTag !== null ? (storedTag || null) : detectHotelSheetTag();
+
   localStorage.setItem(HOTEL_CONF_SAVE_SYNCED_KEY, conf);
   fetch(SAVE_HOTEL_CONF_LOGIN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     keepalive: true,
-    body: JSON.stringify({ conf, email }),
+    body: JSON.stringify({ conf, email, hotel }),
   }).catch(err => console.error('Failed to record hotel conf save:', err));
 }
 
