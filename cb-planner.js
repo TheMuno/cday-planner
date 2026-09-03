@@ -25,6 +25,40 @@
 const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConf';
 const SYNCED_KEY = 'ak-hotel-conf-synced';
 
+// Compton Bentonville's fixed hotel coords — mirrors the comptonBentonville const in
+// build-itinerary.js. The Trip Planner page's hotel is fixed too, so there's no autocomplete
+// or Places lookup here, just a centered map with the hotel pin dropped on it.
+const comptonBentonville = { lat: 36.3720385, lng: -94.2075697 };
+const hotelMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879b831dec5947617d34e3__hotel.png';
+
+if (window.location.href.includes('compton')) initComptonMap();
+
+async function initComptonMap() {
+  const $map = document.querySelector('[data-ak="map"]');
+  if (!$map) return;
+
+  const { Map } = await google.maps.importLibrary('maps');
+  await google.maps.importLibrary('marker');
+
+  const map = new Map($map, {
+    zoom: 15,
+    center: comptonBentonville,
+    mapId: 'DEMO_MAP_ID',
+    mapTypeControl: false,
+  });
+
+  const markerPinImg = document.createElement('img');
+  markerPinImg.src = hotelMarkerPinUrl;
+  markerPinImg.className = 'ak-marker-pin';
+
+  new google.maps.marker.AdvancedMarkerElement({
+    map,
+    position: comptonBentonville,
+    title: 'The Compton Bentonville',
+    content: markerPinImg,
+  });
+}
+
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
 // Same href-substring style as the compton check in captureHotelReferral() below.
