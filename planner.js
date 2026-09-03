@@ -25,6 +25,14 @@
 const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConf';
 const SYNCED_KEY = 'ak-hotel-conf-synced';
 
+// Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
+// can route Compton-Bentonville rows to its own sheet instead of the shared default one.
+// Same href-substring style as the carlton-arms check in captureHotelReferral() below.
+function detectHotelSheetTag() {
+  if (window.location.href.includes('compton')) return 'compton-bentonville';
+  return null;
+}
+
 captureHotelReferral();
 
 // Carlton Arms is checked first, ahead of the generic ?hotel= param, since its demo pages are a
@@ -54,6 +62,11 @@ const conf = new URLSearchParams(window.location.search).get('conf');
 
 if (conf) {
   localStorage['ak-hotel-conf'] = conf;
+  // Persisted alongside the conf itself so the login page's Saves write (firebase-auth.js's
+  // recordHotelConfSave) can route to the same spreadsheet as this Views write, instead of
+  // re-detecting the hotel from the login page's own URL — which doesn't reliably carry a
+  // hotel-identifying substring the way this trip-planner page's URL does.
+  localStorage['ak-hotel-conf-tag'] = detectHotelSheetTag() || '';
 
   if (localStorage[SYNCED_KEY] !== conf) {
     sendConfToSheet(conf);
@@ -73,7 +86,7 @@ async function sendConfToSheet(value, attempt = 1) {
     const res = await fetch(SAVE_HOTEL_CONF_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conf: value }),
+      body: JSON.stringify({ conf: value, hotel: detectHotelSheetTag() }),
       keepalive: true,
     });
     if (!res.ok) throw new Error(`saveHotelConf responded ${res.status}`);
@@ -94,6 +107,6 @@ function sendConfBeacon(value) {
   if (localStorage[SYNCED_KEY] === value) return;
   navigator.sendBeacon(
     SAVE_HOTEL_CONF_URL,
-    new Blob([JSON.stringify({ conf: value })], { type: 'application/json' })
+    new Blob([JSON.stringify({ conf: value, hotel: detectHotelSheetTag() })], { type: 'application/json' })
   );
 }
