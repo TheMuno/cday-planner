@@ -309,11 +309,11 @@ function injectPdfSpinnerStyle() {
 }
 
 document.querySelector('[data-ak="continue-to-smart-guide"]')?.addEventListener('click', e => {
+  // Navigate wherever the button itself points, authored in Webflow, instead of recomputing the
+  // destination from the current URL.
+  const $btn = e.currentTarget;
+  const target = $btn.getAttribute('href') || '#';
   e.preventDefault();
-  const href = window.location.href;
-  const target = href.includes('compton') ? '/compton/download-your-smart-guide'
-    : href.includes('demo-hotel') ? '/demo-hotel/download-your-smart-guide'
-    : siblingPagePath('get-the-guide');
   window.location.href = target;
 });
 
