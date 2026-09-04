@@ -227,8 +227,12 @@ window.addEventListener('load', async () => {
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
 
   document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
+    // Navigate wherever the button itself points, same as continue-to-step2 below, instead of
+    // hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
+    const $signInBtn = e.currentTarget;
+    const signInHref = $signInBtn.getAttribute('href') || '/log-in';
     e.preventDefault();
-    window.location.href = '/log-in';
+    window.location.href = signInHref;
   });
 
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
