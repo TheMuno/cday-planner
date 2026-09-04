@@ -125,8 +125,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // whose auth resolved fine but whose Firestore purchase check then failed/timed out.
   // Purchase gating only applies on /smart-guide/ pages — everywhere else (e.g. download-guide)
   // Smart Guide access isn't paywalled, so the Firestore check below is skipped entirely and
-  // the buttons are revealed unconditionally instead.
-  const requiresPurchaseCheck = window.location.pathname.includes('/smart-guide/');
+  // the buttons are revealed unconditionally instead. Compton pages are excluded outright: their
+  // Smart Guide is free, so the Firestore purchase check never applies there either.
+  const requiresPurchaseCheck = window.location.pathname.includes('/smart-guide/')
+    && !window.location.href.includes('compton');
 
   let user;
   try {
