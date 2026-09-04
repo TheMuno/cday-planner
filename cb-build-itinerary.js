@@ -630,6 +630,7 @@ async function autoSetComptonHotel() {
   if (!place) return;
 
   map.panTo(place.location);
+  map.setZoom(17);
 
   const placeObj = place.toJSON();
   const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
@@ -648,6 +649,11 @@ async function autoSetComptonHotel() {
   localStorage['ak-hotel'] = JSON.stringify(saveObj);
   localStorage['ak-update-hotel'] = true;
   setUnsavedChangesFlag();
+
+  // Surface the hotel's popup right away, same as clicking its marker (createMarker's gmp-click
+  // handler below) — the fixed compton hotel is never user-picked, so this is the only chance to
+  // show it. No scrollToMapPopupTop() here: that scrolls the page, which would be jarring on load.
+  openMapPopup(displayName, editorialSummary, saveObj, marker);
 }
 
 async function setupAirportAutocomplete() {
