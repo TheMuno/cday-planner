@@ -72,42 +72,56 @@ async function initComptonMap() {
     document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
   });
 
-  // Resolved once up front (not on every click) since the hotel is fixed and its data doesn't
-  // change between clicks.
-  const saveObj = await resolveHotelPlace();
-  marker.addListener('gmp-click', () => openHotelPopup(saveObj));
+  // Kicked off once, up front, and cached as a promise rather than awaited here — mirrors
+  // build-itinerary.js's createMarker(), which attaches its gmp-click listener synchronously
+  // and independent of any Place lookup. Awaiting resolveHotelPlace() before addListener() would
+  // leave the marker permanently unclickable if that Text Search call ever throws (e.g. the same
+  // Maps RPC failures that can hit GetViewportInfo), since the listener line would never run.
+  const hotelPlacePromise = resolveHotelPlace();
+  marker.addListener('gmp-click', async () => {
+    // Falls back to just the name if the Text Search above never resolved (e.g. a blocked/failed
+    // Maps RPC) — the popup still opens, just without rating/photos/etc., instead of the click
+    // silently doing nothing.
+    const saveObj = (await hotelPlacePromise) || { displayName: 'The Compton Bentonville' };
+    openHotelPopup(saveObj);
+  });
 }
 
 // Same Text Search query/bias/fields as build-itinerary.js's autoSetComptonHotel() — kept in
 // sync deliberately so both pages resolve the same Place data for the same fixed hotel.
 async function resolveHotelPlace() {
-  const { places } = await google.maps.places.Place.searchByText({
-    textQuery: 'The Compton Bentonville',
-    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
-    locationBias: { radius: 200.0, center: comptonBentonville },
-    maxResultCount: 1,
-  });
+  try {
+    const { places } = await google.maps.places.Place.searchByText({
+      textQuery: 'The Compton Bentonville',
+      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+      locationBias: { radius: 200.0, center: comptonBentonville },
+      maxResultCount: 1,
+    });
 
-  const place = places?.[0];
-  if (!place) return null;
+    const place = places?.[0];
+    if (!place) return null;
 
-  const placeObj = place.toJSON();
-  const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    const placeObj = place.toJSON();
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-  return {
-    displayName: placeObj.displayName,
-    editorialSummary: placeObj.editorialSummary,
-    placeId: placeObj.id,
-    address: placeObj.formattedAddress || '',
-    rating: placeObj.rating ?? null,
-    reviewCount: placeObj.userRatingCount ?? null,
-    phone: placeObj.nationalPhoneNumber || '',
-    website: placeObj.websiteURI || placeObj.websiteUri || '',
-    openingHours: placeObj.regularOpeningHours || null,
-    businessStatus: placeObj.businessStatus || null,
-    priceRange: placeObj.priceRange || null,
-    photoUrl,
-  };
+    return {
+      displayName: placeObj.displayName,
+      editorialSummary: placeObj.editorialSummary,
+      placeId: placeObj.id,
+      address: placeObj.formattedAddress || '',
+      rating: placeObj.rating ?? null,
+      reviewCount: placeObj.userRatingCount ?? null,
+      phone: placeObj.nationalPhoneNumber || '',
+      website: placeObj.websiteURI || placeObj.websiteUri || '',
+      openingHours: placeObj.regularOpeningHours || null,
+      businessStatus: placeObj.businessStatus || null,
+      priceRange: placeObj.priceRange || null,
+      photoUrl,
+    };
+  } catch (e) {
+    console.warn('Could not resolve Compton Bentonville place:', e);
+    return null;
+  }
 }
 
 // Mirrors build-itinerary.js's openMapPopup() card rendering (same [data-ak="map-popup"]
