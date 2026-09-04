@@ -65,6 +65,7 @@ async function initComptonMap() {
     position: comptonBentonville,
     title: 'The Compton Bentonville',
     content: markerPinImg,
+    gmpClickable: true,
   });
 
   document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
