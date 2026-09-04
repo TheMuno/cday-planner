@@ -234,14 +234,11 @@ window.addEventListener('load', async () => {
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const continueBtnOriginalHTML = $continueBtn?.innerHTML;
 
-  // Derive the next-step URL from this page's own URL rather than hardcoding the folder prefix —
-  // e.g. on "/xyz/itinerary" this resolves to "/xyz/pass-calculator", so it keeps working no
-  // matter what that prefix is or if it ever changes. Demo-hotel slugs skip the pass calculator
-  // entirely and go straight to verify-itinerary instead.
-  const pathSegments = window.location.pathname.split('/').filter(Boolean);
+  // Navigate wherever the button itself points — its href is authored in Webflow (same as the
+  // "Calc" breadcrumb links below), so the destination stays in sync with whatever that page
+  // links to instead of being recomputed here.
   const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('compton');
-  pathSegments[pathSegments.length - 1] = isDemoHotel ? 'verify-itinerary' : 'pass-calculator';
-  const passCalculatorHref = '/' + pathSegments.join('/');
+  const passCalculatorHref = $continueBtn?.getAttribute('href') || '#';
 
   function resetContinueBtn() {
     if (!$continueBtn) return;
