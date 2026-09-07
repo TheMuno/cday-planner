@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
@@ -13,6 +14,17 @@ const firebaseConfig = {
 
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const functions = getFunctions(app);
+
+// Mints (once) the caller's shareToken so it exists in Firestore before it's ever needed
+// downstream (itinerary-list, PDF report links) — same idempotent call customize-itinerary.js's
+// finish button uses; getMyShareToken only writes if the account doesn't already have one, so
+// calling this on every save is cheap and safe. Errors are swallowed: a missing shareToken
+// shouldn't block saving the itinerary itself, and the next save just tries minting it again.
+function ensureShareToken() {
+  const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
+  return getMyShareToken().catch(err => console.error('getMyShareToken failed', err));
+}
 
 // firebase-firestore.js is only actually needed once a Firestore read/write happens
 // (retrieveDBData/saveAttractionsDB). As a static import it used to be fetched — and block
@@ -304,7 +316,7 @@ window.addEventListener('load', async () => {
 
     const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
-      await Promise.race([saveAttractionsDB(), step2Timeout]);
+      await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), step2Timeout]);
       window.location.href = passCalculatorHref;
     } catch (err) {
       console.error(err);
@@ -369,7 +381,7 @@ window.addEventListener('load', async () => {
 
     const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
-      await Promise.race([saveAttractionsDB(), saveTimeout]);
+      await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
     } catch (err) {
       console.error(err);
       alertify.alert(navigator.onLine
@@ -422,7 +434,7 @@ window.addEventListener('load', async () => {
 
       const stepLinkTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
       try {
-        await Promise.race([saveAttractionsDB(), stepLinkTimeout]);
+        await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), stepLinkTimeout]);
         window.location.href = $link.getAttribute('href');
       } catch (err) {
         console.error(err);
