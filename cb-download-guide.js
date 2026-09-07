@@ -214,6 +214,29 @@ function wireEzGuideButton(user) {
   });
 }
 
+// --- Auto-email the pre-arrival report PDF on landing ---
+// No client-side "only once per session" gate here on purpose: the correctness guard lives
+// entirely server-side in generateReportPdf (reportEmailedAt vs. the itinerary's ModifiedAt),
+// so an edit-then-revisit within the same tab/session still gets a fresh email. That guard
+// also short-circuits before the expensive PDF render whenever nothing changed, so calling
+// this on every landing is cheap -- just a Firestore read and an early return in that case.
+function emailReportOnLanding(user) {
+  const fire = () => {
+    const generateReportPdf = httpsCallable(functions, 'generateReportPdf', { timeout: 60000 });
+    generateReportPdf({ userId: `user-${user.email}`, sendEmail: true })
+      .catch(err => console.error('Failed to email report on landing:', err));
+  };
+
+  // Deferred to an idle moment (falling back to a short delay) instead of firing immediately on
+  // DOMContentLoaded, so this background request doesn't compete with the page's own
+  // images/maps/fonts for bandwidth while they're still loading.
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(fire, { timeout: 5000 });
+  } else {
+    setTimeout(fire, 2000);
+  }
+}
+
 // --- Cross-button click lock: Smart Guide download + Google Maps export share this ---
 // [data-ak-download-guide="true"] buttons (stripe-purchase.js) and the
 // [data-ak="download-google-maps-btn"] button (KMLExport/scripts.js) each already
@@ -268,4 +291,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   restoreTripHeadingName(user);
 
   wireEzGuideButton(user);
+  emailReportOnLanding(user);
 });
