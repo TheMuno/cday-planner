@@ -2290,6 +2290,29 @@ function distanceMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Retries once on failure -- same transient-transport-error flakiness seen on Place Details
+// fetches (see resolveCuratedLocation): a lone retry almost always succeeds. Never retry an
+// intentional cancellation (AbortError) -- that just means a newer request superseded this one.
+async function fetchPlacesApi(url, fields, body, signal) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': placesApiKey,
+          'X-Goog-FieldMask': fields.join(','),
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+      return await res.json();
+    } catch (e) {
+      if (e.name === 'AbortError' || attempt === 2) throw e;
+    }
+  }
+}
+
 async function textSearchPlaces({ textQuery, includedType, priceLevels, fieldsExtra = [], pageToken, signal }) {
   const fields = ['places.id', 'places.displayName', 'places.location', 'nextPageToken', ...fieldsExtra];
   const payload = {
@@ -2300,18 +2323,7 @@ async function textSearchPlaces({ textQuery, includedType, priceLevels, fieldsEx
     ...(pageToken ? { pageToken } : {}),
   };
 
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': placesApiKey,
-      'X-Goog-FieldMask': fields.join(','),
-    },
-    body: JSON.stringify(payload),
-    signal,
-  });
-
-  const { places = [], nextPageToken } = await res.json();
+  const { places = [], nextPageToken } = await fetchPlacesApi('https://places.googleapis.com/v1/places:searchText', fields, payload, signal);
   return { places, nextPageToken };
 }
 
@@ -2325,22 +2337,11 @@ async function nearbySearchPlaces({ includedTypes, fieldsExtra = [], signal }) {
   // viewport with a circle of half its diagonal, capped at the API's 50km max radius.
   const radius = Math.min(distanceMeters(sw.lat(), sw.lng(), ne.lat(), ne.lng()) / 2, 50000);
 
-  const res = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': placesApiKey,
-      'X-Goog-FieldMask': fields.join(','),
-    },
-    body: JSON.stringify({
-      includedTypes,
-      maxResultCount: 20,
-      locationRestriction: { circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius } },
-    }),
-    signal,
-  });
-
-  const { places = [] } = await res.json();
+  const { places = [] } = await fetchPlacesApi('https://places.googleapis.com/v1/places:searchNearby', fields, {
+    includedTypes,
+    maxResultCount: 20,
+    locationRestriction: { circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius } },
+  }, signal);
   return places;
 }
 
