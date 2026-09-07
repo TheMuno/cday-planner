@@ -303,6 +303,19 @@ window.addEventListener('load', async () => {
           opacity: 0.8; flex-shrink: 0;
         }
         .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+        @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
+        @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
+        .ak-step2-check circle {
+          fill: none; stroke: currentColor; stroke-width: 2;
+          stroke-dasharray: 63; stroke-dashoffset: 63;
+          animation: ak-step2-check-circle 0.35s ease-out forwards;
+        }
+        .ak-step2-check path {
+          fill: none; stroke: currentColor; stroke-width: 2.5;
+          stroke-linecap: round; stroke-linejoin: round;
+          stroke-dasharray: 18; stroke-dashoffset: 18;
+          animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -369,6 +382,19 @@ window.addEventListener('load', async () => {
           opacity: 0.8; flex-shrink: 0;
         }
         .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+        @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
+        @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
+        .ak-step2-check circle {
+          fill: none; stroke: currentColor; stroke-width: 2;
+          stroke-dasharray: 63; stroke-dashoffset: 63;
+          animation: ak-step2-check-circle 0.35s ease-out forwards;
+        }
+        .ak-step2-check path {
+          fill: none; stroke: currentColor; stroke-width: 2.5;
+          stroke-linecap: round; stroke-linejoin: round;
+          stroke-dasharray: 18; stroke-dashoffset: 18;
+          animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -382,6 +408,11 @@ window.addEventListener('load', async () => {
     const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
     try {
       await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
+      // Success confirmation before restoring -- only save-itinerary stays on the page after
+      // saving (continue-to-step2 and the "Calc" link navigate away immediately), so this is
+      // the only save action a checkmark would actually be seen on.
+      $btn.innerHTML = '<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>';
+      await new Promise(resolve => setTimeout(resolve, 900));
     } catch (err) {
       console.error(err);
       alertify.alert(navigator.onLine
@@ -418,6 +449,19 @@ window.addEventListener('load', async () => {
             opacity: 0.8; flex-shrink: 0;
           }
           .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+          @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
+          @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
+          .ak-step2-check circle {
+            fill: none; stroke: currentColor; stroke-width: 2;
+            stroke-dasharray: 63; stroke-dashoffset: 63;
+            animation: ak-step2-check-circle 0.35s ease-out forwards;
+          }
+          .ak-step2-check path {
+            fill: none; stroke: currentColor; stroke-width: 2.5;
+            stroke-linecap: round; stroke-linejoin: round;
+            stroke-dasharray: 18; stroke-dashoffset: 18;
+            animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
+          }
         `;
         document.head.appendChild(style);
       }
