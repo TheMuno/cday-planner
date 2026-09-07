@@ -66,6 +66,9 @@ function getDb() {
 
 const PURCHASE_STORAGE_KEY = 'ak-has-purchased-plan';
 const PURCHASE_EVENT       = 'ak:purchase-status';
+// Per-user flag so the Compton entitlement write below (see requiresPurchaseCheck) only runs
+// once instead of on every page load.
+const COMPTON_ENTITLEMENT_SYNCED_KEY = 'ak-compton-entitlement-synced';
 
 // Lets other scripts on the same page (e.g. calculate-pass-savings.js) react to purchase
 // status without running their own Firestore read: localStorage for the cached value on
@@ -150,6 +153,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       wireDownloadButton(user, $downloadBtns);
       wireDownloadButton(user, $flagshipDownloadBtns, 'generateFlagshipSmartGuidePdf', 'flagship-smart-guide.pdf');
       wireGoogleMapsButton($downloadMapsBtns);
+
+      // The UI-level bypass above only skips OUR OWN Firestore check — generateFlagshipSmartGuidePdf
+      // is a Cloud Function that independently re-checks hasPurchasedPlan server-side and 403s
+      // without it, regardless of what's shown here. Flip that field on the user's own doc so the
+      // Cloud Function's check passes too. Gated on a synced flag so it only writes once per user
+      // per browser instead of on every page load.
+      if (window.location.href.includes('compton') && !localStorage.getItem(COMPTON_ENTITLEMENT_SYNCED_KEY)) {
+        (async () => {
+          try {
+            const { doc, setDoc, db } = await getDb();
+            const userRef = doc(db, 'locationsData', `user-${user.email}`);
+            await setDoc(userRef, { hasPurchasedPlan: true }, { merge: true });
+            localStorage.setItem(COMPTON_ENTITLEMENT_SYNCED_KEY, 'true');
+          } catch (e) {
+            console.error('Could not flag Compton user as purchased:', e);
+          }
+        })();
+      }
       return;
     }
 
