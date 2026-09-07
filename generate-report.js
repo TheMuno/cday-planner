@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, initializeFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -15,6 +16,7 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const functions = getFunctions(app);
 
 // Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
 // connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
@@ -90,7 +92,16 @@ async function syncWithDB() {
   const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
   if (!userMail) return;
 
-  const dbData = await retrieveDBData(userMail);
+  // A session with no real Firebase Auth login (e.g. a server-side PDF render that only has
+  // localStorage prefilled) may not pass Firestore's read rules -- that shouldn't take down the
+  // rest of the population pipeline below this call, since localStorage is already the source of
+  // truth in that case.
+  let dbData;
+  try {
+    dbData = await retrieveDBData(userMail);
+  } catch (e) {
+    return;
+  }
   if (!dbData) return;
 
   if (!localStorage['ak-travel-days'] && dbData.travelDates) localStorage['ak-travel-days'] = dbData.travelDates;
@@ -183,15 +194,16 @@ function setAkTextOrEmpty(selector, value) {
 // localStorage-only source (it falls back to the Firebase user object), so it's kept out of
 // populateReport() and only ever called once auth has actually resolved.
 function populateGuestName() {
-  if (!auth.currentUser) return;
-  let tripName = auth.currentUser.displayName || localStorage['ak-user-name'] || auth.currentUser.email?.split('@')[0] || '';
-  if (tripName) {
-    tripName = tripName
-      .split(/\s+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
-  }
-  setAkText('guest-name', tripName || 'Not Specified');
+  // Was gated on auth.currentUser alone -- blocked a session with no real Firebase Auth login
+  // (e.g. a server-side PDF render that only has localStorage prefilled) from ever populating
+  // this field, even though ak-user-name is one of its own fallback sources below.
+  let tripName = auth.currentUser?.displayName || localStorage['ak-user-name'] || auth.currentUser?.email?.split('@')[0] || '';
+  if (!tripName) return;
+  tripName = tripName
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+  setAkText('guest-name', tripName);
 }
 
 // ak-arrival-airport/ak-departure-airport hold a JSON blob (place details + flight fields merged
@@ -355,6 +367,88 @@ function populateReport() {
     setAkText('check-out-date-short', 'Tue, Jan 2');
     setAkText('stay-nights', '1');
   }
+}
+
+// --- PDF download ---
+// Unauthenticated link viewer (e.g. hotel/concierge staff opening the alert link) -- mirrors
+// itinerary-list-v2.js's download flow: the shareToken already in the URL is the access
+// credential, so it's read straight off window.location rather than any logged-in identity.
+// generateReportPdf rebuilds the card server-side from Firestore, so this doesn't depend on
+// populateReport()/populateActivityChips() having run first.
+const $downloadBtn = document.querySelector('[data-ak="download-pdf-btn"]');
+
+// Mirrors build-itinerary.js's step-2 continue button: inject the spinner keyframes/classes once,
+// then swap the button's content for a spinner + loading text while the async call is in flight.
+// Reuses itinerary-list-v2.js's ak-pdf-* class names since this is the same kind of PDF-download
+// button, just on a different page.
+function injectPdfSpinnerStyle() {
+  if (document.getElementById('ak-pdf-spinner-style')) return;
+  const style = document.createElement('style');
+  style.id = 'ak-pdf-spinner-style';
+  style.textContent = `
+    @keyframes ak-pdf-spin { to { transform: rotate(360deg); } }
+    .ak-pdf-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: ak-pdf-spin 0.7s linear infinite;
+      opacity: 0.8;
+      flex-shrink: 0;
+    }
+    .ak-pdf-btn-loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+if ($downloadBtn) {
+  let isDownloading = false;
+
+  $downloadBtn.addEventListener('click', async () => {
+    if (isDownloading) return;
+
+    const shareToken = new URLSearchParams(window.location.search).get('token');
+    if (!shareToken) {
+      alertify.alert('No share link detected in this URL.');
+      return;
+    }
+
+    isDownloading = true;
+    injectPdfSpinnerStyle();
+    const originalHTML = $downloadBtn.innerHTML;
+    const originalCursor = $downloadBtn.style.cursor;
+    $downloadBtn.innerHTML = '<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Generating report...</span>';
+    $downloadBtn.style.cursor = 'wait';
+
+    try {
+      const generateReportPdf = httpsCallable(functions, 'generateReportPdf');
+      const { data } = await generateReportPdf({ shareToken });
+
+      const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.filename;
+      a.click();
+
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('❌ PDF generation failed:', err);
+      alertify.alert('Failed to generate PDF. Please try again.');
+    } finally {
+      isDownloading = false;
+      $downloadBtn.innerHTML = originalHTML;
+      $downloadBtn.style.cursor = originalCursor;
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
