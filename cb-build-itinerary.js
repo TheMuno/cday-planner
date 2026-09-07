@@ -38,20 +38,24 @@ function getDb() {
   return dbPromise;
 }
 
-// Reveal sign-in-to-save/continue-to-step2 as soon as auth state is known, independent of
-// window 'load' (waits on every page resource, incl. images), mapReady (Maps script + library
-// loads), and syncWithDB (Firestore round-trip). Those can be slow/variable on a bad connection,
-// and none of them are actually needed to know which button to show — gating the reveal on them
-// left the buttons invisible long enough that users would think there was nothing there.
+// Reveal sign-in-to-save/continue-to-step2/save-itinerary as soon as auth state is known,
+// independent of window 'load' (waits on every page resource, incl. images), mapReady (Maps
+// script + library loads), and syncWithDB (Firestore round-trip). Those can be slow/variable on
+// a bad connection, and none of them are actually needed to know which button to show — gating
+// the reveal on them left the buttons invisible long enough that users would think there was
+// nothing there.
 onAuthStateChanged(auth, user => {
   const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
   const $signInBtn = document.querySelector('[data-ak="sign-in-to-save"]');
+  const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
   if (user) {
     $continueBtn?.removeAttribute('data-ak-hidden');
+    $saveBtn?.removeAttribute('data-ak-hidden');
     $signInBtn?.setAttribute('data-ak-hidden', 'true');
   } else {
     $signInBtn?.removeAttribute('data-ak-hidden');
     $continueBtn?.setAttribute('data-ak-hidden', 'true');
+    $saveBtn?.setAttribute('data-ak-hidden', 'true');
   }
 });
 
@@ -313,6 +317,66 @@ window.addEventListener('load', async () => {
       alertify.alert(navigator.onLine
         ? "We couldn't save your trip. Please try again in a moment."
         : "You're offline — please check your internet connection and try again.");
+    }
+  });
+
+  const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
+  const saveBtnOriginalHTML = $saveBtn?.innerHTML;
+
+  function resetSaveBtn() {
+    if (!$saveBtn) return;
+    $saveBtn.classList.remove('ak-saving');
+    $saveBtn.disabled = false;
+    $saveBtn.style.opacity = '';
+    $saveBtn.style.minWidth = '';
+    $saveBtn.innerHTML = saveBtnOriginalHTML;
+  }
+
+  // Bfcache restore can leave this stuck mid-spinner too, same as continue-to-step2 above.
+  window.addEventListener('pageshow', e => {
+    if (!e.persisted) return;
+    resetSaveBtn();
+  });
+
+  $saveBtn?.addEventListener('click', async e => {
+    e.preventDefault();
+    const $btn = e.currentTarget;
+    if ($btn.classList.contains('ak-saving')) return;
+
+    // Reuses continue-to-step2's ak-step2-spinner CSS (injected above, or by this handler if
+    // save-itinerary is clicked first) rather than defining a second near-identical spinner style.
+    if (!document.getElementById('ak-step2-spinner-style')) {
+      const style = document.createElement('style');
+      style.id = 'ak-step2-spinner-style';
+      style.textContent = `
+        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+        .ak-step2-spinner {
+          display: inline-block; width: 14px; height: 14px;
+          border: 2px solid currentColor; border-top-color: transparent;
+          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+          opacity: 0.8; flex-shrink: 0;
+        }
+        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+    $btn.innerHTML = '<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>';
+    $btn.classList.add('ak-saving');
+    $btn.disabled = true;
+    $btn.style.opacity = '0.8';
+
+    const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+    try {
+      await Promise.race([saveAttractionsDB(), saveTimeout]);
+    } catch (err) {
+      console.error(err);
+      alertify.alert(navigator.onLine
+        ? "We couldn't save your trip. Please try again in a moment."
+        : "You're offline — please check your internet connection and try again.");
+    } finally {
+      resetSaveBtn();
     }
   });
 
