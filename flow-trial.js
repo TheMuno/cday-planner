@@ -3,7 +3,10 @@ const $lastName = document.querySelector('[data-ak="last-name"]');
 const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.nextElementSibling;
 const $submitBtn = document.querySelector('[data-ak="submit"]');
 const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
-const submitBtnOriginalHTML = $submitBtn?.innerHTML;
+// $submitBtn is an <input type="submit"> -- a void element with no children, so it can't hold
+// a spinner via innerHTML. Its text lives in .value instead, and the spinner has to be a sibling
+// element positioned over it rather than content inside it.
+const submitBtnOriginalValue = $submitBtn?.value;
 
 // Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
 // resolveFlowTrialSpreadsheetId() in functions/index.js. Not the same endpoint/sheets used by
@@ -31,13 +34,28 @@ $hotel.addEventListener('change', e => {
     redirect = resolveHotel().redirect;
 });
 
+// Wraps $submitBtn in a relatively-positioned span (once) so the spinner has something to
+// absolutely-position itself against, without disturbing the input's own layout/classes.
+function ensureSubmitBtnWrap() {
+    if (!$submitBtn) return null;
+    if ($submitBtn.parentElement?.classList.contains('ak-flow-trial-btn-wrap')) {
+        return $submitBtn.parentElement;
+    }
+    const $wrap = document.createElement('span');
+    $wrap.className = 'ak-flow-trial-btn-wrap';
+    $wrap.style.cssText = 'position:relative; display:inline-block;';
+    $submitBtn.parentNode.insertBefore($wrap, $submitBtn);
+    $wrap.appendChild($submitBtn);
+    return $wrap;
+}
+
 function resetSubmitBtn() {
     if (!$submitBtn) return;
     $submitBtn.classList.remove('ak-saving');
     $submitBtn.disabled = false;
     $submitBtn.style.opacity = '';
-    $submitBtn.style.minWidth = '';
-    $submitBtn.innerHTML = submitBtnOriginalHTML;
+    $submitBtn.value = submitBtnOriginalValue;
+    $submitBtn.parentElement?.querySelector('.ak-flow-trial-spinner')?.remove();
 }
 
 // Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated
@@ -69,21 +87,24 @@ $submitBtn.addEventListener('click', async e => {
         style.textContent = `
             @keyframes ak-flow-trial-spin { to { transform: rotate(360deg); } }
             .ak-flow-trial-spinner {
-                display: inline-block; width: 14px; height: 14px;
+                position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
+                width: 14px; height: 14px;
                 border: 2px solid currentColor; border-top-color: transparent;
                 border-radius: 50%; animation: ak-flow-trial-spin 0.7s linear infinite;
-                opacity: 0.8; flex-shrink: 0;
+                opacity: 0.85; pointer-events: none;
             }
-            .ak-flow-trial-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
         `;
         document.head.appendChild(style);
     }
 
-    $submitBtn.style.minWidth = `${$submitBtn.getBoundingClientRect().width}px`;
-    $submitBtn.innerHTML = `<span class="ak-flow-trial-btn-loading"><span class="ak-flow-trial-spinner"></span>Processing...</span>`;
+    const $wrap = ensureSubmitBtnWrap();
+    $submitBtn.value = 'Processing...';
     $submitBtn.classList.add('ak-saving');
     $submitBtn.disabled = true;
     $submitBtn.style.opacity = '0.8';
+    const $spinner = document.createElement('span');
+    $spinner.className = 'ak-flow-trial-spinner';
+    $wrap.appendChild($spinner);
 
     // The save is best-effort logging, not a blocking step -- cap how long the spinner waits on
     // it so a slow/dropped request can't strand the user on this page, then redirect regardless.
