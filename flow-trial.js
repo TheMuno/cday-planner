@@ -29,9 +29,15 @@ $hotel.addEventListener('change', e => {
 $submitBtn.addEventListener('click', e => {
     e.preventDefault();
 
-    const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim()); 
+    const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim());
     if (emptyUserDataFields.length !== 0) {
-        highlight(emptyUserDataFields[0]);
+        const emptyField = emptyUserDataFields[0];
+        if (emptyField.getAttribute('data-ak') === 'user-travel-dates') {
+            highlight(emptyField.nextElementSibling);
+        }
+        else {
+            highlight(emptyField);
+        }
     }
     else {
         window.location.href = redirect;
