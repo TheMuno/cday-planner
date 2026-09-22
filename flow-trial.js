@@ -14,7 +14,7 @@ const hotelMap = {
     'demo': { redirect: '/demo-hotel/itinerary', tag: null },
 };
 
-const defaultRedirect = '/demo-hotel/trip-planner';
+const defaultRedirect = '/demo-hotel/itinerary';
 let redirect = defaultRedirect;
 
 function resolveHotel() {
