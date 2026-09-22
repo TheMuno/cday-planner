@@ -4,29 +4,31 @@ const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.ne
 const $submitBtn = document.querySelector('[data-ak="submit"]');
 const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
 
+const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConf';
+
+// `tag` must match a key in HOTEL_CONF_SPREADSHEET_OVERRIDES (functions/index.js) to route the
+// row to that hotel's own sheet -- any other tag (or null) falls back to the default sheet.
 const hotelMap = {
-    'carlton': '/carlton-arms',
-    'compton': '/compton',
-    'demo': '/demo-hotel/trip-planner',
+    'carlton': { redirect: '/carlton-arms', tag: 'carlton-arms' },
+    'compton': { redirect: '/compton', tag: 'compton-bentonville' },
+    'demo': { redirect: '/demo-hotel/trip-planner', tag: null },
 };
 
 const defaultRedirect = '/demo-hotel/trip-planner';
 let redirect = defaultRedirect;
 
-$hotel.addEventListener('change', e => {
+function resolveHotel() {
     const val = $hotel.value.trim().toLowerCase();
-    if (val.includes('carlton')) {
-        redirect = hotelMap['carlton'];
-    }
-    else if (val.includes('compton')) {
-        redirect = hotelMap['compton'];
-    }
-    else {
-        redirect = defaultRedirect;
-    }
+    if (val.includes('carlton')) return hotelMap['carlton'];
+    if (val.includes('compton')) return hotelMap['compton'];
+    return { redirect: defaultRedirect, tag: null };
+}
+
+$hotel.addEventListener('change', e => {
+    redirect = resolveHotel().redirect;
 });
 
-$submitBtn.addEventListener('click', e => {
+$submitBtn.addEventListener('click', async e => {
     e.preventDefault();
 
     const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim());
@@ -38,13 +40,38 @@ $submitBtn.addEventListener('click', e => {
         else {
             highlight(emptyField);
         }
+        return;
     }
-    else {
-        window.location.href = redirect;
-    } 
+
+    await saveUserData();
+    window.location.href = redirect;
 });
 
 function highlight(el) {
     el.classList.add('highlight');
     setTimeout(()=>el.classList.remove('highlight'),2000);
+}
+
+async function saveUserData() {
+    const { tag } = resolveHotel();
+    if (!tag) return; // unrecognized/demo hotel -- no dedicated sheet to save to
+
+    const data = { hotel: $hotel.value.trim() };
+    $userDataFields.forEach(el => {
+        const key = el.getAttribute('data-ak') || el.getAttribute('data-ak-user-info');
+        data[key] = el.value.trim();
+    });
+
+    try {
+        await fetch(SAVE_HOTEL_CONF_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                hotel: tag,
+                conf: JSON.stringify(data),
+            }),
+        });
+    } catch (err) {
+        console.error('Failed to save hotel confirmation:', err);
+    }
 }
