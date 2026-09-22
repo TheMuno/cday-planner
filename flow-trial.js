@@ -34,9 +34,16 @@ $hotel.addEventListener('change', e => {
 $submitBtn.addEventListener('click', e => {
     e.preventDefault();
 
-    if ($hotel.value.trim() !== '') {
+    if ($hotel.value.trim() === '') {
+        highlight($hotel);
+    }
+    else {
         window.location.href = redirect;
     }
     console.log('Clicked!!')
 });
 
+function highlight(el) {
+    el.classList.add('highlight');
+    setTimeout(()=>el.classList.remove('highlight'),2000);
+}
