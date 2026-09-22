@@ -7,6 +7,10 @@ const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
 // a spinner via innerHTML. Its text lives in .value instead, and the spinner has to be a sibling
 // element positioned over it rather than content inside it.
 const submitBtnOriginalValue = $submitBtn?.value;
+// Captured before anything (including the wrapper below) can touch layout, since $submitBtn's
+// own CSS (the "is_100" class) sizes it to 100% of its *original* parent -- measuring later,
+// after wrapping, would capture whatever width it collapsed to inside the wrapper instead.
+const submitBtnOriginalWidth = $submitBtn?.getBoundingClientRect().width;
 
 // Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
 // resolveFlowTrialSpreadsheetId() in functions/index.js. Not the same endpoint/sheets used by
@@ -43,7 +47,10 @@ function ensureSubmitBtnWrap() {
     }
     const $wrap = document.createElement('span');
     $wrap.className = 'ak-flow-trial-btn-wrap';
-    $wrap.style.cssText = 'position:relative; display:inline-block;';
+    // display:block (not inline-block) so it doesn't shrink to fit its content -- it needs to
+    // fill the same space the input did, or the input's width:100% (the "is_100" class)
+    // collapses to the wrapper's intrinsic size instead of the original parent's width.
+    $wrap.style.cssText = 'position:relative; display:block;';
     $submitBtn.parentNode.insertBefore($wrap, $submitBtn);
     $wrap.appendChild($submitBtn);
     return $wrap;
@@ -99,7 +106,7 @@ $submitBtn.addEventListener('click', async e => {
     }
 
     const $wrap = ensureSubmitBtnWrap();
-    $submitBtn.style.width = `${$submitBtn.getBoundingClientRect().width}px`;
+    if (submitBtnOriginalWidth) $submitBtn.style.width = `${submitBtnOriginalWidth}px`;
     $submitBtn.value = 'Processing...';
     $submitBtn.classList.add('ak-saving');
     $submitBtn.disabled = true;
