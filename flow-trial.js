@@ -4,24 +4,26 @@ const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.ne
 const $submitBtn = document.querySelector('[data-ak="submit"]');
 const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
 
-const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConf';
+// Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
+// resolveFlowTrialSpreadsheetId() in functions/index.js. Not the same endpoint/sheets used by
+// planner.js or firebase-auth.js.
+const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
 
-// `tag` must match a key in HOTEL_CONF_SPREADSHEET_OVERRIDES (functions/index.js) to route the
-// row to that hotel's own sheet -- any other tag (or null) falls back to the default sheet.
+// `tag` must match a key in FLOW_TRIAL_SPREADSHEETS (functions/index.js) to route to that
+// hotel's own sheet -- anything else falls back to the "demo" sheet server-side.
 const hotelMap = {
     'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms' },
     'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville' },
-    'demo': { redirect: '/demo-hotel/itinerary', tag: null },
+    'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo' },
 };
 
-const defaultRedirect = '/demo-hotel/itinerary';
-let redirect = defaultRedirect;
+let redirect = hotelMap['demo'].redirect;
 
 function resolveHotel() {
     const val = $hotel.value.trim().toLowerCase();
     if (val.includes('carlton')) return hotelMap['carlton'];
     if (val.includes('compton')) return hotelMap['compton'];
-    return { redirect: defaultRedirect, tag: null };
+    return hotelMap['demo'];
 }
 
 $hotel.addEventListener('change', e => {
@@ -54,24 +56,21 @@ function highlight(el) {
 
 async function saveUserData() {
     const { tag } = resolveHotel();
-    if (!tag) return; // unrecognized/demo hotel -- no dedicated sheet to save to
 
-    const data = { hotel: $hotel.value.trim() };
+    const fields = { hotel: $hotel.value.trim() };
     $userDataFields.forEach(el => {
         const key = el.getAttribute('data-ak') || el.getAttribute('data-ak-user-info');
-        data[key] = el.value.trim();
+        fields[key] = el.value.trim();
     });
 
     try {
-        await fetch(SAVE_HOTEL_CONF_URL, {
+        const res = await fetch(SAVE_FLOW_TRIAL_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                hotel: tag,
-                conf: JSON.stringify(data),
-            }),
+            body: JSON.stringify({ hotel: tag, fields }),
         });
+        if (!res.ok) throw new Error(`saveFlowTrialSubmission responded ${res.status}`);
     } catch (err) {
-        console.error('Failed to save hotel confirmation:', err);
+        console.error('Failed to save flow-trial submission:', err);
     }
 }
