@@ -62,16 +62,17 @@ function resetSubmitBtn() {
     $submitBtn.disabled = false;
     $submitBtn.style.opacity = '';
     $submitBtn.style.width = '';
+    $submitBtn.style.color = '';
     $submitBtn.value = submitBtnOriginalValue;
-    $submitBtn.parentElement?.querySelector('.ak-flow-trial-spinner')?.remove();
+    $submitBtn.parentElement?.querySelector('.ak-flow-trial-btn-overlay')?.remove();
 }
 
-// Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated
-// away, so without this the button can come back stuck mid-spinner if they hit back after
-// clicking submit.
-window.addEventListener('pageshow', e => {
-    if (e.persisted) resetSubmitBtn();
-});
+// Bfcache restores the page (and its DOM/JS state, including our mid-submit mutations) exactly
+// as it was when the user navigated away. `event.persisted` is meant to flag that case, but
+// isn't reliable across every browser/navigation path -- resetting unconditionally on every
+// pageshow is always safe (a no-op on a genuinely fresh load, since state already matches) and
+// avoids depending on that flag at all.
+window.addEventListener('pageshow', resetSubmitBtn);
 
 $submitBtn.addEventListener('click', async e => {
     e.preventDefault();
@@ -95,25 +96,43 @@ $submitBtn.addEventListener('click', async e => {
         style.textContent = `
             @keyframes ak-flow-trial-spin { to { transform: rotate(360deg); } }
             .ak-flow-trial-spinner {
-                position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
-                width: 14px; height: 14px;
+                width: 14px; height: 14px; flex-shrink: 0;
                 border: 2px solid currentColor; border-top-color: transparent;
                 border-radius: 50%; animation: ak-flow-trial-spin 0.7s linear infinite;
-                opacity: 0.85; pointer-events: none;
+                opacity: 0.85;
+            }
+            /* Sits over the (text-hidden) input, centered like its native text would be, since
+               the input itself can't hold both a spinner and label as real content. */
+            .ak-flow-trial-btn-overlay {
+                position: absolute; inset: 0;
+                display: flex; align-items: center; justify-content: center; gap: 8px;
+                pointer-events: none;
             }
         `;
         document.head.appendChild(style);
     }
 
+    // Read before mutating $submitBtn's own color below -- the overlay needs to match how the
+    // button's text actually looks (the ".btn" class may set font/color directly on the input
+    // rather than something the overlay, a sibling element, would pick up via `inherit`).
+    const btnStyle = getComputedStyle($submitBtn);
+    const overlayFont = btnStyle.font;
+    const overlayColor = btnStyle.color;
+    const overlayLetterSpacing = btnStyle.letterSpacing;
+    const overlayTextTransform = btnStyle.textTransform;
+
     const $wrap = ensureSubmitBtnWrap();
     if (submitBtnOriginalWidth) $submitBtn.style.width = `${submitBtnOriginalWidth}px`;
     $submitBtn.value = 'Processing...';
+    $submitBtn.style.color = 'transparent'; // hides the native value text; the overlay below shows it instead
     $submitBtn.classList.add('ak-saving');
     $submitBtn.disabled = true;
     $submitBtn.style.opacity = '0.8';
-    const $spinner = document.createElement('span');
-    $spinner.className = 'ak-flow-trial-spinner';
-    $wrap.appendChild($spinner);
+    const $overlay = document.createElement('span');
+    $overlay.className = 'ak-flow-trial-btn-overlay';
+    $overlay.style.cssText = `font:${overlayFont}; color:${overlayColor}; letter-spacing:${overlayLetterSpacing}; text-transform:${overlayTextTransform};`;
+    $overlay.innerHTML = `<span class="ak-flow-trial-spinner"></span>Processing...`;
+    $wrap.appendChild($overlay);
 
     // The save is best-effort logging, not a blocking step -- cap how long the spinner waits on
     // it so a slow/dropped request can't strand the user on this page, then redirect regardless.
