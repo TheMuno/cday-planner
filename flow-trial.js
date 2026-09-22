@@ -9,9 +9,9 @@ const SAVE_HOTEL_CONF_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.ne
 // `tag` must match a key in HOTEL_CONF_SPREADSHEET_OVERRIDES (functions/index.js) to route the
 // row to that hotel's own sheet -- any other tag (or null) falls back to the default sheet.
 const hotelMap = {
-    'carlton': { redirect: '/carlton-arms', tag: 'carlton-arms' },
-    'compton': { redirect: '/compton', tag: 'compton-bentonville' },
-    'demo': { redirect: '/demo-hotel/trip-planner', tag: null },
+    'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms' },
+    'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville' },
+    'demo': { redirect: '/demo-hotel/itinerary', tag: null },
 };
 
 const defaultRedirect = '/demo-hotel/trip-planner';
