@@ -123,7 +123,7 @@ $submitBtn.addEventListener('click', async e => {
 
     const $wrap = ensureSubmitBtnWrap();
     if (submitBtnOriginalWidth) $submitBtn.style.width = `${submitBtnOriginalWidth}px`;
-    $submitBtn.value = 'Processing...';
+    $submitBtn.value = 'Redirecting...';
     $submitBtn.style.color = 'transparent'; // hides the native value text; the overlay below shows it instead
     $submitBtn.classList.add('ak-saving');
     $submitBtn.disabled = true;
@@ -131,7 +131,7 @@ $submitBtn.addEventListener('click', async e => {
     const $overlay = document.createElement('span');
     $overlay.className = 'ak-flow-trial-btn-overlay';
     $overlay.style.cssText = `font:${overlayFont}; color:${overlayColor}; letter-spacing:${overlayLetterSpacing}; text-transform:${overlayTextTransform};`;
-    $overlay.innerHTML = `<span class="ak-flow-trial-spinner"></span>Processing...`;
+    $overlay.innerHTML = `<span class="ak-flow-trial-spinner"></span>Redirecting...`;
     $wrap.appendChild($overlay);
 
     // The save is best-effort logging, not a blocking step -- cap how long the spinner waits on
