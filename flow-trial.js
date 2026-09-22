@@ -30,10 +30,7 @@ $submitBtn.addEventListener('click', e => {
     e.preventDefault();
 
     const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim()); 
-    if ($hotel.value.trim() === '') {
-        highlight($hotel);
-    }
-    else if (emptyUserDataFields.length !== 0) {
+    if (emptyUserDataFields.length !== 0) {
         highlight(emptyUserDataFields[0]);
     }
     else {
