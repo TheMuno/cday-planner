@@ -34,7 +34,9 @@ $hotel.addEventListener('change', e => {
 $submitBtn.addEventListener('click', e => {
     e.preventDefault();
 
-    window.location.href = redirect;
+    if ($hotel.value.trim() !== '') {
+        window.location.href = redirect;
+    }
     console.log('Clicked!!')
 });
 
