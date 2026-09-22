@@ -1,7 +1,8 @@
 const $hotel = document.querySelector('[data-ak="hotel-name"]');
 const $lastName = document.querySelector('[data-ak="last-name"]');
-const $travelDates = document.querySelector('[data-ak="user-travel-dates"]');
+const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.nextElementSibling;
 const $submitBtn = document.querySelector('[data-ak="submit"]');
+const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
 
 const hotelMap = {
     'carlton': '/carlton-arms',
@@ -23,24 +24,21 @@ $hotel.addEventListener('change', e => {
     else {
         redirect = defaultRedirect;
     }
-
-    console.log('hotel', val)
-    console.log('redirect', redirect)
 });
-
-
-
 
 $submitBtn.addEventListener('click', e => {
     e.preventDefault();
 
+    const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim()); 
     if ($hotel.value.trim() === '') {
         highlight($hotel);
     }
+    else if (emptyUserDataFields.length !== 0) {
+        highlight(emptyUserDataFields[0]);
+    }
     else {
         window.location.href = redirect;
-    }
-    console.log('Clicked!!')
+    } 
 });
 
 function highlight(el) {
