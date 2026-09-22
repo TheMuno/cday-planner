@@ -54,6 +54,7 @@ function resetSubmitBtn() {
     $submitBtn.classList.remove('ak-saving');
     $submitBtn.disabled = false;
     $submitBtn.style.opacity = '';
+    $submitBtn.style.width = '';
     $submitBtn.value = submitBtnOriginalValue;
     $submitBtn.parentElement?.querySelector('.ak-flow-trial-spinner')?.remove();
 }
@@ -98,6 +99,7 @@ $submitBtn.addEventListener('click', async e => {
     }
 
     const $wrap = ensureSubmitBtnWrap();
+    $submitBtn.style.width = `${$submitBtn.getBoundingClientRect().width}px`;
     $submitBtn.value = 'Processing...';
     $submitBtn.classList.add('ak-saving');
     $submitBtn.disabled = true;
