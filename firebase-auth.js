@@ -53,6 +53,9 @@ const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd
 const SAVE_HOTEL_CONF_LOGIN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConfOnLogin';
 const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
 
+// ── 2d. FLOW TRIAL OPT-IN SHEET (fires only when the hotel modal is accepted) ────
+const SAVE_FLOW_TRIAL_OPT_IN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialOptIn';
+
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
 // Mirrors planner.js's detectHotelSheetTag() — kept independent (not read from
@@ -61,6 +64,18 @@ const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
 function detectHotelSheetTag() {
   if (window.location.href.includes('compton')) return 'compton-bentonville';
   return null;
+}
+
+// The hotel whose pages the user came from: the first known hotel key that is a
+// whole segment of ak-login-redirect (the site-wide script's "last page before
+// /log-in" path) — exact segment match, so "arms" can't match /carlton-arms/.
+// Known hotels = this user's hotelReferrals keys + the ak-hotel-referral the hotel
+// page's own script saved (covers a first visit, before any DB entry exists), so
+// no hardcoded list is needed. null for non-hotel pages.
+function detectHotelFromLoginRedirect(hotelReferrals) {
+  const segments = (localStorage.getItem('ak-login-redirect') || '').toLowerCase().split('/');
+  const candidates = [localStorage.getItem('ak-hotel-referral'), ...Object.keys(hotelReferrals || {})];
+  return candidates.find((hotel) => hotel && segments.includes(hotel.toLowerCase())) || null;
 }
 
 // ── 3. INIT ─────────────────────────────────────────────────
@@ -490,19 +505,6 @@ async function saveHotelReferral(email, hotel, optedIn, existingEntry) {
   }
 }
 
-// Multiple hotels can now have their own (possibly unconsented) entry in the
-// same user's hotelReferrals map. Case 2 / submit only ever have one checkbox
-// to show, so when more than one is unconsented, the most recently touched
-// entry (by updatedAt) wins. Missing/unresolved updatedAt (e.g. a serverTimestamp
-// not yet synced back from the server) sorts last rather than throwing.
-function findUnconsentedHotel(hotelReferrals) {
-  if (!hotelReferrals) return null;
-  const unconsented = Object.entries(hotelReferrals).filter(([, v]) => !v.optedIn);
-  if (!unconsented.length) return null;
-  unconsented.sort(([, a], [, b]) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
-  return unconsented[0][0];
-}
-
 // Returns a Promise resolving true (accepted) / false (declined — including
 // dismissal via the backdrop, so it never hangs). Built from DOM nodes rather
 // than innerHTML so the hotel name (sourced from localStorage or Firestore,
@@ -604,20 +606,27 @@ function showHotelReferralModal(hotel) {
   });
 }
 
+// The most recently added hotel still at optedIn:false, or null if none are
+// outstanding. Ordered by createdAt (a Firestore Timestamp, set once and never
+// re-stamped), so skipping a modal doesn't change which hotel counts as latest.
+function latestDeclinedHotel(hotelReferrals) {
+  const millis = (entry) => entry?.createdAt?.toMillis?.() ?? 0;
+  const declined = Object.entries(hotelReferrals || {}).filter(([, entry]) => entry && !entry.optedIn);
+  if (!declined.length) return null;
+  declined.sort(([, a], [, b]) => millis(b) - millis(a));
+  return declined[0][0];
+}
+
 // Runs once per sign-in, right after auth succeeds and email is known — the
 // same call for every provider (email/password, Google, Facebook popup,
 // Facebook mobile redirect). Post-auth is what lets social-login users see
 // this at all: pre-auth there's no typed email to key a DB lookup off of, but
 // every provider gives us one by the time this runs.
 //
-// Which hotel to ask about: the DB is checked first, since it's the source of
-// truth for consent already on record — any hotel still unconsented there
-// takes priority over whatever localStorage says. localStorage is only
-// consulted as a fallback when the DB has nothing pending (e.g. a brand-new
-// referral this device just picked up, with no DB entry yet). Checking the DB
-// first also means revisiting an old referral link for an already-consented
-// hotel can never resurface the modal — that specific case is caught before
-// localStorage's stale flag is ever trusted.
+// Which hotel to ask about: the hotel whose pages the user came from (see
+// detectHotelFromLoginRedirect), and only that one — its DB entry decides
+// *whether* to ask. Logging in from a non-hotel page instead asks about the
+// most recently added hotel still at optedIn:false, if any.
 async function promptHotelReferralOptIn(email) {
   if (!email) return;
   let hotelReferrals;
@@ -629,30 +638,36 @@ async function promptHotelReferralOptIn(email) {
     return; // can't reach Firestore — don't block sign-in on this
   }
 
-  let hotel = findUnconsentedHotel(hotelReferrals);
-  let existing = hotel ? hotelReferrals[hotel] : null;
+  const hotel = detectHotelFromLoginRedirect(hotelReferrals) || latestDeclinedHotel(hotelReferrals);
+  if (!hotel) return;
+  const existing = hotelReferrals?.[hotel] ?? null;
 
-  if (!hotel) {
-    const localHotel = localStorage.getItem("ak-hotel-referral");
-    if (!localHotel) return;
-    existing = hotelReferrals?.[localHotel] ?? null;
-
-    if (existing?.optedIn) {
-      // Already has a DB record and already consented — nothing left to ask, ever.
-      localStorage.removeItem("ak-hotel-referral");
-      return;
-    }
-
-    hotel = localHotel;
+  if (existing?.optedIn) {
+    // Already consented to this hotel — nothing left to ask, ever.
+    localStorage.removeItem("ak-hotel-referral");
+    return;
   }
 
   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
   const accepted = await showHotelReferralModal(hotel);
   showLoader();
+  if (accepted) sendFlowTrialOptIn(email, hotel);
   try {
     await saveHotelReferral(email, hotel, accepted, existing);
   } catch (_) {}
-  if (accepted) localStorage.removeItem("ak-hotel-referral");
+  localStorage.removeItem("ak-hotel-referral");
+}
+
+// Adds the email to that hotel's "Saves" tab (routing is server-side, in
+// functions/index.js's saveFlowTrialOptIn). Accept-only, and fire-and-forget with
+// keepalive like sendToMake, so the redirect right after sign-in can't cancel it.
+function sendFlowTrialOptIn(email, hotel) {
+  fetch(SAVE_FLOW_TRIAL_OPT_IN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({ email, hotel }),
+  }).catch(err => console.error('Failed to record flow-trial opt-in:', err));
 }
 
 function setMode(signUp) {
