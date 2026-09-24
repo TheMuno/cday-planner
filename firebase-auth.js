@@ -625,8 +625,11 @@ function latestDeclinedHotel(hotelReferrals) {
 //
 // Which hotel to ask about: the hotel whose pages the user came from (see
 // detectHotelFromLoginRedirect), and only that one — its DB entry decides
-// *whether* to ask. Logging in from a non-hotel page instead asks about the
-// most recently added hotel still at optedIn:false, if any.
+// *whether* to ask. Otherwise, a pending ak-hotel-referral (e.g. saved by the
+// flow-trial form) that this user has never been asked about is asked about
+// from any page — at most once, since answering adds it to hotelReferrals.
+// Failing both, it asks about the most recently added hotel still at
+// optedIn:false, if any.
 async function promptHotelReferralOptIn(email) {
   if (!email) return;
   let hotelReferrals;
@@ -638,7 +641,9 @@ async function promptHotelReferralOptIn(email) {
     return; // can't reach Firestore — don't block sign-in on this
   }
 
-  const hotel = detectHotelFromLoginRedirect(hotelReferrals) || latestDeclinedHotel(hotelReferrals);
+  const pending = localStorage.getItem("ak-hotel-referral");
+  const neverAsked = pending && !hotelReferrals?.[pending] ? pending : null;
+  const hotel = detectHotelFromLoginRedirect(hotelReferrals) || neverAsked || latestDeclinedHotel(hotelReferrals);
   if (!hotel) return;
   const existing = hotelReferrals?.[hotel] ?? null;
 

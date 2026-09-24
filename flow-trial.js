@@ -19,10 +19,12 @@ const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.ne
 
 // `tag` must match a key in FLOW_TRIAL_SPREADSHEETS (functions/index.js) to route to that
 // hotel's own sheet -- anything else falls back to the "demo" sheet server-side.
+// `referral` is saved as ak-hotel-referral on submit, so firebase-auth.js knows which hotel to
+// ask about in the opt-in modal -- same keys the hotel pages save (planner.js / cb-planner.js).
 const hotelMap = {
-    'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms' },
-    'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville' },
-    'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo' },
+    'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms', referral: 'carlton-arms' },
+    'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville', referral: 'compton' },
+    'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo', referral: 'demo' },
 };
 
 let redirect = hotelMap['demo'].redirect;
@@ -89,6 +91,8 @@ $submitBtn.addEventListener('click', async e => {
         }
         return;
     }
+
+    localStorage.setItem('ak-hotel-referral', resolveHotel().referral);
 
     if (!document.getElementById('ak-flow-trial-spinner-style')) {
         const style = document.createElement('style');
