@@ -93,6 +93,9 @@ $submitBtn.addEventListener('click', async e => {
     }
 
     localStorage.setItem('ak-hotel-referral', resolveHotel().referral);
+    // Tells firebase-auth.js this sign-in came through flow-trial: it sends the email to the
+    // hotel's "Saves" tab on login without showing the opt-in modal.
+    localStorage.setItem('ak-flow-trial-hotel', resolveHotel().referral);
 
     if (!document.getElementById('ak-flow-trial-spinner-style')) {
         const style = document.createElement('style');

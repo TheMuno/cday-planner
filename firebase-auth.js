@@ -290,7 +290,7 @@ if (_fbIsFB) {
         }
         await saveUserProvider(result.user, email);
         localStorage.setItem('ak-userMail', email);
-        try { await promptHotelReferralOptIn(email); } catch (_) {}
+        try { await promptHotelReferralOptIn(email); } catch (err) { console.error("promptHotelReferralOptIn failed:", err); }
         isSigningIn = false;
         onUserLoginSuccess(result.user);
         window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -619,19 +619,27 @@ function latestDeclinedHotel(hotelReferrals) {
 
 // Runs once per sign-in, right after auth succeeds and email is known — the
 // same call for every provider (email/password, Google, Facebook popup,
-// Facebook mobile redirect). Post-auth is what lets social-login users see
-// this at all: pre-auth there's no typed email to key a DB lookup off of, but
+// Facebook mobile redirect). Post-auth is what lets social-login users count
+// at all: pre-auth there's no typed email to key a DB lookup off of, but
 // every provider gives us one by the time this runs.
 //
-// Which hotel to ask about: the hotel whose pages the user came from (see
-// detectHotelFromLoginRedirect), and only that one — its DB entry decides
-// *whether* to ask. Otherwise, a pending ak-hotel-referral (e.g. saved by the
-// flow-trial form) that this user has never been asked about is asked about
-// from any page — at most once, since answering adds it to hotelReferrals.
-// Failing both, it asks about the most recently added hotel still at
-// optedIn:false, if any.
+// No modal (asleep — see below): using the hotel pages / flow-trial form is the
+// consent, so the email goes straight to that hotel's "Saves" tab and the hotel
+// is saved as optedIn:true. Which hotel:
+//   - flow-trial sign-ins (ak-flow-trial-hotel, set by flow-trial.js on submit):
+//     that hotel, sent before anything else, every time.
+//   - otherwise the hotel whose pages the user came from (see
+//     detectHotelFromLoginRedirect), or a pending ak-hotel-referral this user
+//     isn't on record for yet — sent once, skipped if already optedIn.
 async function promptHotelReferralOptIn(email) {
   if (!email) return;
+
+  const flowTrialHotel = localStorage.getItem("ak-flow-trial-hotel");
+  if (flowTrialHotel) {
+    localStorage.removeItem("ak-flow-trial-hotel");
+    sendFlowTrialOptIn(email, flowTrialHotel); // before the DB read below, so nothing can delay or block it
+  }
+
   let hotelReferrals;
   try {
     const snap = await getDoc(doc(db, "users", userDocId(email)));
@@ -643,20 +651,36 @@ async function promptHotelReferralOptIn(email) {
 
   const pending = localStorage.getItem("ak-hotel-referral");
   const neverAsked = pending && !hotelReferrals?.[pending] ? pending : null;
-  const hotel = detectHotelFromLoginRedirect(hotelReferrals) || neverAsked || latestDeclinedHotel(hotelReferrals);
+  // latestDeclinedHotel (re-asking hotels skipped in the modal, from any page)
+  // is out while the modal sleeps — with no one to ask, it would opt users in
+  // to a hotel from a page that has nothing to do with it. Wake it with the modal:
+  // const hotel = flowTrialHotel || detectHotelFromLoginRedirect(hotelReferrals) || neverAsked || latestDeclinedHotel(hotelReferrals);
+  const hotel = flowTrialHotel || detectHotelFromLoginRedirect(hotelReferrals) || neverAsked;
   if (!hotel) return;
-  const existing = hotelReferrals?.[hotel] ?? null;
+
+  const existing = hotelReferrals?.[hotel];
 
   if (existing?.optedIn) {
-    // Already consented to this hotel — nothing left to ask, ever.
+    // Already on record for this hotel — nothing left to send or save.
     localStorage.removeItem("ak-hotel-referral");
     return;
   }
 
-  hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
-  const accepted = await showHotelReferralModal(hotel);
-  showLoader();
-  if (accepted) sendFlowTrialOptIn(email, hotel);
+  // MODAL ASLEEP — legal moved the email-save notice onto the hotel pages, so
+  // no one sees the modal. To wake it: uncomment the block below, delete the
+  // two lines after it, and restore latestDeclinedHotel above.
+  //
+  // let accepted;
+  // if (flowTrialHotel) {
+  //   accepted = true;
+  // } else {
+  //   hideLoader(); // no-op if it wasn't showing — only touched when the modal is actually about to appear
+  //   accepted = await showHotelReferralModal(hotel);
+  //   showLoader();
+  //   if (accepted) sendFlowTrialOptIn(email, hotel);
+  // }
+  if (!flowTrialHotel) sendFlowTrialOptIn(email, hotel); // flow-trial already sent above
+  const accepted = true;
   try {
     await saveHotelReferral(email, hotel, accepted, existing);
   } catch (_) {}
@@ -664,7 +688,8 @@ async function promptHotelReferralOptIn(email) {
 }
 
 // Adds the email to that hotel's "Saves" tab (routing is server-side, in
-// functions/index.js's saveFlowTrialOptIn). Accept-only, and fire-and-forget with
+// functions/index.js's saveFlowTrialOptIn). Sent straight away on sign-in while
+// the modal sleeps (on Accept when it's awake). Fire-and-forget with
 // keepalive like sendToMake, so the redirect right after sign-in can't cancel it.
 function sendFlowTrialOptIn(email, hotel) {
   fetch(SAVE_FLOW_TRIAL_OPT_IN_URL, {
@@ -873,7 +898,7 @@ function withPopupTimeout(promise) {
 async function finishGoogleSignIn(user) {
   await linkPendingCredential(user);
   await saveUserProvider(user);
-  try { await promptHotelReferralOptIn(user.email); } catch (_) {}
+  try { await promptHotelReferralOptIn(user.email); } catch (err) { console.error("promptHotelReferralOptIn failed:", err); }
   onUserLoginSuccess(user);
   window.location.replace(REDIRECT_AFTER_LOGIN);
 }
@@ -974,7 +999,7 @@ async function finishFacebookSignIn(user) {
     }
   } catch (_) {}
   localStorage.setItem("ak-userMail", email);
-  try { await promptHotelReferralOptIn(email); } catch (_) {}
+  try { await promptHotelReferralOptIn(email); } catch (err) { console.error("promptHotelReferralOptIn failed:", err); }
   onUserLoginSuccess(user);
   window.location.replace(REDIRECT_AFTER_LOGIN);
 }
@@ -1119,7 +1144,7 @@ if (submitBtn) {
         await new Promise(r => setTimeout(r, 4000));
       }
 
-      try { await promptHotelReferralOptIn(email); } catch (_) {}
+      try { await promptHotelReferralOptIn(email); } catch (err) { console.error("promptHotelReferralOptIn failed:", err); }
 
       onUserLoginSuccess(result.user);
       window.location.replace(REDIRECT_AFTER_LOGIN);
@@ -1262,7 +1287,7 @@ onAuthStateChanged(auth, async (user) => {
     // modal; leave the pending referral in localStorage so it's asked for
     // honestly the next time they actually sign in through this tab.
     if (wasSigningIn) {
-      try { await promptHotelReferralOptIn(user.email); } catch (_) {}
+      try { await promptHotelReferralOptIn(user.email); } catch (err) { console.error("promptHotelReferralOptIn failed:", err); }
     }
     showLoader();
     window.location.replace(REDIRECT_AFTER_LOGIN);
