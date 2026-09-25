@@ -53,8 +53,12 @@ const MAKE_WEBHOOK_URL = 'https://hook.us1.make.com/z0fx4wnlhhmdemvkvyic15xkleyd
 const SAVE_HOTEL_CONF_LOGIN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveHotelConfOnLogin';
 const HOTEL_CONF_SAVE_SYNCED_KEY = 'ak-hotel-conf-save-synced';
 
-// ── 2d. FLOW TRIAL OPT-IN SHEET (fires only when the hotel modal is accepted) ────
+// ── 2d. FLOW TRIAL OPT-IN SHEET (fires on flow-trial sign-ins) ────
 const SAVE_FLOW_TRIAL_OPT_IN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialOptIn';
+// Read once at load: promptHotelReferralOptIn clears ak-flow-trial-hotel, and on some sign-in
+// paths that happens before onUserLoginSuccess runs. Flow-trial sign-ins only ever write to
+// the flow-trial sheets, never the original HOTEL_CONF ones (see recordHotelConfSave).
+const IS_FLOW_TRIAL_SIGN_IN = !!localStorage.getItem('ak-flow-trial-hotel');
 
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
@@ -857,6 +861,7 @@ function sendToMake(user) {
 // without risking the page unloading first. The tradeoff is a failed request
 // still gets marked synced and won't retry on the next login.
 function recordHotelConfSave(user) {
+  if (IS_FLOW_TRIAL_SIGN_IN) return; // flow-trial -> new sheets only (saveFlowTrialOptIn)
   const conf = localStorage.getItem('ak-hotel-conf');
   if (!conf) return;
   if (localStorage.getItem(HOTEL_CONF_SAVE_SYNCED_KEY) === conf) return;
