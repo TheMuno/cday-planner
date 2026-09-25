@@ -1,16 +1,18 @@
 const $hotel = document.querySelector('[data-ak="hotel-name"]');
 const $lastName = document.querySelector('[data-ak="last-name"]');
 const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.nextElementSibling;
-const $submitBtn = document.querySelector('[data-ak="submit"]');
+// Every [data-ak="submit"] on the page works the same (e.g. separate desktop/mobile buttons).
+const $submitBtns = [...document.querySelectorAll('[data-ak="submit"]')];
 const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
-// $submitBtn is an <input type="submit"> -- a void element with no children, so it can't hold
+// Each button is an <input type="submit"> -- a void element with no children, so it can't hold
 // a spinner via innerHTML. Its text lives in .value instead, and the spinner has to be a sibling
 // element positioned over it rather than content inside it.
-const submitBtnOriginalValue = $submitBtn?.value;
-// Captured before anything (including the wrapper below) can touch layout, since $submitBtn's
+const submitBtnOriginalValues = new Map($submitBtns.map($btn => [$btn, $btn.value]));
+// Captured before anything (including the wrapper below) can touch layout, since each button's
 // own CSS (the "is_100" class) sizes it to 100% of its *original* parent -- measuring later,
 // after wrapping, would capture whatever width it collapsed to inside the wrapper instead.
-const submitBtnOriginalWidth = $submitBtn?.getBoundingClientRect().width;
+// (A button hidden at load, e.g. a mobile-only one, measures 0 and is simply left unsized.)
+const submitBtnOriginalWidths = new Map($submitBtns.map($btn => [$btn, $btn.getBoundingClientRect().width]));
 
 // Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
 // resolveFlowTrialSpreadsheetId() in functions/index.js. Not the same endpoint/sheets used by
@@ -40,12 +42,11 @@ $hotel.addEventListener('change', e => {
     redirect = resolveHotel().redirect;
 });
 
-// Wraps $submitBtn in a relatively-positioned span (once) so the spinner has something to
+// Wraps $btn in a relatively-positioned span (once) so the spinner has something to
 // absolutely-position itself against, without disturbing the input's own layout/classes.
-function ensureSubmitBtnWrap() {
-    if (!$submitBtn) return null;
-    if ($submitBtn.parentElement?.classList.contains('ak-flow-trial-btn-wrap')) {
-        return $submitBtn.parentElement;
+function ensureSubmitBtnWrap($btn) {
+    if ($btn.parentElement?.classList.contains('ak-flow-trial-btn-wrap')) {
+        return $btn.parentElement;
     }
     const $wrap = document.createElement('span');
     $wrap.className = 'ak-flow-trial-btn-wrap';
@@ -53,20 +54,21 @@ function ensureSubmitBtnWrap() {
     // fill the same space the input did, or the input's width:100% (the "is_100" class)
     // collapses to the wrapper's intrinsic size instead of the original parent's width.
     $wrap.style.cssText = 'position:relative; display:block;';
-    $submitBtn.parentNode.insertBefore($wrap, $submitBtn);
-    $wrap.appendChild($submitBtn);
+    $btn.parentNode.insertBefore($wrap, $btn);
+    $wrap.appendChild($btn);
     return $wrap;
 }
 
-function resetSubmitBtn() {
-    if (!$submitBtn) return;
-    $submitBtn.classList.remove('ak-saving');
-    $submitBtn.disabled = false;
-    $submitBtn.style.opacity = '';
-    $submitBtn.style.width = '';
-    $submitBtn.style.color = '';
-    $submitBtn.value = submitBtnOriginalValue;
-    $submitBtn.parentElement?.querySelector('.ak-flow-trial-btn-overlay')?.remove();
+function resetSubmitBtns() {
+    $submitBtns.forEach($btn => {
+        $btn.classList.remove('ak-saving');
+        $btn.disabled = false;
+        $btn.style.opacity = '';
+        $btn.style.width = '';
+        $btn.style.color = '';
+        $btn.value = submitBtnOriginalValues.get($btn);
+        $btn.parentElement?.querySelector('.ak-flow-trial-btn-overlay')?.remove();
+    });
 }
 
 // Bfcache restores the page (and its DOM/JS state, including our mid-submit mutations) exactly
@@ -74,11 +76,14 @@ function resetSubmitBtn() {
 // isn't reliable across every browser/navigation path -- resetting unconditionally on every
 // pageshow is always safe (a no-op on a genuinely fresh load, since state already matches) and
 // avoids depending on that flag at all.
-window.addEventListener('pageshow', resetSubmitBtn);
+window.addEventListener('pageshow', resetSubmitBtns);
 
-$submitBtn.addEventListener('click', async e => {
+$submitBtns.forEach($btn => $btn.addEventListener('click', e => handleSubmit(e, $btn)));
+
+async function handleSubmit(e, $submitBtn) {
     e.preventDefault();
-    if ($submitBtn.classList.contains('ak-saving')) return;
+    // Any button already mid-save means this submission is in flight -- don't send it twice.
+    if ($submitBtns.some($btn => $btn.classList.contains('ak-saving'))) return;
 
     const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim());
     if (emptyUserDataFields.length !== 0) {
@@ -130,7 +135,8 @@ $submitBtn.addEventListener('click', async e => {
     const overlayLetterSpacing = btnStyle.letterSpacing;
     const overlayTextTransform = btnStyle.textTransform;
 
-    const $wrap = ensureSubmitBtnWrap();
+    const $wrap = ensureSubmitBtnWrap($submitBtn);
+    const submitBtnOriginalWidth = submitBtnOriginalWidths.get($submitBtn);
     if (submitBtnOriginalWidth) $submitBtn.style.width = `${submitBtnOriginalWidth}px`;
     $submitBtn.value = 'Redirecting...';
     $submitBtn.style.color = 'transparent'; // hides the native value text; the overlay below shows it instead
@@ -142,13 +148,17 @@ $submitBtn.addEventListener('click', async e => {
     $overlay.style.cssText = `font:${overlayFont}; color:${overlayColor}; letter-spacing:${overlayLetterSpacing}; text-transform:${overlayTextTransform};`;
     $overlay.innerHTML = `<span class="ak-flow-trial-spinner"></span>Redirecting...`;
     $wrap.appendChild($overlay);
+    // The other buttons just go inert -- the spinner belongs to the one that was clicked.
+    $submitBtns.forEach($btn => {
+        if ($btn !== $submitBtn) $btn.disabled = true;
+    });
 
     // The save is best-effort logging, not a blocking step -- cap how long the spinner waits on
     // it so a slow/dropped request can't strand the user on this page, then redirect regardless.
     const saveTimeout = new Promise(resolve => setTimeout(resolve, 10000));
     await Promise.race([saveUserData(), saveTimeout]);
     window.location.href = redirect;
-});
+}
 
 function highlight(el) {
     el.classList.add('highlight');
