@@ -939,11 +939,20 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
     }
   }
 
-  const $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
+  // The Webflow section ships with placeholder copy in its <p> — it's always overwritten below so
+  // that copy can never show. The <p> is tagged insider-tip-desc on first lookup because the
+  // reservation badge <p> gets inserted right before it, and a bare '.u-size-24-10 p' would then match the badge.
+  const $tipSection = $mapPopup.querySelector('[data-ak="insider-tips-section"]');
+  let $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
+  if (!$tipDesc) {
+    $tipDesc = $tipSection?.querySelector('.u-size-24-10 p') || null;
+    $tipDesc?.setAttribute('data-ak', 'insider-tip-desc');
+  }
   const $tipInsiders = $mapPopup.querySelectorAll('[data-ak-insider]');
   const rawEntry = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
-  const rawTip = rawEntry?.tip || null;
+  const tipText = parseInsiderTip(rawEntry?.tip).desc;
   const reservationsRequired = rawEntry?.reservationsRequired ?? false;
+  const hasInsiderContent = !!tipText || reservationsRequired;
 
   let $resBadge = $mapPopup.querySelector('[data-ak="reservation-badge"]');
   if (!$resBadge && $tipDesc) {
@@ -953,14 +962,17 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
     $resBadge.textContent = '⚠️ Reservation Required';
     $tipDesc.parentElement.insertBefore($resBadge, $tipDesc);
   }
-  if ($resBadge) $resBadge.style.display = reservationsRequired ? '' : 'none';
-
-  if (rawTip || reservationsRequired) {
-    if ($tipDesc) $tipDesc.textContent = rawTip ? parseInsiderTip(rawTip).desc : '';
-    $tipInsiders.forEach($el => $el.style.display = '');
-  } else {
-    $tipInsiders.forEach($el => $el.style.display = 'none');
+  if ($resBadge) {
+    $resBadge.style.display = reservationsRequired ? '' : 'none';
+    // With no tip below it the badge is the section's only content, so it's italicised to stand in as the description.
+    $resBadge.style.fontStyle = reservationsRequired && !tipText ? 'italic' : '';
   }
+
+  if ($tipDesc) {
+    $tipDesc.textContent = tipText;
+    $tipDesc.style.display = tipText ? '' : 'none';
+  }
+  $tipInsiders.forEach($el => $el.style.display = hasInsiderContent ? '' : 'none');
 
   const $popupActionBtn = $mapPopup.querySelector('.map_card_btn_wrap');
   if ($popupActionBtn) {
