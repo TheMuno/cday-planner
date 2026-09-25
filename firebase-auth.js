@@ -636,8 +636,10 @@ async function promptHotelReferralOptIn(email) {
 
   const flowTrialHotel = localStorage.getItem("ak-flow-trial-hotel");
   if (flowTrialHotel) {
+    const reservationNum = localStorage.getItem("ak-flow-trial-reservation");
     localStorage.removeItem("ak-flow-trial-hotel");
-    sendFlowTrialOptIn(email, flowTrialHotel); // before the DB read below, so nothing can delay or block it
+    localStorage.removeItem("ak-flow-trial-reservation");
+    sendFlowTrialOptIn(email, flowTrialHotel, reservationNum); // before the DB read below, so nothing can delay or block it
   }
 
   let hotelReferrals;
@@ -691,12 +693,13 @@ async function promptHotelReferralOptIn(email) {
 // functions/index.js's saveFlowTrialOptIn). Sent straight away on sign-in while
 // the modal sleeps (on Accept when it's awake). Fire-and-forget with
 // keepalive like sendToMake, so the redirect right after sign-in can't cancel it.
-function sendFlowTrialOptIn(email, hotel) {
+// reservationNum (flow-trial only) also puts the email on that submission's Views row.
+function sendFlowTrialOptIn(email, hotel, reservationNum) {
   fetch(SAVE_FLOW_TRIAL_OPT_IN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     keepalive: true,
-    body: JSON.stringify({ email, hotel }),
+    body: JSON.stringify({ email, hotel, reservationNum }),
   }).catch(err => console.error('Failed to record flow-trial opt-in:', err));
 }
 
