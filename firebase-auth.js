@@ -765,7 +765,6 @@ async function handleAuthError(err) {
     "auth/invalid-email":          "Please enter a valid email address.",
     "auth/email-already-in-use":   "An account with this email already exists.",
     "auth/weak-password":          "Password must be at least 6 characters.",
-    "auth/timeout":                "This is taking longer than expected. Please check your connection and try again.",
     "auth/network-request-failed": "Network error. Please check your connection and try again.",
     "auth/too-many-requests":      "Too many attempts. Please wait a moment and try again.",
   };
@@ -885,19 +884,6 @@ function recordHotelConfSave(user) {
   }).catch(err => console.error('Failed to record hotel conf save:', err));
 }
 
-// Guards against signInWithPopup hanging indefinitely — an ad blocker, extension, or
-// corporate firewall can silently kill the auth-helper iframe's postMessage relay without
-// signInWithPopup itself ever resolving or rejecting. Without this, a hung popup leaves the
-// buttons locked with zero feedback until the 30s lockAuthButtons timer eventually releases
-// them on its own — which just looks like "clicking the button does nothing."
-const POPUP_TIMEOUT_MS = 20000;
-function withPopupTimeout(promise) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject({ code: 'auth/timeout' }), POPUP_TIMEOUT_MS)),
-  ]);
-}
-
 // ── 6. GOOGLE SIGN-IN ────────────────────────────────────────
 // Shared by the normal popup-resolves path and the popup-race recovery path
 // below (auth/popup-closed-by-user firing even though auth.currentUser is
@@ -925,7 +911,7 @@ if (googleBtn) {
     // finishGoogleSignIn completes its writes.
     redirectHandled = true;
     try {
-      const result = await withPopupTimeout(signInWithPopup(auth, new GoogleAuthProvider()));
+      const result = await signInWithPopup(auth, new GoogleAuthProvider());
       showLoader();
       await finishGoogleSignIn(result.user);
     } catch (err) {
@@ -1057,7 +1043,7 @@ if (facebookBtn) {
     lockAuthButtons();
     redirectHandled = true;
     try {
-      const result = await withPopupTimeout(signInWithPopup(auth, fbProvider));
+      const result = await signInWithPopup(auth, fbProvider);
       showLoader();
       await finishFacebookSignIn(result.user);
     } catch (err) {
