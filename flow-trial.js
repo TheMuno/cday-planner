@@ -15,11 +15,11 @@ const submitBtnOriginalValues = new Map($submitBtns.map($btn => [$btn, $btn.valu
 const submitBtnOriginalWidths = new Map($submitBtns.map($btn => [$btn, $btn.getBoundingClientRect().width]));
 
 // Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
-// resolveFlowTrialSpreadsheetId() in functions/index.js. Not the same endpoint/sheets used by
+// resolveFlowTrialHotel() in functions/index.js. Not the same endpoint/sheets used by
 // planner.js or firebase-auth.js.
 const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
 
-// `tag` must match a key in FLOW_TRIAL_SPREADSHEETS (functions/index.js) to route to that
+// `tag` must match a key in FLOW_TRIAL_HOTELS (functions/index.js) to route to that
 // hotel's own sheet -- anything else falls back to the "demo" sheet server-side.
 // `referral` is saved as ak-hotel-referral on submit, so firebase-auth.js knows which hotel to
 // ask about in the opt-in modal -- same keys the hotel pages save (planner.js / cb-planner.js).
