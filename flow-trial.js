@@ -1,8 +1,9 @@
 const $hotel = document.querySelector('[data-ak="hotel-name"]');
 const $lastName = document.querySelector('[data-ak="last-name"]');
 const $travelDates = document.querySelector('[data-ak="user-travel-dates"]')?.nextElementSibling;
-// Every [data-ak="submit"] on the page works the same (e.g. separate desktop/mobile buttons).
-const $submitBtns = [...document.querySelectorAll('[data-ak="submit"]')];
+// Every [data-ak="start-planning"] on the page works the same (e.g. separate desktop/mobile buttons).
+const $submitBtns = [...document.querySelectorAll('[data-ak="start-planning"]')];
+const $continueBtns = [...document.querySelectorAll('[data-ak="continue-planning"]')];
 const $userDataFields = document.querySelectorAll('[data-ak-user-info]');
 // Each button is an <input type="submit"> -- a void element with no children, so it can't hold
 // a spinner via innerHTML. Its text lives in .value instead, and the spinner has to be a sibling
@@ -76,33 +77,68 @@ function resetSubmitBtns() {
 // isn't reliable across every browser/navigation path -- resetting unconditionally on every
 // pageshow is always safe (a no-op on a genuinely fresh load, since state already matches) and
 // avoids depending on that flag at all.
-window.addEventListener('pageshow', resetSubmitBtns);
+window.addEventListener('pageshow', () => {
+    resetSubmitBtns();
+    continuing = false;
+});
 
 $submitBtns.forEach($btn => $btn.addEventListener('click', e => handleSubmit(e, $btn)));
+$continueBtns.forEach($btn => $btn.addEventListener('click', handleContinue));
+
+const firebaseConfig = {
+    apiKey:            "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
+    authDomain:        "auth.askkhonsu.com",
+    projectId:         "askkhonsu-map",
+    storageBucket:     "askkhonsu-map.appspot.com",
+    messagingSenderId: "266031876218",
+    appId:             "1:266031876218:web:ec93411f1c13d9731e93c3",
+    measurementId:     "G-Z7F4NJ4PHW",
+};
+
+// Only continue-planning needs to know the sign-in state, so Firebase is loaded lazily (never
+// blocking the rest of this file) -- but started right away, so it's usually settled by the
+// time anyone clicks. authStateReady() waits for the persisted session to be restored;
+// auth.currentUser is null until then even for a signed-in user.
+const authReady = $continueBtns.length === 0 ? null : Promise.all([
+    import('https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js'),
+    import('https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js'),
+]).then(async ([{ initializeApp, getApps, getApp }, { getAuth }]) => {
+    const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    await auth.authStateReady();
+    return auth;
+});
+
+let continuing = false;
+
+async function handleContinue(e) {
+    e.preventDefault();
+    if (continuing) return;
+    if (!validateUserDataFields()) return;
+    continuing = true;
+
+    storeFlowTrialKeys();
+    // Not awaited: the request is sent with keepalive, so it still completes after the redirect.
+    saveUserData();
+
+    let signedIn = false;
+    try {
+        signedIn = !!(await authReady).currentUser;
+    } catch (err) {
+        // Firebase failed to load -- /log-in sorts out an already-signed-in user on its own.
+        console.error('Failed to check sign-in state:', err);
+    }
+    window.location.href = signedIn ? resolveHotel().redirect : '/log-in';
+}
 
 async function handleSubmit(e, $submitBtn) {
     e.preventDefault();
     // Any button already mid-save means this submission is in flight -- don't send it twice.
     if ($submitBtns.some($btn => $btn.classList.contains('ak-saving'))) return;
 
-    const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim());
-    if (emptyUserDataFields.length !== 0) {
-        const emptyField = emptyUserDataFields[0];
-        if (emptyField.getAttribute('data-ak') === 'user-travel-dates') {
-            highlight(emptyField.nextElementSibling);
-        }
-        else {
-            highlight(emptyField);
-        }
-        return;
-    }
+    if (!validateUserDataFields()) return;
 
-    localStorage.setItem('ak-hotel-referral', resolveHotel().referral);
-    // Tells firebase-auth.js this sign-in came through flow-trial: it sends the email to the
-    // hotel's "Saves" tab on login without showing the opt-in modal.
-    localStorage.setItem('ak-flow-trial-hotel', resolveHotel().referral);
-    // Lets the login step find this submission's Views row and fill in the email there.
-    localStorage.setItem('ak-flow-trial-reservation', document.querySelector('[data-ak="reservation-num"]')?.value.trim() || '');
+    storeFlowTrialKeys();
 
     if (!document.getElementById('ak-flow-trial-spinner-style')) {
         const style = document.createElement('style');
@@ -160,6 +196,31 @@ async function handleSubmit(e, $submitBtn) {
     window.location.href = redirect;
 }
 
+function storeFlowTrialKeys() {
+    localStorage.setItem('ak-hotel-referral', resolveHotel().referral);
+    // Tells firebase-auth.js this sign-in came through flow-trial: it sends the email to the
+    // hotel's "Saves" tab on login without showing the opt-in modal.
+    localStorage.setItem('ak-flow-trial-hotel', resolveHotel().referral);
+    // Lets the login step find this submission's Views row and fill in the email there.
+    localStorage.setItem('ak-flow-trial-reservation', document.querySelector('[data-ak="reservation-num"]')?.value.trim() || '');
+}
+
+// Shared by start-planning and continue-planning: highlights the first empty field and returns
+// false, or returns true once every field is filled in.
+function validateUserDataFields() {
+    const emptyUserDataFields = [...$userDataFields].filter(el => !el.value.trim());
+    if (emptyUserDataFields.length === 0) return true;
+
+    const emptyField = emptyUserDataFields[0];
+    if (emptyField.getAttribute('data-ak') === 'user-travel-dates') {
+        highlight(emptyField.nextElementSibling);
+    }
+    else {
+        highlight(emptyField);
+    }
+    return false;
+}
+
 function highlight(el) {
     el.classList.add('highlight');
     setTimeout(()=>el.classList.remove('highlight'),2000);
@@ -179,6 +240,7 @@ async function saveUserData() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hotel: tag, fields }),
+            keepalive: true,
         });
         if (!res.ok) throw new Error(`saveFlowTrialSubmission responded ${res.status}`);
     } catch (err) {
