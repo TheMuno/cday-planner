@@ -14,6 +14,8 @@ const submitBtnOriginalValues = new Map($submitBtns.map($btn => [$btn, $btn.valu
 // after wrapping, would capture whatever width it collapsed to inside the wrapper instead.
 // (A button hidden at load, e.g. a mobile-only one, measures 0 and is simply left unsized.)
 const submitBtnOriginalWidths = new Map($submitBtns.map($btn => [$btn, $btn.getBoundingClientRect().width]));
+// continue-planning is an <a> with its label in a child <div>, restored from here on return.
+const continueBtnOriginalHTML = new Map($continueBtns.map($btn => [$btn, $btn.innerHTML]));
 
 // Dedicated to this flow-trial form -- routes to its own per-hotel sheet via
 // resolveFlowTrialHotel() in functions/index.js. Not the same endpoint/sheets used by
@@ -30,18 +32,12 @@ const hotelMap = {
     'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo', referral: 'demo' },
 };
 
-let redirect = hotelMap['demo'].redirect;
-
 function resolveHotel() {
     const val = $hotel.value.trim().toLowerCase();
     if (val.includes('carlton')) return hotelMap['carlton'];
     if (val.includes('compton')) return hotelMap['compton'];
     return hotelMap['demo'];
 }
-
-$hotel.addEventListener('change', e => {
-    redirect = resolveHotel().redirect;
-});
 
 // Wraps $btn in a relatively-positioned span (once) so the spinner has something to
 // absolutely-position itself against, without disturbing the input's own layout/classes.
@@ -68,7 +64,11 @@ function resetSubmitBtns() {
         $btn.style.width = '';
         $btn.style.color = '';
         $btn.value = submitBtnOriginalValues.get($btn);
-        $btn.parentElement?.querySelector('.ak-flow-trial-btn-overlay')?.remove();
+        // Unwrap too (the overlay goes with the wrapper), so the DOM is back to exactly what
+        // Webflow rendered -- a leftover display:block wrapper changes the layout of whatever
+        // shares the button's row (e.g. continue-planning beside it).
+        const $wrap = $btn.parentElement;
+        if ($wrap?.classList.contains('ak-flow-trial-btn-wrap')) $wrap.replaceWith($btn);
     });
 }
 
@@ -79,8 +79,18 @@ function resetSubmitBtns() {
 // avoids depending on that flag at all.
 window.addEventListener('pageshow', () => {
     resetSubmitBtns();
+    resetContinueBtns();
     continuing = false;
 });
+
+function resetContinueBtns() {
+    $continueBtns.forEach($btn => {
+        $btn.classList.remove('ak-saving');
+        $btn.style.opacity = '';
+        $btn.style.pointerEvents = '';
+        $btn.innerHTML = continueBtnOriginalHTML.get($btn);
+    });
+}
 
 $submitBtns.forEach($btn => $btn.addEventListener('click', e => handleSubmit(e, $btn)));
 $continueBtns.forEach($btn => $btn.addEventListener('click', handleContinue));
@@ -113,9 +123,18 @@ let continuing = false;
 
 async function handleContinue(e) {
     e.preventDefault();
-    if (continuing) return;
+    if (continuing || $submitBtns.some($btn => $btn.classList.contains('ak-saving'))) return;
     if (!validateUserDataFields()) return;
     continuing = true;
+
+    // Only the label changes -- no wrapper and no fixed width, so the button's own Webflow sizing
+    // stays in charge. An <a> can't be disabled; `continuing` blocks repeat clicks instead.
+    ensureSpinnerStyle();
+    const $continueBtn = e.currentTarget;
+    $continueBtn.classList.add('ak-saving');
+    $continueBtn.style.opacity = '0.8';
+    $continueBtn.style.pointerEvents = 'none';
+    $continueBtn.innerHTML = `<div class="ak-flow-trial-btn-inline"><span class="ak-flow-trial-spinner"></span>Redirecting...</div>`;
 
     storeFlowTrialKeys();
     // Not awaited: the request is sent with keepalive, so it still completes after the redirect.
@@ -131,36 +150,42 @@ async function handleContinue(e) {
     window.location.href = signedIn ? resolveHotel().redirect : '/log-in';
 }
 
+function ensureSpinnerStyle() {
+    if (document.getElementById('ak-flow-trial-spinner-style')) return;
+    const style = document.createElement('style');
+    style.id = 'ak-flow-trial-spinner-style';
+    style.textContent = `
+        @keyframes ak-flow-trial-spin { to { transform: rotate(360deg); } }
+        .ak-flow-trial-spinner {
+            width: 14px; height: 14px; flex-shrink: 0;
+            border: 2px solid currentColor; border-top-color: transparent;
+            border-radius: 50%; animation: ak-flow-trial-spin 0.7s linear infinite;
+            opacity: 0.85;
+        }
+        /* Sits over the (text-hidden) input, centered like its native text would be, since
+           the input itself can't hold both a spinner and label as real content. */
+        .ak-flow-trial-btn-overlay {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            pointer-events: none;
+        }
+        /* continue-planning is an <a> that can hold real content, so its spinner goes inside it. */
+        .ak-flow-trial-btn-inline {
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
 async function handleSubmit(e, $submitBtn) {
     e.preventDefault();
     // Any button already mid-save means this submission is in flight -- don't send it twice.
-    if ($submitBtns.some($btn => $btn.classList.contains('ak-saving'))) return;
+    if (continuing || $submitBtns.some($btn => $btn.classList.contains('ak-saving'))) return;
 
     if (!validateUserDataFields()) return;
 
     storeFlowTrialKeys();
-
-    if (!document.getElementById('ak-flow-trial-spinner-style')) {
-        const style = document.createElement('style');
-        style.id = 'ak-flow-trial-spinner-style';
-        style.textContent = `
-            @keyframes ak-flow-trial-spin { to { transform: rotate(360deg); } }
-            .ak-flow-trial-spinner {
-                width: 14px; height: 14px; flex-shrink: 0;
-                border: 2px solid currentColor; border-top-color: transparent;
-                border-radius: 50%; animation: ak-flow-trial-spin 0.7s linear infinite;
-                opacity: 0.85;
-            }
-            /* Sits over the (text-hidden) input, centered like its native text would be, since
-               the input itself can't hold both a spinner and label as real content. */
-            .ak-flow-trial-btn-overlay {
-                position: absolute; inset: 0;
-                display: flex; align-items: center; justify-content: center; gap: 8px;
-                pointer-events: none;
-            }
-        `;
-        document.head.appendChild(style);
-    }
+    ensureSpinnerStyle();
 
     // Read before mutating $submitBtn's own color below -- the overlay needs to match how the
     // button's text actually looks (the ".btn" class may set font/color directly on the input
@@ -193,7 +218,9 @@ async function handleSubmit(e, $submitBtn) {
     // it so a slow/dropped request can't strand the user on this page, then redirect regardless.
     const saveTimeout = new Promise(resolve => setTimeout(resolve, 10000));
     await Promise.race([saveUserData(), saveTimeout]);
-    window.location.href = redirect;
+    // Read the field now instead of relying on the `change` listener: a browser that refills
+    // the form (back button, autofill) sets the value without firing `change`.
+    window.location.href = resolveHotel().redirect;
 }
 
 function storeFlowTrialKeys() {
