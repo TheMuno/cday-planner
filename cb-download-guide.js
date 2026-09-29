@@ -277,7 +277,12 @@ function emailSmartGuideOnLanding(user) {
     const { functions, httpsCallable } = await firebaseReady;
     const generateAdvancedItineraryPdf = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
     generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true, hotel: 'compton' })
-      .catch(err => console.error('Failed to email Smart Guide on landing:', err));
+      .catch(err => {
+        // Let a later landing in this tab retry (e.g. no saved itinerary yet, or a timeout) --
+        // the server-side guideEmailedSnapshot check still stops a repeat send if it already went out.
+        sessionStorage.removeItem(flagKey);
+        console.error('Failed to email Smart Guide on landing:', err);
+      });
   };
 
   // Deferred to an idle moment, same as emailReportOnLanding above.
