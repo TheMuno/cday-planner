@@ -237,6 +237,30 @@ function wireEzGuideButton(user) {
   });
 }
 
+// --- Auto-email the pre-arrival report PDF on landing ---
+// No client-side "only once per session" gate here on purpose: the correctness guard lives
+// entirely server-side in generateReportPdf (reportEmailedAt vs. the itinerary's ModifiedAt),
+// so an edit-then-revisit within the same tab/session still gets a fresh email. That guard
+// also short-circuits before the expensive PDF render whenever nothing changed, so calling
+// this on every landing is cheap -- just a Firestore read and an early return in that case.
+function emailReportOnLanding(user) {
+  const fire = async () => {
+    const { functions, httpsCallable } = await firebaseReady;
+    const generateReportPdf = httpsCallable(functions, 'generateReportPdf', { timeout: 60000 });
+    generateReportPdf({ userId: `user-${user.email}`, sendEmail: true })
+      .catch(err => console.error('Failed to email report on landing:', err));
+  };
+
+  // Deferred to an idle moment (falling back to a short delay) instead of firing immediately on
+  // landing, so this background request doesn't compete with the page's own
+  // images/maps/fonts for bandwidth while they're still loading.
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(fire, { timeout: 5000 });
+  } else {
+    setTimeout(fire, 2000);
+  }
+}
+
 // --- Auto-email the Smart Guide PDF on landing ---
 // Fires once per browser session (not on every reload/navigation back to this page) so
 // simply landing here doesn't repeatedly re-trigger the expensive (~1GiB/120s) PDF
@@ -253,10 +277,9 @@ function emailSmartGuideOnLanding(user) {
   const fire = async () => {
     const { functions, httpsCallable } = await firebaseReady;
     const generateAdvancedItineraryPdf = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
-    // `hotel` lets the backend skip its hasPurchasedPlan check -- hotel guides are free. Same
-    // URL match as stripe-purchase.js (FREE_GUIDE_HOTELS there and in functions/index.js).
-    const hotel = ['carlton-arms', 'compton', 'demo-hotel'].find(h => window.location.pathname.includes(h)) || null;
-    generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true, hotel })
+    // `hotel: 'carlton-arms'` skips its hasPurchasedPlan check (FREE_GUIDE_HOTELS in
+    // functions/index.js) — this file only runs on Carlton Arms pages, whose Smart Guide is free.
+    generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true, hotel: 'carlton-arms' })
       .catch(err => console.error('Failed to email Smart Guide on landing:', err));
   };
 
@@ -322,6 +345,7 @@ wireDownloadButtonLock();
   finishTripHeading(user);
 
   wireEzGuideButton(user);
+  emailReportOnLanding(user);
   // Disabled for now — Make/Gmail deliverability (spam) not sorted out yet. Re-enable
   // once the sending setup is fixed (see emailSmartGuideOnLanding above).
   // emailSmartGuideOnLanding(user);

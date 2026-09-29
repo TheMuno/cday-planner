@@ -1,6 +1,5 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
@@ -14,17 +13,6 @@ const firebaseConfig = {
 
 const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const functions = getFunctions(app);
-
-// Mints (once) the caller's shareToken so it exists in Firestore before it's ever needed
-// downstream (itinerary-list, PDF report links) — same idempotent call customize-itinerary.js's
-// finish button uses; getMyShareToken only writes if the account doesn't already have one, so
-// calling this on every save is cheap and safe. Errors are swallowed: a missing shareToken
-// shouldn't block saving the itinerary itself, and the next save just tries minting it again.
-function ensureShareToken() {
-  const getMyShareToken = httpsCallable(functions, 'getMyShareToken');
-  return getMyShareToken().catch(err => console.error('getMyShareToken failed', err));
-}
 
 // firebase-firestore.js is only actually needed once a Firestore read/write happens
 // (retrieveDBData/saveAttractionsDB). As a static import it used to be fetched — and block
@@ -50,6 +38,26 @@ function getDb() {
   return dbPromise;
 }
 
+// Mints (once) the caller's shareToken so it exists in Firestore before it's ever needed
+// downstream (itinerary-list, PDF report links) — same idempotent call customize-itinerary.js's
+// finish button uses; getMyShareToken only writes if the account doesn't already have one, so
+// calling this on every save is cheap and safe. Errors are swallowed: a missing shareToken
+// shouldn't block saving the itinerary itself, and the next save just tries minting it again.
+// firebase-functions.js is loaded lazily on first use, same reason as getDb() above.
+let functionsPromise = null;
+function ensureShareToken() {
+  if (!functionsPromise) {
+    functionsPromise = import("https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js")
+      .then(mod => ({ functions: mod.getFunctions(app), httpsCallable: mod.httpsCallable }));
+  }
+  return functionsPromise
+    .then(({ functions, httpsCallable }) => httpsCallable(functions, 'getMyShareToken')())
+    .catch(err => {
+      functionsPromise = null; // let the next save retry the import too
+      console.error('getMyShareToken failed', err);
+    });
+}
+
 // Reveal sign-in-to-save/continue-to-step2/save-itinerary as soon as auth state is known,
 // independent of window 'load' (waits on every page resource, incl. images), mapReady (Maps
 // script + library loads), and syncWithDB (Firestore round-trip). Those can be slow/variable on
@@ -71,7 +79,6 @@ onAuthStateChanged(auth, user => {
   }
 });
 
-const locationNYC = { lat: 40.7580, lng: -73.9855 };
 const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
 const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
 const hotelMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879b831dec5947617d34e3__hotel.png';
@@ -83,14 +90,6 @@ const cameraPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADg
 const insiderTipsUrl = 'https://us-central1-askkhonsu-map.cloudfunctions.net/getInsiderTips';
 const placesApiKey = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
 const noPhotoPlaceholder = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" fill="#ece9e4"/><circle cx="400" cy="185" r="60" fill="none" stroke="#aaa" stroke-width="3"/><g transform="translate(380,165) scale(1.667)"><path d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2S13.77 8.8 12 8.8 8.8 10.23 8.8 12s1.43 3.2 3.2 3.2zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="#bbb"/></g></svg>')}`;
-
-const locations = {
-  new_york: { lat: 40.7580, lng: -73.9855 },
-  washington_dc: { lat: 38.89511, lng: -77.03637 },
-  los_angeles: { lat: 34.052235, lng: -118.243683 },
-  las_vegas: { lat: 36.175, lng: -115.136 },
-  miami: { lat: 25.7743, lng: -80.1937 },
-};
 
 const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
 const attractionslimit = 5;
@@ -135,6 +134,26 @@ const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
 const headingTemplateText = $headingH2?.textContent ?? '';
 
+// Travel dates and trip name both come from localStorage (picked upstream, before this page ever
+// loads), so render them right away instead of inside the 'load' handler below — 'load' waits on
+// every image, font and the Maps script, which left these skeletons up for seconds on slow mobile
+// connections. As a module script this already runs after the HTML is parsed, so both elements
+// exist here. Each skeleton only comes down if its value was actually found — otherwise it stays
+// up (rather than flashing Webflow's placeholder text) until finishTripHeading() retries below,
+// once auth and the DB copy are known.
+if (restoreTripDateLine()) $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+if (restoreTripHeadingName()) $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+
+// Second (and last) attempt, after syncWithDB(): fills in anything that only existed in the DB or
+// the signed-in account, then drops both skeletons regardless — if there's still no value by now
+// there never will be on this load, so Webflow's placeholder text is the right thing to show.
+function finishTripHeading() {
+  restoreTripHeadingName();
+  restoreTripDateLine();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+}
+
 let map;
 let infoWindow;
 let insiderTipsData = null;
@@ -148,23 +167,31 @@ const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 // Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
 window.chipMarkers = chipMarkers;
 
-let mapCenter = locationNYC;
-if (localStorage['ak-user-destination']) {
-  mapCenter = locations[localStorage['ak-user-destination']];
-}
-
 // Compton Bentonville pages skip hotel-autocomplete entirely — the hotel is fixed, so its Place is
-// resolved from these known coords instead of user input (see autoSetComptonHotel()).
+// resolved from these known coords instead of user input (see autoSetComptonHotel()). Same coords
+// and the same zoom autoSetComptonHotel() ends on are used for the initial map view, so the hotel
+// is on-screen from first paint instead of the map opening elsewhere and jumping once the Places
+// round-trip resolves.
 const comptonBentonville = { lat: 36.3720385, lng: -94.2075697 };
+const mapCenter = comptonBentonville;
+const mapZoom = 17;
 
-const mapReady = initMap(mapCenter);
-async function initMap(center) {
+// Captured before initMap() below starts anything async — autoSetComptonHotel() (chained off
+// mapReady) writes the hotel name into one of these same elements, and this used to run on 'load',
+// which an image-heavy page can reach *after* that write, capturing the hotel name as the "default".
+MAP_POPUP_FIELDS.forEach(field => {
+  const $el = document.querySelector(field.nameSelector);
+  field.defaultText = $el ? $el.textContent : '';
+});
+
+const mapReady = initMap(mapCenter, mapZoom);
+async function initMap(center, zoom) {
   const $map = document.querySelector('[data-ak="map"]');
   const { Map, InfoWindow } = await google.maps.importLibrary('maps');
   await google.maps.importLibrary('marker');
   await google.maps.importLibrary('places');
   map = new Map($map, {
-    zoom: 12,
+    zoom,
     center,
     // mapId: 'd604d19d3ee253cb9ac6f7f8',
     mapId: 'DEMO_MAP_ID',
@@ -181,35 +208,12 @@ async function initMap(center) {
 // itself is ready instead, in parallel with all of that.
 mapReady.then(() => autoSetComptonHotel());
 
+// Only needs a plain fetch — no reason to wait on 'load' (every image, font, the Maps script).
+loadInsiderTips();
 
-window.addEventListener('load', async () => {
-  document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
-    document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
-  });
-
-  MAP_POPUP_FIELDS.forEach(field => {
-    const $el = document.querySelector(field.nameSelector);
-    field.defaultText = $el ? $el.textContent : '';
-  });
-
-  loadInsiderTips();
-
-  setupAutocompleteInp();
-  setupHotelAutocomplete();
-  setupAirportAutocomplete();
-
-  // Travel dates and trip name both come from localStorage (picked upstream, before this page
-  // ever loads) and have no auth dependency — neither the auth round-trip below nor the Maps
-  // library chain nor a Firestore round trip is needed to render them, so show them now instead
-  // of leaving the skeletons up through all of that, which is what stalled these sections on slow
-  // mobile connections (the trip name used to be gated behind the auth round-trip specifically —
-  // auth.currentUser is only needed as a fallback when ak-user-name isn't set yet).
-  restoreTripDateLine();
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
-
-  restoreTripHeadingName();
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
-
+// Auth + the Firestore read don't depend on 'load' either, so start them now and let them run
+// while the rest of the page downloads; the 'load' handler just awaits the result.
+const dbSyncReady = (async () => {
   await new Promise(resolve => onAuthStateChanged(auth, resolve));
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
@@ -218,276 +222,72 @@ window.addEventListener('load', async () => {
   if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
   addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
 
-  await syncWithDB();
-  restoreTripHeadingName(); // re-run in case tripName only existed in the DB
-  restoreTripDateLine();    // re-run in case travelDates only existed in the DB
+  try {
+    await syncWithDB();
+  } finally {
+    // Runs on a failed DB read too, so the skeletons can't get stuck up.
+    finishTripHeading();
+  }
+})();
+
+// Settles once the saved trip is actually on the page (slides, attractions, airports, notes).
+// saveAttractionsDB() saves what's in the DOM, not localStorage, so the save-then-navigate handlers
+// below (wired right away, not on 'load') must wait for this — saving any earlier would overwrite
+// the user's saved trip with the page's still-empty slides. Rejects if the restore fails, so those
+// handlers show their "couldn't save" alert instead of spinning forever.
+let resolveTripRestored, rejectTripRestored;
+const tripRestored = new Promise((resolve, reject) => {
+  resolveTripRestored = resolve;
+  rejectTripRestored = reject;
+});
+tripRestored.catch(() => {}); // reported by whichever click handler awaits it
+
+window.addEventListener('load', async () => {
+  document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
+    document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
+  });
+
+  // These can add places to the day slides, so they stay behind 'load' with the other editing
+  // handlers below rather than being usable before the saved trip is restored.
+  setupAutocompleteInp();
+  setupHotelAutocomplete();
+  setupAirportAutocomplete();
+
+  try {
+    await dbSyncReady;
+  } catch (err) {
+    rejectTripRestored(err);
+    throw err;
+  }
 
   // restoreTripDaySlides() itself only clones slides and sets day/date text from localStorage — no
   // map access — so it runs here without waiting on mapReady. Only its callback needs the map (to
   // drop markers via createMarker()), so mapReady is awaited there instead, letting the Maps library
   // chain finish loading in parallel with the slide setup + syncWithDB() above rather than after them.
   restoreTripDaySlides(async () => {
-    await mapReady;
-    restoreAttractions();
-    // Compton Bentonville pages get their hotel from autoSetComptonHotel() (already kicked off in
-    // parallel above, as soon as mapReady resolved) — restoring from localStorage here would race
-    // it and could clobber the fixed hotel with a stale saved value.
-    if (!window.location.href.includes('compton')) restoreHotel();
-    restoreAirports();
-    restoreTripNotes();
-    // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
-    // clicks inside unwrapSectionsWithContent() need bound) is actually ready, instead of guessing.
-    if (window.Webflow) window.Webflow.push(unwrapSectionsWithContent);
-    else unwrapSectionsWithContent();
+    try {
+      await mapReady;
+      restoreAttractions();
+      // The hotel comes from autoSetComptonHotel() (already kicked off in parallel above, as soon
+      // as mapReady resolved), not from localStorage — restoring from localStorage here would race
+      // it and could clobber the fixed hotel with a stale saved value.
+      restoreAirports();
+      restoreTripNotes();
+      // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
+      // clicks inside unwrapSectionsWithContent() need bound) is actually ready, instead of guessing.
+      if (window.Webflow) window.Webflow.push(unwrapSectionsWithContent);
+      else unwrapSectionsWithContent();
+      resolveTripRestored();
+    } catch (err) {
+      rejectTripRestored(err);
+      throw err;
+    }
   });
   if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
-
-  document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
-    // Navigate wherever the button itself points, same as continue-to-step2 below, instead of
-    // hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
-    const $signInBtn = e.currentTarget;
-    const signInHref = $signInBtn.getAttribute('href') || '/log-in';
-    e.preventDefault();
-    window.location.href = signInHref;
-  });
-
-  const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
-  const continueBtnOriginalHTML = $continueBtn?.innerHTML;
-
-  // Navigate wherever the button itself points — its href is authored in Webflow (same as the
-  // "Calc" breadcrumb links below), so the destination stays in sync with whatever that page
-  // links to instead of being recomputed here.
-  const isDemoHotel = window.location.href.includes('demo-hotel') || window.location.href.includes('compton');
-  const passCalculatorHref = $continueBtn?.getAttribute('href') || '#';
-
-  function resetContinueBtn() {
-    if (!$continueBtn) return;
-    $continueBtn.classList.remove('ak-saving');
-    $continueBtn.disabled = false;
-    $continueBtn.style.opacity = '';
-    $continueBtn.style.minWidth = '';
-    $continueBtn.innerHTML = continueBtnOriginalHTML;
-  }
-
-  function resetStepLink($link) {
-    delete $link.dataset.akSaving;
-    $link.style.opacity = '';
-    const $text = $link.querySelector('.u-body-cod');
-    $text?.classList.remove('ak-step2-btn-loading');
-    $text?.querySelector('.ak-step2-spinner')?.remove();
-  }
-
-  // Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated away,
-  // so without this the button (and the "Calc" breadcrumb link) can come back stuck mid-spinner if
-  // they hit back after clicking it.
-  window.addEventListener('pageshow', e => {
-    if (!e.persisted) return;
-    resetContinueBtn();
-    document.querySelectorAll('[href$="/pass-calculator"]').forEach(resetStepLink);
-  });
-
-  $continueBtn?.addEventListener('click', async e => {
-    e.preventDefault();
-    const $btn = e.currentTarget;
-    if ($btn.classList.contains('ak-saving')) return;
-
-    if (!document.getElementById('ak-step2-spinner-style')) {
-      const style = document.createElement('style');
-      style.id = 'ak-step2-spinner-style';
-      style.textContent = `
-        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
-        .ak-step2-spinner {
-          display: inline-block; width: 14px; height: 14px;
-          border: 2px solid currentColor; border-top-color: transparent;
-          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
-          opacity: 0.8; flex-shrink: 0;
-        }
-        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
-        @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
-        @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
-        .ak-step2-check circle {
-          fill: none; stroke: currentColor; stroke-width: 2;
-          stroke-dasharray: 63; stroke-dashoffset: 63;
-          animation: ak-step2-check-circle 0.35s ease-out forwards;
-        }
-        .ak-step2-check path {
-          fill: none; stroke: currentColor; stroke-width: 2.5;
-          stroke-linecap: round; stroke-linejoin: round;
-          stroke-dasharray: 18; stroke-dashoffset: 18;
-          animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    const loadingText = isDemoHotel ? 'Verifying...' : 'Calculating Savings...';
-    $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
-    $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>${loadingText}</span>`;
-    $btn.classList.add('ak-saving');
-    $btn.disabled = true;
-    $btn.style.opacity = '0.8';
-
-    const step2Timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
-    try {
-      await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), step2Timeout]);
-      window.location.href = passCalculatorHref;
-    } catch (err) {
-      console.error(err);
-      $btn.innerHTML = 'Failed, try again!';
-      $btn.classList.remove('ak-saving');
-      $btn.disabled = false;
-      $btn.style.opacity = '';
-      setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; $btn.style.minWidth = ''; }, 1000);
-
-      alertify.alert(navigator.onLine
-        ? "We couldn't save your trip. Please try again in a moment."
-        : "You're offline — please check your internet connection and try again.");
-    }
-  });
-
-  const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
-  const saveBtnOriginalHTML = $saveBtn?.innerHTML;
-
-  function resetSaveBtn() {
-    if (!$saveBtn) return;
-    $saveBtn.classList.remove('ak-saving');
-    $saveBtn.disabled = false;
-    $saveBtn.style.opacity = '';
-    $saveBtn.style.minWidth = '';
-    $saveBtn.innerHTML = saveBtnOriginalHTML;
-  }
-
-  // Bfcache restore can leave this stuck mid-spinner too, same as continue-to-step2 above.
-  window.addEventListener('pageshow', e => {
-    if (!e.persisted) return;
-    resetSaveBtn();
-  });
-
-  $saveBtn?.addEventListener('click', async e => {
-    e.preventDefault();
-    const $btn = e.currentTarget;
-    if ($btn.classList.contains('ak-saving')) return;
-
-    // Reuses continue-to-step2's ak-step2-spinner CSS (injected above, or by this handler if
-    // save-itinerary is clicked first) rather than defining a second near-identical spinner style.
-    if (!document.getElementById('ak-step2-spinner-style')) {
-      const style = document.createElement('style');
-      style.id = 'ak-step2-spinner-style';
-      style.textContent = `
-        @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
-        .ak-step2-spinner {
-          display: inline-block; width: 14px; height: 14px;
-          border: 2px solid currentColor; border-top-color: transparent;
-          border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
-          opacity: 0.8; flex-shrink: 0;
-        }
-        .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
-        @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
-        @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
-        .ak-step2-check circle {
-          fill: none; stroke: currentColor; stroke-width: 2;
-          stroke-dasharray: 63; stroke-dashoffset: 63;
-          animation: ak-step2-check-circle 0.35s ease-out forwards;
-        }
-        .ak-step2-check path {
-          fill: none; stroke: currentColor; stroke-width: 2.5;
-          stroke-linecap: round; stroke-linejoin: round;
-          stroke-dasharray: 18; stroke-dashoffset: 18;
-          animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
-    $btn.innerHTML = '<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>';
-    $btn.classList.add('ak-saving');
-    $btn.disabled = true;
-    $btn.style.opacity = '0.8';
-
-    const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
-    try {
-      await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
-      // Success confirmation before restoring -- only save-itinerary stays on the page after
-      // saving (continue-to-step2 and the "Calc" link navigate away immediately), so this is
-      // the only save action a checkmark would actually be seen on.
-      $btn.innerHTML = '<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>';
-      await new Promise(resolve => setTimeout(resolve, 900));
-    } catch (err) {
-      console.error(err);
-      alertify.alert(navigator.onLine
-        ? "We couldn't save your trip. Please try again in a moment."
-        : "You're offline — please check your internet connection and try again.");
-    } finally {
-      resetSaveBtn();
-    }
-  });
 
   document.querySelector('.itinerary_ui_bulk_finish')?.addEventListener('click', e => {
     e.preventDefault();
     handleBulkImport();
-  });
-
-  // The "Calc" step breadcrumb link points straight at pass-calculator — without this it navigates
-  // before the trip is saved, same gap continue-to-step2 used to have.
-  document.querySelectorAll('[href$="/pass-calculator"]').forEach($link => {
-    $link.addEventListener('click', async e => {
-      e.preventDefault();
-      if ($link.dataset.akSaving) return;
-      $link.dataset.akSaving = 'true';
-      $link.style.opacity = '0.8';
-
-      if (!document.getElementById('ak-step2-spinner-style')) {
-        const style = document.createElement('style');
-        style.id = 'ak-step2-spinner-style';
-        style.textContent = `
-          @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
-          .ak-step2-spinner {
-            display: inline-block; width: 14px; height: 14px;
-            border: 2px solid currentColor; border-top-color: transparent;
-            border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
-            opacity: 0.8; flex-shrink: 0;
-          }
-          .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
-          @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
-          @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
-          .ak-step2-check circle {
-            fill: none; stroke: currentColor; stroke-width: 2;
-            stroke-dasharray: 63; stroke-dashoffset: 63;
-            animation: ak-step2-check-circle 0.35s ease-out forwards;
-          }
-          .ak-step2-check path {
-            fill: none; stroke: currentColor; stroke-width: 2.5;
-            stroke-linecap: round; stroke-linejoin: round;
-            stroke-dasharray: 18; stroke-dashoffset: 18;
-            animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
-          }
-        `;
-        document.head.appendChild(style);
-      }
-
-      // Insert the spinner right before the "Calc" text itself, not just anywhere in the link,
-      // since the link also contains the step-number bubble before it.
-      const $text = $link.querySelector('.u-body-cod');
-      const $spinner = document.createElement('span');
-      $spinner.className = 'ak-step2-spinner';
-      if ($text) {
-        $text.classList.add('ak-step2-btn-loading');
-        $text.insertBefore($spinner, $text.firstChild);
-      }
-
-      const stepLinkTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
-      try {
-        await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), stepLinkTimeout]);
-        window.location.href = $link.getAttribute('href');
-      } catch (err) {
-        console.error(err);
-        resetStepLink($link);
-        alertify.alert(navigator.onLine
-          ? "We couldn't save your trip. Please try again in a moment."
-          : "You're offline — please check your internet connection and try again.");
-      }
-    });
   });
 
   const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
@@ -567,6 +367,200 @@ window.addEventListener('load', async () => {
 
   document.body.addEventListener('submit', e => {
     if (e.target.querySelector('.ak-notes, gmp-place-autocomplete')) e.preventDefault();
+  });
+});
+
+// The navigation/save buttons below are wired right away rather than on 'load': the top-level
+// onAuthStateChanged reveals sign-in-to-save/continue-to-step2/save-itinerary as soon as auth is
+// known, and until these handlers exist a click just follows the element's default link — skipping
+// the save. The save itself still waits on tripRestored (see above), with the spinner showing meanwhile.
+document.querySelector('[data-ak="sign-in-to-save"]')?.addEventListener('click', e => {
+  // Navigate wherever the button itself points, same as continue-to-step2 below, instead of
+  // hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
+  const $signInBtn = e.currentTarget;
+  const signInHref = $signInBtn.getAttribute('href') || '/log-in';
+  e.preventDefault();
+  window.location.href = signInHref;
+});
+
+// Shared by continue-to-step2, save-itinerary and the "Calc" link — whichever is clicked first injects it.
+function injectStep2SpinnerStyle() {
+  if (document.getElementById('ak-step2-spinner-style')) return;
+  const style = document.createElement('style');
+  style.id = 'ak-step2-spinner-style';
+  style.textContent = `
+    @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+    .ak-step2-spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+      opacity: 0.8; flex-shrink: 0;
+    }
+    .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+    @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
+    @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
+    .ak-step2-check circle {
+      fill: none; stroke: currentColor; stroke-width: 2;
+      stroke-dasharray: 63; stroke-dashoffset: 63;
+      animation: ak-step2-check-circle 0.35s ease-out forwards;
+    }
+    .ak-step2-check path {
+      fill: none; stroke: currentColor; stroke-width: 2.5;
+      stroke-linecap: round; stroke-linejoin: round;
+      stroke-dasharray: 18; stroke-dashoffset: 18;
+      animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// Waits out the page load + trip restore first; the 10s save timeout starts only after that, so a
+// slow page load isn't mistaken for a failed save.
+async function saveTripAfterRestore() {
+  await tripRestored;
+  const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+  await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
+}
+
+const $continueBtn = document.querySelector('[data-ak="continue-to-step2"]');
+const continueBtnOriginalHTML = $continueBtn?.innerHTML;
+
+// Navigate wherever the button itself points — its href is authored in Webflow (same as the
+// "Calc" breadcrumb links below), so the destination stays in sync with whatever that page
+// links to instead of being recomputed here.
+const continueHref = $continueBtn?.getAttribute('href') || '#';
+
+function resetContinueBtn() {
+  if (!$continueBtn) return;
+  $continueBtn.classList.remove('ak-saving');
+  $continueBtn.disabled = false;
+  $continueBtn.style.opacity = '';
+  $continueBtn.style.minWidth = '';
+  $continueBtn.innerHTML = continueBtnOriginalHTML;
+}
+
+function resetStepLink($link) {
+  delete $link.dataset.akSaving;
+  $link.style.opacity = '';
+  const $text = $link.querySelector('.u-body-cod');
+  $text?.classList.remove('ak-step2-btn-loading');
+  $text?.querySelector('.ak-step2-spinner')?.remove();
+}
+
+const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
+const saveBtnOriginalHTML = $saveBtn?.innerHTML;
+
+function resetSaveBtn() {
+  if (!$saveBtn) return;
+  $saveBtn.classList.remove('ak-saving');
+  $saveBtn.disabled = false;
+  $saveBtn.style.opacity = '';
+  $saveBtn.style.minWidth = '';
+  $saveBtn.innerHTML = saveBtnOriginalHTML;
+}
+
+// Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated away,
+// so without this the buttons (and the "Calc" breadcrumb link) can come back stuck mid-spinner if
+// they hit back after clicking one.
+window.addEventListener('pageshow', e => {
+  if (!e.persisted) return;
+  resetContinueBtn();
+  resetSaveBtn();
+  document.querySelectorAll('[href$="/pass-calculator"]').forEach(resetStepLink);
+});
+
+$continueBtn?.addEventListener('click', async e => {
+  e.preventDefault();
+  const $btn = e.currentTarget;
+  if ($btn.classList.contains('ak-saving')) return;
+
+  injectStep2SpinnerStyle();
+
+  const loadingText = 'Verifying...';
+  $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+  $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>${loadingText}</span>`;
+  $btn.classList.add('ak-saving');
+  $btn.disabled = true;
+  $btn.style.opacity = '0.8';
+
+  try {
+    await saveTripAfterRestore();
+    window.location.href = continueHref;
+  } catch (err) {
+    console.error(err);
+    $btn.innerHTML = 'Failed, try again!';
+    $btn.classList.remove('ak-saving');
+    $btn.disabled = false;
+    $btn.style.opacity = '';
+    setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; $btn.style.minWidth = ''; }, 1000);
+
+    alertify.alert(navigator.onLine
+      ? "We couldn't save your trip. Please try again in a moment."
+      : "You're offline — please check your internet connection and try again.");
+  }
+});
+
+$saveBtn?.addEventListener('click', async e => {
+  e.preventDefault();
+  const $btn = e.currentTarget;
+  if ($btn.classList.contains('ak-saving')) return;
+
+  injectStep2SpinnerStyle();
+
+  $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+  $btn.innerHTML = '<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>';
+  $btn.classList.add('ak-saving');
+  $btn.disabled = true;
+  $btn.style.opacity = '0.8';
+
+  try {
+    await saveTripAfterRestore();
+    // Success confirmation before restoring -- only save-itinerary stays on the page after
+    // saving (continue-to-step2 and the "Calc" link navigate away immediately), so this is
+    // the only save action a checkmark would actually be seen on.
+    $btn.innerHTML = '<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>';
+    await new Promise(resolve => setTimeout(resolve, 900));
+  } catch (err) {
+    console.error(err);
+    alertify.alert(navigator.onLine
+      ? "We couldn't save your trip. Please try again in a moment."
+      : "You're offline — please check your internet connection and try again.");
+  } finally {
+    resetSaveBtn();
+  }
+});
+
+// The "Calc" step breadcrumb link points straight at pass-calculator — without this it navigates
+// before the trip is saved, same gap continue-to-step2 used to have.
+document.querySelectorAll('[href$="/pass-calculator"]').forEach($link => {
+  $link.addEventListener('click', async e => {
+    e.preventDefault();
+    if ($link.dataset.akSaving) return;
+    $link.dataset.akSaving = 'true';
+    $link.style.opacity = '0.8';
+
+    injectStep2SpinnerStyle();
+
+    // Insert the spinner right before the "Calc" text itself, not just anywhere in the link,
+    // since the link also contains the step-number bubble before it.
+    const $text = $link.querySelector('.u-body-cod');
+    const $spinner = document.createElement('span');
+    $spinner.className = 'ak-step2-spinner';
+    if ($text) {
+      $text.classList.add('ak-step2-btn-loading');
+      $text.insertBefore($spinner, $text.firstChild);
+    }
+
+    try {
+      await saveTripAfterRestore();
+      window.location.href = $link.getAttribute('href');
+    } catch (err) {
+      console.error(err);
+      resetStepLink($link);
+      alertify.alert(navigator.onLine
+        ? "We couldn't save your trip. Please try again in a moment."
+        : "You're offline — please check your internet connection and try again.");
+    }
   });
 });
 
@@ -739,22 +733,29 @@ async function setupHotelAutocomplete() {
 // lodging result to these coords isn't reliably The Compton Bentonville itself — searching by
 // name pins down the actual named hotel.
 async function autoSetComptonHotel() {
-  if (!window.location.href.includes('compton')) return;
-
   await google.maps.importLibrary('places');
 
-  const { places } = await google.maps.places.Place.searchByText({
-    textQuery: 'The Compton Bentonville',
-    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
-    locationBias: { radius: 200.0, center: comptonBentonville },
-    maxResultCount: 1,
-  });
+  let places;
+  try {
+    ({ places } = await google.maps.places.Place.searchByText({
+      textQuery: 'The Compton Bentonville',
+      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+      locationBias: { radius: 200.0, center: comptonBentonville },
+      maxResultCount: 1,
+    }));
+  } catch (e) {
+    // The map itself is already centered on comptonBentonville regardless (see mapCenter/initMap
+    // above) — only the marker/hotel name/saved place data depend on this lookup succeeding.
+    alertify.alert(navigator.onLine
+      ? "We couldn't load the hotel details. Please reload the page to try again."
+      : "You're offline — please check your internet connection and reload the page.");
+    return;
+  }
 
   const place = places?.[0];
   if (!place) return;
 
   map.panTo(place.location);
-  map.setZoom(17);
 
   const placeObj = place.toJSON();
   const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
@@ -1536,25 +1537,6 @@ function restoreAttractions() {
   updateActiveChipTags();
 }
 
-function restoreHotel() {
-  let saveObj;
-  try {
-    saveObj = JSON.parse(localStorage['ak-hotel'] || 'null');
-  } catch (e) {
-    return;
-  }
-  if (!saveObj?.location) return;
-
-  const { displayName, location, editorialSummary, type } = saveObj;
-  const marker = createMarker(displayName, location, editorialSummary, type, hotelMarkerPinUrl, saveObj);
-  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
-  markerObj['hotel'] = marker;
-
-  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
-  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
-  showRemoveIcon($hotelNameEl);
-}
-
 function restoreAirports() {
   AIRPORT_FIELDS.forEach(({ markerKey, storageKey, nameSelector, prefix, draftKey }) => {
     let saveObj;
@@ -1777,40 +1759,42 @@ function restoreTripDaySlides(onSettled) {
   }
 }
 
-// Split into two halves so the date line (no auth dependency) can be restored immediately
-// on 'load' instead of waiting on the Firebase auth round-trip.
+// Split into two halves so each can run at module start (see the top of the file) instead of
+// waiting on 'load' or the Firebase auth round-trip, then re-run after syncWithDB().
+// Both return true only if they actually filled in a value.
 function restoreTripHeadingName() {
-  if (!$headingH2 || !headingTemplateText) return;
+  if (!$headingH2 || !headingTemplateText) return false;
   let tripName = localStorage['ak-user-name'] || auth.currentUser?.displayName?.split(/\s+/)[0] || auth.currentUser?.email?.split('@')[0] || '';
-  if (tripName) {
-    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-    $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
-  }
+  if (!tripName) return false;
+  tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+  $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
+  return true;
 }
 
 function restoreTripDateLine() {
   const $dateWrap = document.querySelector('[data-ak="trip-heading-date"]');
-  if (!$dateWrap || !localStorage['ak-travel-days']) return;
+  if (!$dateWrap || !localStorage['ak-travel-days']) return false;
 
   let flatpickrDate;
   try {
     ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
   } catch (e) {
-    return;
+    return false;
   }
-  if (!flatpickrDate) return;
+  if (!flatpickrDate) return false;
 
   const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
   const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
 
   const $children = $dateWrap.children;
-  if ($children.length < 2) return;
+  if ($children.length < 2) return false;
 
   const $firstEm = $children[0].querySelector('p em');
   const $lastEm = $children[$children.length - 1].querySelector('p em');
   if ($firstEm) $firstEm.textContent = fmt(new Date(startRaw));
   if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
+  return true;
 }
 
 function updateAttractionsCount(sign) {
@@ -1908,9 +1892,11 @@ function mergeAttractions(dbSavedAttractionsJSON, localSavedAttractionsJSON) {
 }
 
 // Restores whatever this user last saved to Firestore into localStorage, before restoreTripDaySlides()/
-// restoreAttractions()/restoreHotel()/restoreAirports()/restoreTripNotes() read those same keys — those
-// functions only ever look at localStorage, so without this a fresh login on an empty browser (nothing
-// cached locally yet) would show nothing despite the trip already being saved server-side.
+// restoreAttractions()/restoreAirports()/restoreTripNotes() read those same keys — those functions
+// only ever look at localStorage, so without this a fresh login on an empty browser (nothing cached
+// locally yet) would show nothing despite the trip already being saved server-side. ak-hotel itself
+// is still synced here (below) for round-tripping to Firestore, even though the hotel marker/name
+// always comes from autoSetComptonHotel() rather than being restored from this key.
 //
 // Anything the user already touched locally in *this* session (ak-update-hotel/arrival-airport/
 // departure-airport, or the ak-update-merge-local flag set when a guest adds attractions pre-login)

@@ -16,13 +16,12 @@
  * alongside its kml-export/*.js helpers.
  */
 
-import { initializeApp, getApps, getApp }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFunctions, httpsCallable }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
-
+// Firebase is loaded with dynamic import() rather than static `import ... from` lines. Static
+// imports block evaluation of this entire module until firebase-app/auth/functions have all
+// downloaded — and the trip heading was also held behind DOMContentLoaded, which waits on every
+// module/deferred script on the page. That's what made the trip info slow to appear. Kicking the
+// downloads off here (not awaited) lets the trip heading below render right away from
+// localStorage, while Firebase loads in the background for the parts that need it.
 const firebaseConfig = {
   apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
   authDomain: "askkhonsu-map.firebaseapp.com",
@@ -33,9 +32,19 @@ const firebaseConfig = {
   measurementId: "G-Z7F4NJ4PHW"
 };
 
-const app       = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const auth      = getAuth(app);
-const functions = getFunctions(app);
+const firebaseReady = Promise.all([
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js"),
+]).then(([appMod, authMod, functionsMod]) => {
+  const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
+  return {
+    auth: authMod.getAuth(app),
+    onAuthStateChanged: authMod.onAuthStateChanged,
+    functions: functionsMod.getFunctions(app),
+    httpsCallable: functionsMod.httpsCallable,
+  };
+});
 
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine    = document.querySelector('[data-ak="trip-heading-date"]');
@@ -47,45 +56,58 @@ const $ezGuideBtns     = document.querySelectorAll('[data-ak="download-ez-guide"
 const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
 const headingTemplateText = $headingH2?.textContent ?? '';
 
-// Mirrors get-guide.js / verify-itinerary.js / build-itinerary.js's restoreTripHeading(),
-// split into two halves so the date line (no auth dependency) can be restored immediately
-// on DOMContentLoaded instead of waiting on the Firebase auth round-trip.
-//
-// Takes `user` as a param instead of reading auth.currentUser so the cached-name case below
-// doesn't have to wait on the auth round-trip either — only the displayName/email fallback
-// actually needs the Firebase user object, and that's only reached when localStorage has
-// nothing yet.
+// Mirrors build-itinerary.js's restoreTripHeadingName()/restoreTripDateLine(). Both return true
+// only if they actually filled in a value. Takes `user` as a param so the localStorage case below
+// doesn't need Firebase at all — only the displayName/email fallback does, via finishTripHeading().
 function restoreTripHeadingName(user) {
-  if (!$headingH2 || !headingTemplateText) return;
+  if (!$headingH2 || !headingTemplateText) return false;
   let tripName = localStorage['ak-user-name'] || user?.displayName?.split(/\s+/)[0] || user?.email?.split('@')[0] || '';
-  if (!tripName) return;
+  if (!tripName) return false;
   tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
   $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  return true;
 }
 
 function restoreTripDateLine() {
-  if (!$tripDateLine || !localStorage['ak-travel-days']) return;
+  if (!$tripDateLine || !localStorage['ak-travel-days']) return false;
 
   let flatpickrDate;
   try {
     ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
   } catch (e) {
-    return;
+    return false;
   }
-  if (!flatpickrDate) return;
+  if (!flatpickrDate) return false;
 
   const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
   const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
 
   const $children = $tripDateLine.children;
-  if ($children.length < 2) return;
+  if ($children.length < 2) return false;
 
   const $firstEm = $children[0].querySelector('p em');
   const $lastEm = $children[$children.length - 1].querySelector('p em');
   if ($firstEm) $firstEm.textContent = fmt(new Date(startRaw));
   if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
+  return true;
+}
+
+// First attempt, straight from localStorage. As a module script this already runs after the HTML
+// is parsed, so both elements exist here. Each skeleton only comes down if its value was actually
+// found — otherwise it stays up (rather than flashing Webflow's placeholder text) until
+// finishTripHeading() retries once auth is known.
+if (restoreTripDateLine()) $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+if (restoreTripHeadingName()) $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+
+// Second (and last) attempt, after auth: fills in anything that only exists on the signed-in
+// account, then drops both skeletons regardless — if there's still no value by now there never
+// will be on this load, so Webflow's placeholder text is the right thing to show.
+function finishTripHeading(user) {
+  restoreTripHeadingName(user);
+  restoreTripDateLine();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 }
 
 // Derives a sibling page URL from this page's own URL instead of hardcoding the folder prefix —
@@ -187,6 +209,7 @@ function wireEzGuideButton(user) {
       btn.innerHTML = `<span class="ak-pdf-btn-loading"><span class="ak-pdf-spinner"></span>Creating Guide...</span>`;
 
       try {
+        const { functions, httpsCallable } = await firebaseReady;
         const generateItineraryPdf = httpsCallable(functions, 'generateItineraryPdf');
         const { data } = await generateItineraryPdf({ userId: `user-${user.email}` });
 
@@ -221,7 +244,8 @@ function wireEzGuideButton(user) {
 // also short-circuits before the expensive PDF render whenever nothing changed, so calling
 // this on every landing is cheap -- just a Firestore read and an early return in that case.
 function emailReportOnLanding(user) {
-  const fire = () => {
+  const fire = async () => {
+    const { functions, httpsCallable } = await firebaseReady;
     const generateReportPdf = httpsCallable(functions, 'generateReportPdf', { timeout: 60000 });
     generateReportPdf({ userId: `user-${user.email}`, sendEmail: true })
       .catch(err => console.error('Failed to email report on landing:', err));
@@ -230,6 +254,33 @@ function emailReportOnLanding(user) {
   // Deferred to an idle moment (falling back to a short delay) instead of firing immediately on
   // DOMContentLoaded, so this background request doesn't compete with the page's own
   // images/maps/fonts for bandwidth while they're still loading.
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(fire, { timeout: 5000 });
+  } else {
+    setTimeout(fire, 2000);
+  }
+}
+
+// --- Auto-email the Smart Guide PDF on landing ---
+// Fires once per browser session (not on every reload/navigation back to this page) so
+// simply landing here doesn't repeatedly re-trigger the expensive (~1GiB/120s) PDF
+// render + email on the backend. Same generateAdvancedItineraryPdf Cloud Function the
+// Smart Guide download button uses (stripe-purchase.js) — sendEmail:true makes it email
+// the PDF instead of returning it. `hotel: 'compton'` skips its hasPurchasedPlan check
+// (FREE_GUIDE_HOTELS in functions/index.js) — Compton's Smart Guide is free.
+function emailSmartGuideOnLanding(user) {
+  const flagKey = `ak-guide-emailed-${user.email}`;
+  if (sessionStorage.getItem(flagKey)) return;
+  sessionStorage.setItem(flagKey, '1');
+
+  const fire = async () => {
+    const { functions, httpsCallable } = await firebaseReady;
+    const generateAdvancedItineraryPdf = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
+    generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true, hotel: 'compton' })
+      .catch(err => console.error('Failed to email Smart Guide on landing:', err));
+  };
+
+  // Deferred to an idle moment, same as emailReportOnLanding above.
   if ('requestIdleCallback' in window) {
     requestIdleCallback(fire, { timeout: 5000 });
   } else {
@@ -274,13 +325,10 @@ function wireDownloadButtonLock() {
 }
 wireDownloadButtonLock();
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // No auth dependency — restore these right away instead of waiting on the
-  // Firebase auth round-trip below.
-  restoreTripDateLine();
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
-  restoreTripHeadingName();
-
+// No DOMContentLoaded wrapper needed: a module script runs after the HTML is parsed, and waiting
+// on that event would also wait on every other module/deferred script on the page.
+(async () => {
+  const { auth, onAuthStateChanged } = await firebaseReady;
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
     redirectToStep1('User not logged in');
@@ -288,8 +336,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   localStorage['ak-userMail'] = user.email;
-  restoreTripHeadingName(user);
+  finishTripHeading(user);
 
   wireEzGuideButton(user);
   emailReportOnLanding(user);
-});
+  // Disabled for now — Make/Gmail deliverability (spam) not sorted out yet. Re-enable
+  // once the sending setup is fixed (see emailSmartGuideOnLanding above).
+  // emailSmartGuideOnLanding(user);
+})();

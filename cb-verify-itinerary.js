@@ -1,7 +1,11 @@
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
-import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, initializeFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+// Firebase is loaded with dynamic import() rather than static `import ... from` lines. Static
+// imports block evaluation of this entire module until firebase-app/auth/functions/firestore have
+// all downloaded (Firestore alone is large) — and the trip heading/verify tables were also held
+// behind DOMContentLoaded, which waits on every module/deferred script on the page. That's what
+// made the trip info slow to appear. All four downloads are kicked off here in parallel (not
+// awaited), so the trip heading and tables below render right away from localStorage, and each
+// later step only waits on the piece it actually needs: auth for the login check, Firestore for
+// syncWithDB(), Functions for the PDF download.
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -14,18 +18,36 @@ const firebaseConfig = {
   measurementId: "G-Z7F4NJ4PHW"
 };
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const functions = getFunctions(app);
-const auth = getAuth(app);
+const appReady = Promise.all([
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+]).then(([appMod, authMod]) => {
+  const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebaseConfig);
+  return { app, auth: authMod.getAuth(app), onAuthStateChanged: authMod.onAuthStateChanged };
+});
 
-// Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
-// connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
-let db;
-try {
-  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
-} catch (e) {
-  db = getFirestore(app); // Firestore already initialized for this app elsewhere on the page
-}
+const functionsReady = Promise.all([
+  appReady,
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js"),
+]).then(([{ app }, functionsMod]) => ({
+  functions: functionsMod.getFunctions(app),
+  httpsCallable: functionsMod.httpsCallable,
+}));
+
+const dbReady = Promise.all([
+  appReady,
+  import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"),
+]).then(([{ app }, firestoreMod]) => {
+  // Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+  // connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+  let db;
+  try {
+    db = firestoreMod.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  } catch (e) {
+    db = firestoreMod.getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+  }
+  return { db, doc: firestoreMod.doc, getDoc: firestoreMod.getDoc };
+});
 
 const $downloadBtns = document.querySelectorAll('[data-ak="download-ez-guide"]');
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
@@ -44,41 +66,51 @@ const headingTemplateText = $headingH2?.textContent ?? '';
 const $verifyContainer = document.querySelector('.verify_content');
 const $verifyDayTemplate = $verifyContainer?.querySelector('.verify_block_wrap')?.cloneNode(true) || null;
 
-// Mirrors calculate-pass-savings.js / build-itinerary.js's restoreTripHeading(), split into two
-// halves so the date line (no auth dependency) can be restored immediately on DOMContentLoaded
-// instead of waiting on the Firebase auth round-trip.
-function restoreTripHeadingName() {
-  if (!auth.currentUser) return;
-  if (!$headingH2 || !headingTemplateText) return;
-  let tripName = localStorage['ak-user-name'] || auth.currentUser.displayName?.split(/\s+/)[0] || auth.currentUser.email?.split('@')[0] || '';
-  if (tripName) {
-    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-    $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
-  }
+// Mirrors build-itinerary.js's restoreTripHeadingName()/restoreTripDateLine(). Both return true
+// only if they actually filled in a value. Takes `user` as a param so the localStorage case
+// doesn't need Firebase at all — only the displayName/email fallback does, via finishTripHeading().
+function restoreTripHeadingName(user) {
+  if (!$headingH2 || !headingTemplateText) return false;
+  let tripName = localStorage['ak-user-name'] || user?.displayName?.split(/\s+/)[0] || user?.email?.split('@')[0] || '';
+  if (!tripName) return false;
+  tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+  $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
+  return true;
 }
 
 function restoreTripDateLine() {
-  if (!$tripDateLine || !localStorage['ak-travel-days']) return;
+  if (!$tripDateLine || !localStorage['ak-travel-days']) return false;
 
   let flatpickrDate;
   try {
     ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
   } catch (e) {
-    return;
+    return false;
   }
-  if (!flatpickrDate) return;
+  if (!flatpickrDate) return false;
 
   const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
   const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
 
   const $children = $tripDateLine.children;
-  if ($children.length < 2) return;
+  if ($children.length < 2) return false;
 
   const $firstEm = $children[0].querySelector('p em');
   const $lastEm = $children[$children.length - 1].querySelector('p em');
   if ($firstEm) $firstEm.textContent = fmt(new Date(startRaw));
   if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
+  return true;
+}
+
+// Second (and last) attempt, after auth + syncWithDB(): fills in anything that only existed in the
+// DB or the signed-in account, then drops both skeletons regardless — if there's still no value by
+// now there never will be on this load, so Webflow's placeholder text is the right thing to show.
+function finishTripHeading(user) {
+  restoreTripHeadingName(user);
+  restoreTripDateLine();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
 }
 
 // Derives a sibling page URL from this page's own URL instead of hardcoding the folder prefix —
@@ -137,6 +169,7 @@ function showRedirectLoader(message) {
 // localStorage (e.g. carried over from build-itinerary.js earlier in this session) is just as fresh as
 // the DB copy, so it's kept as-is and DB only fills in whatever's missing locally.
 async function retrieveDBData(userMail) {
+  const { db, doc, getDoc } = await dbReady;
   const userRef = doc(db, 'locationsData', `user-${userMail}`);
   const docSnap = await getDoc(userRef);
   return docSnap.exists() ? docSnap.data() : null;
@@ -255,14 +288,18 @@ function populateVerifyContent() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // Neither depends on auth — both read only localStorage, which is already populated in the
-  // common case (syncWithDB() below only backfills it when missing) — so show them immediately
-  // instead of leaving the skeleton up through the auth round-trip and the Firestore sync.
-  restoreTripDateLine();
-  populateVerifyContent();
-  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+// None of these depend on Firebase — they read only localStorage, which is already populated in
+// the common case (syncWithDB() below only backfills it when missing) — so render them right away.
+// As a module script this already runs after the HTML is parsed, so the elements exist here; no
+// DOMContentLoaded wrapper, since that would also wait on every other module/deferred script on
+// the page. Each skeleton only comes down if its value was actually found — otherwise it stays up
+// (rather than flashing Webflow's placeholder text) until finishTripHeading() below.
+if (restoreTripDateLine()) $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+if (restoreTripHeadingName()) $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+populateVerifyContent();
 
+(async () => {
+  const { auth, onAuthStateChanged } = await appReady;
   const user = await new Promise(resolve => onAuthStateChanged(auth, resolve));
   if (!user) {
     redirectToStep1('User not logged in');
@@ -271,15 +308,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
   localStorage['ak-userMail'] = user.email;
-  restoreTripHeadingName();
-  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
 
-  await syncWithDB();
+  // Caught so a failed DB read still reaches finishTripHeading() — otherwise the skeletons could
+  // get stuck up.
+  try {
+    await syncWithDB();
+  } catch (err) {
+    console.error('Failed to sync with DB:', err);
+  }
   // Re-run in case travelDates/tripName/savedAttractions only existed in the DB.
-  restoreTripHeadingName();
-  restoreTripDateLine();
+  finishTripHeading(user);
   populateVerifyContent();
-});
+})();
 
 // --- Download as PDF ---
 function injectPdfSpinnerStyle() {
@@ -339,6 +379,7 @@ if ($downloadBtns.length) {
       });
 
       try {
+        const { functions, httpsCallable } = await functionsReady;
         const generateItineraryPdf = httpsCallable(functions, "generateItineraryPdf");
         const { data } = await generateItineraryPdf({ userId: `user-${userMail}` });
 
