@@ -339,8 +339,7 @@ wireDownloadButtonLock();
   finishTripHeading(user);
 
   wireEzGuideButton(user);
-  emailReportOnLanding(user);
-  // Disabled for now — Make/Gmail deliverability (spam) not sorted out yet. Re-enable
-  // once the sending setup is fixed (see emailSmartGuideOnLanding above).
-  // emailSmartGuideOnLanding(user);
+  // Report PDF auto-email turned off for now -- only the Smart Guide email (below) goes out.
+  // emailReportOnLanding(user);
+  emailSmartGuideOnLanding(user);
 })();
