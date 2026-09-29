@@ -253,7 +253,10 @@ function emailSmartGuideOnLanding(user) {
   const fire = async () => {
     const { functions, httpsCallable } = await firebaseReady;
     const generateAdvancedItineraryPdf = httpsCallable(functions, 'generateAdvancedItineraryPdf', { timeout: 120000 });
-    generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true })
+    // `hotel` lets the backend skip its hasPurchasedPlan check -- hotel guides are free. Same
+    // URL match as stripe-purchase.js (FREE_GUIDE_HOTELS there and in functions/index.js).
+    const hotel = ['carlton-arms', 'compton', 'demo-hotel'].find(h => window.location.pathname.includes(h)) || null;
+    generateAdvancedItineraryPdf({ userId: `user-${user.email}`, sendEmail: true, hotel })
       .catch(err => console.error('Failed to email Smart Guide on landing:', err));
   };
 
