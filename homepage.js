@@ -19,29 +19,12 @@ const locations = {
 
 const mapCenter = locations[localStorage['ak-user-destination']] || locationNYC;
 
-// Shimmer on the Webflow hotel input ([data-ak-input-initial]) while the Maps autocomplete widget
-// loads; the attribute comes off once the widget has replaced the input (endHotelInputShimmer()).
-// Read-only meanwhile, so nothing typed into the placeholder input gets lost when it's swapped out.
+// The shimmer on the Webflow hotel input ([data-ak-input-initial]) while the Maps autocomplete
+// widget loads is pure CSS in the page's <head> custom code. This file only takes the attribute
+// off once the widget has replaced the input (endHotelInputShimmer()). Read-only meanwhile, so
+// nothing typed into the placeholder input gets lost when it's swapped out.
 const $hotelInputInitial = document.querySelector('[data-ak-input-initial]');
-if ($hotelInputInitial) {
-  const $style = document.createElement('style');
-  $style.textContent = `
-    [data-ak-input-initial] {
-      background: linear-gradient(90deg, #ececec 25%, #f8f8f8 50%, #ececec 75%) !important;
-      background-size: 200% 100% !important;
-      animation: ak-input-shimmer 1.2s linear infinite;
-      color: transparent !important;
-      cursor: progress;
-    }
-    [data-ak-input-initial]::placeholder { color: transparent !important; }
-    @keyframes ak-input-shimmer {
-      from { background-position: 100% 0; }
-      to { background-position: -100% 0; }
-    }
-  `;
-  document.head.appendChild($style);
-  $hotelInputInitial.readOnly = true;
-}
+if ($hotelInputInitial) $hotelInputInitial.readOnly = true;
 
 function endHotelInputShimmer() {
   if (!$hotelInputInitial) return;
