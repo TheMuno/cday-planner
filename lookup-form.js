@@ -21,6 +21,18 @@ const lookupFields = $lookupForm ? [
   $lookupForm.querySelector('[data-ak="guest-count"]') || findFieldByLabel('Number of guests'),
 ].filter(Boolean) : [];
 
+// Prefill number of guests from the adults/children picked earlier (ak-adult-num /
+// ak-children-num), when either is stored and the guest hasn't typed a number already.
+!function prefillGuestCount() {
+  const $guests = $lookupForm && ($lookupForm.querySelector('[data-ak="guest-count"]') || findFieldByLabel('Number of guests'));
+  if (!$guests || $guests.value.trim()) return;
+  const adults = parseInt(localStorage['ak-adult-num'], 10);
+  const children = parseInt(localStorage['ak-children-num'], 10);
+  if (Number.isNaN(adults) && Number.isNaN(children)) return;
+  const total = (Number.isNaN(adults) ? 0 : adults) + (Number.isNaN(children) ? 0 : children);
+  if (total > 0) $guests.value = total;
+}();
+
 // The red hint under a field (a [data-ak-hidden] block holding .u-text-color-red), if it has one.
 function getErrorHint($field) {
   return [...$field.closest('.u-width-full')?.querySelectorAll('[data-ak-hidden]') || []]
