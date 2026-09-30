@@ -105,14 +105,12 @@ async function setupHotelAutocomplete() {
     const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
 
     // build-itinerary.js clears the input and shows the name in [data-ak="map-hotel-name"] p.
-    // Do the same when that element exists here; otherwise leave the picked name in the input so
-    // the guest can still see what they chose.
+    // Do the same when that element exists here; otherwise leave the widget's own full text
+    // (name + address) in the input so the guest can still see what they chose.
     const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
     if ($hotelNameEl) {
       $hotelNameEl.textContent = displayName;
       placeAutocomplete.value = '';
-    } else {
-      placeAutocomplete.value = displayName;
     }
 
     // Keep the hidden Webflow input in step, so anything reading Search-Hotel still gets the name.
