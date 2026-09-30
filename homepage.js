@@ -35,8 +35,8 @@ document.querySelectorAll('[data-ak="continue-to-partner-hotel"]').forEach($btn 
 });
 
 async function setupHotelAutocomplete() {
-  const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
-  if (!$wrap) return;
+  const $target = document.querySelector('[data-ak="hotel-autocomplete"]');
+  if (!$target) return;
 
   if (!window.google?.maps?.importLibrary) {
     console.error('homepage.js: Google Maps JS API is not loaded on this page.');
@@ -45,13 +45,30 @@ async function setupHotelAutocomplete() {
 
   await google.maps.importLibrary('places');
 
+  // On the homepage, data-ak="hotel-autocomplete" sits on the Webflow <input> itself, not on a
+  // wrapper div like in build-itinerary.js. An <input> can't render children, so the widget
+  // appended into it was invisible. Put the widget in a div right after the input instead and
+  // hide the input -- and drop its `required`, or the hidden empty input would block the form.
+  let $wrap = $target;
+  let placeholder = 'Add hotel...';
+  if ($target.tagName === 'INPUT') {
+    placeholder = $target.placeholder || placeholder;
+    $wrap = document.createElement('div');
+    $wrap.className = 'ak-hotel-autocomplete-wrap';
+    $wrap.style.width = '100%';
+    $target.insertAdjacentElement('afterend', $wrap);
+    $target.required = false;
+    $target.style.display = 'none';
+  }
+
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
     locationBias: { radius: 5000.0, center: mapCenter },
     includedPrimaryTypes: ['lodging', 'hotel'],
   });
-  placeAutocomplete.placeholder = 'Add hotel...';
+  placeAutocomplete.placeholder = placeholder;
+  placeAutocomplete.style.width = '100%';
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
@@ -76,6 +93,9 @@ async function setupHotelAutocomplete() {
     } else {
       placeAutocomplete.value = displayName;
     }
+
+    // Keep the hidden Webflow input in step, so anything reading Search-Hotel still gets the name.
+    if ($target !== $wrap) $target.value = displayName;
 
     localStorage['ak-hotel'] = JSON.stringify(saveObj);
     localStorage['ak-update-hotel'] = true;
