@@ -39,7 +39,7 @@ async function setupHotelAutocomplete() {
   if (!$wrap) return;
 
   if (!window.google?.maps?.importLibrary) {
-    console.error('partner-hotel.js: Google Maps JS API is not loaded on this page.');
+    console.error('homepage.js: Google Maps JS API is not loaded on this page.');
     return;
   }
 
