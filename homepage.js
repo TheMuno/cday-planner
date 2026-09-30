@@ -87,6 +87,9 @@ async function setupHotelAutocomplete() {
   });
   placeAutocomplete.placeholder = placeholder;
   placeAutocomplete.style.width = '100%';
+  // text-align is inherited through the widget's shadow root, so a centered Webflow ancestor
+  // (the homepage hero) would otherwise center the suggestion list instead of left-aligning it.
+  placeAutocomplete.style.textAlign = 'left';
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
