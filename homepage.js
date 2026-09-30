@@ -19,6 +19,36 @@ const locations = {
 
 const mapCenter = locations[localStorage['ak-user-destination']] || locationNYC;
 
+// Shimmer on the Webflow hotel input ([data-ak-input-initial]) while the Maps autocomplete widget
+// loads; the attribute comes off once the widget has replaced the input (endHotelInputShimmer()).
+// Read-only meanwhile, so nothing typed into the placeholder input gets lost when it's swapped out.
+const $hotelInputInitial = document.querySelector('[data-ak-input-initial]');
+if ($hotelInputInitial) {
+  const $style = document.createElement('style');
+  $style.textContent = `
+    [data-ak-input-initial] {
+      background: linear-gradient(90deg, #ececec 25%, #f8f8f8 50%, #ececec 75%) !important;
+      background-size: 200% 100% !important;
+      animation: ak-input-shimmer 1.2s linear infinite;
+      color: transparent !important;
+      cursor: progress;
+    }
+    [data-ak-input-initial]::placeholder { color: transparent !important; }
+    @keyframes ak-input-shimmer {
+      from { background-position: 100% 0; }
+      to { background-position: -100% 0; }
+    }
+  `;
+  document.head.appendChild($style);
+  $hotelInputInitial.readOnly = true;
+}
+
+function endHotelInputShimmer() {
+  if (!$hotelInputInitial) return;
+  $hotelInputInitial.removeAttribute('data-ak-input-initial');
+  $hotelInputInitial.readOnly = false;
+}
+
 window.addEventListener('load', () => {
   setupHotelAutocomplete();
 });
@@ -40,25 +70,30 @@ async function setupHotelAutocomplete() {
 
   if (!window.google?.maps?.importLibrary) {
     console.error('homepage.js: Google Maps JS API is not loaded on this page.');
+    endHotelInputShimmer();
     return;
   }
 
-  await google.maps.importLibrary('places');
+  try {
+    await google.maps.importLibrary('places');
+  } catch (err) {
+    console.error('homepage.js: failed to load the Places library:', err);
+    endHotelInputShimmer();
+    return;
+  }
 
   // On the homepage, data-ak="hotel-autocomplete" sits on the Webflow <input> itself, not on a
   // wrapper div like in build-itinerary.js. An <input> can't render children, so the widget
-  // appended into it was invisible. Put the widget in a div right after the input instead and
-  // hide the input -- and drop its `required`, or the hidden empty input would block the form.
+  // appended into it was invisible. Put the widget in a div right after the input instead. The
+  // div stays hidden (and the shimmering input stays showing) until the widget is actually in it.
   let $wrap = $target;
   let placeholder = 'Add hotel...';
   if ($target.tagName === 'INPUT') {
     placeholder = $target.placeholder || placeholder;
     $wrap = document.createElement('div');
     $wrap.className = 'ak-hotel-autocomplete-wrap';
-    $wrap.style.width = '100%';
+    $wrap.style.cssText = 'width:100%; display:none;';
     $target.insertAdjacentElement('afterend', $wrap);
-    $target.required = false;
-    $target.style.display = 'none';
   }
 
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
@@ -104,7 +139,20 @@ async function setupHotelAutocomplete() {
   });
 
   wireOverflowEscapeOnFocus(placeAutocomplete);
-  moveWhenVisible($wrap, placeAutocomplete);
+
+  // Swap the shimmering Webflow input out for the widget once it's placed. Drop the input's
+  // `required` too, or the hidden empty input would block the form.
+  const $placeholderTarget = $target !== $wrap ? $target : null;
+  const onPlaced = () => {
+    if ($placeholderTarget) {
+      $wrap.style.display = '';
+      $placeholderTarget.required = false;
+      $placeholderTarget.style.display = 'none';
+    }
+    endHotelInputShimmer();
+  };
+
+  moveWhenVisible($wrap, placeAutocomplete, onPlaced);
 }
 
 // gmp-place-autocomplete computes its internal (closed-shadow-root) click/focus handling at the
@@ -152,7 +200,9 @@ function wireOverflowEscapeOnFocus($el) {
   });
 }
 
-function moveWhenVisible($wrap, $el) {
+// findHiddenAncestor() starts at $wrap's parent, so $wrap's own display:none (while the shimmer
+// input is still showing) doesn't count -- only a genuinely hidden container does.
+function moveWhenVisible($wrap, $el, onPlaced) {
   // A Webflow ancestor may set pointer-events: none; the bare custom element has no Webflow
   // class to override it, so re-enable explicitly (a descendant's auto wins over an ancestor's none).
   $wrap.style.pointerEvents = 'auto';
@@ -161,6 +211,7 @@ function moveWhenVisible($wrap, $el) {
   const $hiddenAncestor = findHiddenAncestor($wrap);
   if (!$hiddenAncestor) {
     $wrap.appendChild($el);
+    onPlaced?.();
     return;
   }
 
@@ -168,6 +219,7 @@ function moveWhenVisible($wrap, $el) {
     if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
     observer.disconnect();
     $wrap.appendChild($el);
+    onPlaced?.();
   });
   observer.observe($hiddenAncestor);
 }
