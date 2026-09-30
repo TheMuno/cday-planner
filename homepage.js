@@ -96,7 +96,22 @@ async function setupHotelAutocomplete() {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+    const fields = ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'];
+
+    // A dropped GetPlace request (flaky network, an extension blocking it) used to surface as an
+    // uncaught promise error. Retry once; if it still fails, log it and don't save a half-empty
+    // hotel -- build-itinerary.js needs the location to place the hotel pin.
+    try {
+      await place.fetchFields({ fields });
+    } catch (err) {
+      console.warn('homepage.js: fetching hotel details failed, retrying once:', err);
+      try {
+        await place.fetchFields({ fields });
+      } catch (retryErr) {
+        console.error('homepage.js: could not fetch hotel details; hotel not saved:', retryErr);
+        return;
+      }
+    }
 
     const placeObj = place.toJSON();
     const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
