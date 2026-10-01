@@ -2,7 +2,7 @@
 // hotel, reservation number, guest last name and number of guests are all filled in; each empty
 // one gets data-ak-invalid (styled by the page's <head> CSS) and its red hint shown, and the click
 // is stopped. Both clear as soon as the guest fills that field in. All filled in -> on to the
-// picked hotel's itinerary (or /log-in if not signed in), mirroring flow-trial.js.
+// picked hotel's itinerary (hotel choice mirrors flow-trial.js, but never /log-in).
 
 const $lookupForm = document.querySelector('#wf-form-Form-Look-up');
 
@@ -95,49 +95,12 @@ function storeFlowTrialKeys() {
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
 }
 
-const firebaseConfig = {
-  apiKey:            "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
-  authDomain:        "auth.askkhonsu.com",
-  projectId:         "askkhonsu-map",
-  storageBucket:     "askkhonsu-map.appspot.com",
-  messagingSenderId: "266031876218",
-  appId:             "1:266031876218:web:ec93411f1c13d9731e93c3",
-  measurementId:     "G-Z7F4NJ4PHW",
-};
-
-// Signed-in guests go straight to their hotel's itinerary; everyone else to /log-in, same as
-// flow-trial.js. Firebase is loaded lazily but started right away, so it's usually settled by the
-// time anyone clicks.
-const authReady = !$lookupForm ? null : Promise.all([
-  import('https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js'),
-  import('https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js'),
-]).then(async ([{ initializeApp, getApps, getApp }, { getAuth }]) => {
-  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  await auth.authStateReady();
-  return auth;
-});
-
-let continuing = false;
-
-async function continueToHotel() {
-  if (continuing || !validateLookupForm()) return;
-  continuing = true;
-
+// Straight to the picked hotel's itinerary -- no sign-in check, so never /log-in.
+function continueToHotel() {
+  if (!validateLookupForm()) return;
   storeFlowTrialKeys();
-
-  let signedIn = false;
-  try {
-    signedIn = !!(await authReady)?.currentUser;
-  } catch (err) {
-    // Firebase failed to load -- /log-in sorts out an already-signed-in user on its own.
-    console.error('Failed to check sign-in state:', err);
-  }
-  window.location.href = signedIn ? resolveHotel().redirect : '/log-in';
+  window.location.href = resolveHotel().redirect;
 }
-
-// Bfcache can restore the page with `continuing` still set -- reset it so the button works again.
-window.addEventListener('pageshow', () => { continuing = false; });
 
 // Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
 const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
