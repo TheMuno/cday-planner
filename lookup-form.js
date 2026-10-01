@@ -1,7 +1,8 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
 // travel dates, hotel, reservation number, guest last name and number of guests are all filled in; each empty
-// one gets data-ak-invalid (styled by the page's <head> CSS) and its red hint shown, and the click
-// is stopped. Both clear as soon as the guest fills that field in. All filled in -> on to the
+// one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
+// red hint shown, and the click is stopped. The hint stays until the guest fills that field in (the
+// outline also goes then, if it's still showing). All filled in -> on to the
 // "Customize now" button's href (never /log-in).
 
 const $lookupForm = document.querySelector('#wf-form-Form-Look-up');
@@ -78,10 +79,14 @@ const $datesItem = $datesSource?.closest('[data-ak="travel-dates-form"]');
 const $datesHint = [$datesItem?.nextElementSibling]
   .find($el => $el?.hasAttribute('data-ak-hidden') && $el.querySelector('.u-text-color-red')) || null;
 
+// The red outline only shows for 2s (a repeat click restarts the 2s rather than stacking timers);
+// the hint stays shown until the field is filled in.
 function setFieldInvalid($field, invalid) {
   const $hint = errorHints.get($field) || ($field === getDatesField() ? $datesHint : null);
+  clearTimeout($field.akInvalidTimer);
   if (invalid) {
     $field.setAttribute('data-ak-invalid', 'true');
+    $field.akInvalidTimer = setTimeout(() => $field.removeAttribute('data-ak-invalid'), 2000);
     $hint?.removeAttribute('data-ak-hidden');
   } else {
     $field.removeAttribute('data-ak-invalid');
