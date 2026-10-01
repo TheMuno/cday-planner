@@ -6,6 +6,27 @@
 
 const $lookupForm = document.querySelector('#wf-form-Form-Look-up');
 
+// The page's [data-ak-invalid] CSS only reddens the bottom border, which on the travel dates (a
+// borderless flatpickr input) and hotel select (border is on its wrapper) shows as just a line.
+// Dates get the same full outline the homepage's <head> CSS gives its dates field
+// (.w-input.form-control[data-ak-invalid]); the hotel select's wrapper border goes red instead.
+if ($lookupForm) {
+  document.head.insertAdjacentHTML('beforeend', `<style>
+    #wf-form-Form-Look-up .w-input.form-control[data-ak-invalid] {
+      outline: 1px solid #e5484d !important;
+      outline-offset: 4px;
+      border-radius: 4px;
+      box-shadow: none !important;
+    }
+    #wf-form-Form-Look-up .form_field_simple:has(> select[data-ak-invalid]) {
+      border-color: #e5484d !important;
+    }
+    #wf-form-Form-Look-up select[data-ak-invalid] {
+      box-shadow: none !important;
+    }
+  </style>`);
+}
+
 // Reservation number and number of guests share the same id/name in Webflow, so fields are looked
 // up by a data-ak attribute when present, and otherwise by the label text above them.
 function findFieldByLabel(labelText) {
