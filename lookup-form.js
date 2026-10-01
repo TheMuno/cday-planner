@@ -33,14 +33,17 @@ const lookupFields = $lookupForm ? [
   if (total > 0) $guests.value = total;
 }();
 
-// The red hint under a field (a [data-ak-hidden] block holding .u-text-color-red), if it has one.
-function getErrorHint($field) {
-  return [...$field.closest('.u-width-full')?.querySelectorAll('[data-ak-hidden]') || []]
-    .find($el => $el.querySelector('.u-text-color-red')) || null;
-}
+// The red hint under each field (a [data-ak-hidden] block holding .u-text-color-red), if it has one.
+// Looked up once here while every hint still has data-ak-hidden -- showing a hint removes that
+// attribute, so a later lookup by it would miss the hint and never hide it again.
+const errorHints = new Map(lookupFields.map($field => [
+  $field,
+  [...$field.closest('.u-width-full')?.querySelectorAll('[data-ak-hidden]') || []]
+    .find($el => $el.querySelector('.u-text-color-red')) || null,
+]));
 
 function setFieldInvalid($field, invalid) {
-  const $hint = getErrorHint($field);
+  const $hint = errorHints.get($field);
   if (invalid) {
     $field.setAttribute('data-ak-invalid', 'true');
     $hint?.removeAttribute('data-ak-hidden');
