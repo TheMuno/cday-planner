@@ -1,8 +1,8 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// hotel, reservation number, guest last name and number of guests are all filled in; each empty
+// travel dates, hotel, reservation number, guest last name and number of guests are all filled in; each empty
 // one gets data-ak-invalid (styled by the page's <head> CSS) and its red hint shown, and the click
 // is stopped. Both clear as soon as the guest fills that field in. All filled in -> on to the
-// picked hotel's itinerary (hotel choice mirrors flow-trial.js, but never /log-in).
+// "Customize now" button's href (never /log-in).
 
 const $lookupForm = document.querySelector('#wf-form-Form-Look-up');
 
@@ -12,6 +12,15 @@ function findFieldByLabel(labelText) {
   const $label = [...$lookupForm.querySelectorAll('.u-width-full p')]
     .find($p => $p.textContent.trim().toLowerCase() === labelText.toLowerCase());
   return $label?.closest('.u-width-full')?.querySelector('input:not(.hide), select') || null;
+}
+
+// Travel dates -- for guests who land here directly rather than via the homepage. flatpickr
+// (altInput: true, site-wide code) hides [data-ak="user-travel-dates"] and puts the visible input
+// right after it; that visible one is what gets flagged. flatpickr only adds it after this script
+// has run, so it's looked up at click time rather than here.
+const $datesSource = $lookupForm?.querySelector('[data-ak="user-travel-dates"]') || null;
+function getDatesField() {
+  return $datesSource?.nextElementSibling?.tagName === 'INPUT' ? $datesSource.nextElementSibling : $datesSource;
 }
 
 const lookupFields = $lookupForm ? [
@@ -42,8 +51,14 @@ const errorHints = new Map(lookupFields.map($field => [
     .find($el => $el.querySelector('.u-text-color-red')) || null,
 ]));
 
+// The dates hint ("Select the travel dates") sits just after the dates block
+// ([data-ak="travel-dates-form"]) rather than inside a .u-width-full wrapper, so it's found separately.
+const $datesItem = $datesSource?.closest('[data-ak="travel-dates-form"]');
+const $datesHint = [$datesItem?.nextElementSibling]
+  .find($el => $el?.hasAttribute('data-ak-hidden') && $el.querySelector('.u-text-color-red')) || null;
+
 function setFieldInvalid($field, invalid) {
-  const $hint = errorHints.get($field);
+  const $hint = errorHints.get($field) || ($field === getDatesField() ? $datesHint : null);
   if (invalid) {
     $field.setAttribute('data-ak-invalid', 'true');
     $hint?.removeAttribute('data-ak-hidden');
@@ -54,8 +69,10 @@ function setFieldInvalid($field, invalid) {
 }
 
 function validateLookupForm() {
-  const emptyFields = lookupFields.filter($field => !$field.value.trim());
-  lookupFields.forEach($field => setFieldInvalid($field, emptyFields.includes($field)));
+  const $dates = getDatesField();
+  const fields = $dates ? [$dates, ...lookupFields] : lookupFields;
+  const emptyFields = fields.filter($field => !$field.value.trim());
+  fields.forEach($field => setFieldInvalid($field, emptyFields.includes($field)));
   emptyFields[0]?.focus();
   return emptyFields.length === 0;
 }
@@ -66,6 +83,13 @@ lookupFields.forEach($field => {
   };
   $field.addEventListener('input', clearIfFilled);
   $field.addEventListener('change', clearIfFilled);
+});
+
+// The visible dates input is readonly and flatpickr fires change on the hidden one, so clear the
+// dates flag from there.
+$datesSource?.addEventListener('change', () => {
+  const $dates = getDatesField();
+  if ($dates.value.trim()) setFieldInvalid($dates, false);
 });
 
 // Where "Customize now" goes, by the hotel picked -- mirrors hotelMap/resolveHotel() in
@@ -95,15 +119,18 @@ function storeFlowTrialKeys() {
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
 }
 
-// Straight to the picked hotel's itinerary -- no sign-in check, so never /log-in.
+// Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
+const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
+
+// For now, goes to the "Customize now" button's own href (set in Webflow) -- no sign-in check, so
+// never /log-in. The by-hotel redirect is switched off below; uncomment it to go back to that.
 function continueToHotel() {
   if (!validateLookupForm()) return;
   storeFlowTrialKeys();
-  window.location.href = resolveHotel().redirect;
+  // window.location.href = resolveHotel().redirect;
+  const href = $customizeBtn?.getAttribute('href');
+  if (href && href !== '#') window.location.href = href;
 }
-
-// Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
-const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 
 $customizeBtn?.addEventListener('click', e => {
   e.preventDefault();
