@@ -1,6 +1,6 @@
 // Every [data-ak="continue-to-partner-hotel"] on the page (e.g. separate desktop/mobile buttons)
-// sends the guest to its own href -- but only once travel dates are set. Mirrors the page's own
-// continue-to-itinerary custom code: an empty date field gets .highlight for 2s and the click stops.
+// sends the guest to its own href -- but only once travel dates are set. An empty date field gets
+// data-ak-invalid (styled by the page's <head> CSS, same as lookup-form.js) until dates are picked.
 document.querySelectorAll('[data-ak="continue-to-partner-hotel"]').forEach($btn => {
   $btn.addEventListener('click', e => {
     e.preventDefault();
@@ -12,8 +12,15 @@ document.querySelectorAll('[data-ak="continue-to-partner-hotel"]').forEach($btn 
     const $dates = $btn.closest('form')?.querySelector('[data-ak="user-travel-dates"]');
     const $dateField = $dates?.nextElementSibling?.tagName === 'INPUT' ? $dates.nextElementSibling : $dates;
     if ($dateField && !$dateField.value.trim()) {
-      $dateField.classList.add('highlight');
-      setTimeout(() => $dateField.classList.remove('highlight'), 2000);
+      $dateField.setAttribute('data-ak-invalid', 'true');
+      // flatpickr sets the dates programmatically (no input event on the visible field) but fires
+      // `change` on the original input -- clear the highlight then.
+      if (!$dates.akInvalidClearWired) {
+        $dates.akInvalidClearWired = true;
+        $dates.addEventListener('change', () => {
+          if ($dateField.value.trim()) $dateField.removeAttribute('data-ak-invalid');
+        });
+      }
       return;
     }
 
