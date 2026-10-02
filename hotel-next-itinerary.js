@@ -245,6 +245,57 @@ MAP_POPUP_FIELDS.forEach(field => {
 // or a pick says otherwise.
 AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelector(nameSelector)));
 
+// The line under the name in the "Selected" box. The markup only has a car version ("Driving - No
+// carrier needed", data-toggle-show="car"), so it's taken off the page's toggle script and kept shown,
+// with its text set per mode instead: the flight/train details typed in for plane/train, and the
+// markup's own text for car.
+const transportSummaries = {};
+AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
+  const $line = document.querySelector(nameSelector)
+    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-toggle-show="car"]');
+  if (!$line) return;
+  $line.removeAttribute('data-toggle-show');
+  $line.removeAttribute('data-toggle-off');
+  const $text = $line.querySelector('p') || $line;
+  transportSummaries[prefix] = { $text, carText: $text.textContent };
+});
+
+// With none of the details filled in, plane/train fall back to the picked place's neighborhood
+// (saved with it as `neighborhood`), and failing that to an "Add ... details" prompt.
+function updateTransportSummary(prefix) {
+  const summary = transportSummaries[prefix];
+  if (!summary) return;
+  const val = suffix => document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim() || '';
+  const mode = getTransportMode(prefix);
+  const join = (...parts) => parts.filter(Boolean).join(' · ');
+  const { storageKey } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
+  let neighborhood = '';
+  try {
+    neighborhood = JSON.parse(localStorage[storageKey] || 'null')?.neighborhood || '';
+  } catch (e) {}
+  if (mode === 'plane') {
+    summary.$text.textContent = join(val('carrier-name'), val('flight-number'), val('time')) || neighborhood || 'Add flight details';
+  } else if (mode === 'train') {
+    const trainNum = val('train-number');
+    summary.$text.textContent = join(val('train-carrier-name'), trainNum && `Train ${trainNum}`, val('time')) || neighborhood || 'Add train details';
+  } else {
+    summary.$text.textContent = summary.carText;
+  }
+}
+
+// toggle:change is the page toggle script's own event, fired on the Arrival/Departure block.
+document.addEventListener('toggle:change', e => {
+  const field = AIRPORT_FIELDS.find(({ prefix }) => getTransportFrame(prefix) === e.target);
+  if (field) updateTransportSummary(field.prefix);
+});
+document.addEventListener('input', e => {
+  const dataAk = e.target.getAttribute?.('data-ak');
+  const field = dataAk && AIRPORT_FIELDS.find(({ prefix }) =>
+    AIRPORT_FLIGHT_FIELDS.some(({ suffix }) => dataAk === `${prefix}-${suffix}`));
+  if (field) updateTransportSummary(field.prefix);
+});
+AIRPORT_FIELDS.forEach(({ prefix }) => updateTransportSummary(prefix));
+
 const mapReady = initMap(mapCenter, mapZoom);
 async function initMap(center, zoom) {
   const $map = document.querySelector('[data-ak="map"]');
@@ -898,7 +949,7 @@ function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, name
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
 
     map.panTo(place.viewport || place.location);
 
@@ -907,13 +958,14 @@ function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, name
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
     placeAutocomplete.value = '';
+    const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
 
     const flightFields = {};
     AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
       flightFields[key] = document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value || '';
     });
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, ...flightFields, mode };
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, neighborhood, ...flightFields, mode };
 
     const pin = getCorrectTransportationPinUrl(type, mode);
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
@@ -928,6 +980,7 @@ function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, name
     localStorage[updateKey] = true;
     localStorage.removeItem(draftKey);
     setUnsavedChangesFlag();
+    updateTransportSummary(prefix);
   });
 
   wireOverflowEscapeOnFocus(placeAutocomplete);
@@ -1701,6 +1754,22 @@ function restoreAirports() {
       if ($field && saveObj[key]) $field.value = saveObj[key];
     });
     setTransportMode(prefix, mode);
+    updateTransportSummary(prefix);
+
+    // Places picked before neighborhoods were saved: look it up from the coordinates once, and keep it.
+    if (!('neighborhood' in saveObj)) {
+      extractNeighborhood([], location.lat, location.lng).then(neighborhood => {
+        let current;
+        try {
+          current = JSON.parse(localStorage[storageKey] || 'null');
+        } catch (e) {
+          return;
+        }
+        if (current?.placeId !== saveObj.placeId) return;
+        localStorage[storageKey] = JSON.stringify({ ...current, neighborhood });
+        updateTransportSummary(prefix);
+      });
+    }
   });
 }
 
@@ -1718,6 +1787,7 @@ function restoreAirportFlightDraft(prefix, draftKey) {
     if ($field && draft[key]) $field.value = draft[key];
   });
   setTransportMode(prefix, draft.mode);
+  updateTransportSummary(prefix);
 }
 
 function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value) {
