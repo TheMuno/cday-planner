@@ -283,10 +283,27 @@ function updateTransportSummary(prefix) {
   }
 }
 
+// The Train/Car fields carry data-ak-hidden in the markup so they don't flash before the page toggle
+// script runs; that script only hides/shows them with data-toggle-off and never removes data-ak-hidden,
+// which would keep them (and the search boxes waiting to move into them) hidden in every mode. Once
+// the toggle script has set a block's mode, data-toggle-off takes over and data-ak-hidden comes off.
+function releaseTransportFields($frame) {
+  $frame?.querySelectorAll('[data-toggle-show][data-ak-hidden]').forEach($el => {
+    if ($el.closest('[data-toggle-scope]') === $frame) $el.removeAttribute('data-ak-hidden');
+  });
+}
+// The toggle script may have already run (it sets data-toggle-off on the hidden modes' fields).
+AIRPORT_FIELDS.forEach(({ prefix }) => {
+  const $frame = getTransportFrame(prefix);
+  if ($frame?.querySelector('[data-toggle-off]')) releaseTransportFields($frame);
+});
+
 // toggle:change is the page toggle script's own event, fired on the Arrival/Departure block.
 document.addEventListener('toggle:change', e => {
   const field = AIRPORT_FIELDS.find(({ prefix }) => getTransportFrame(prefix) === e.target);
-  if (field) updateTransportSummary(field.prefix);
+  if (!field) return;
+  releaseTransportFields(e.target);
+  updateTransportSummary(field.prefix);
 });
 document.addEventListener('input', e => {
   const dataAk = e.target.getAttribute?.('data-ak');
