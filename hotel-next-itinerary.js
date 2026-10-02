@@ -58,15 +58,12 @@ function ensureShareToken() {
     });
 }
 
-// The hotel-next nav buttons ("Sign-in to save" / "Continue → Verify" in .app_nav_right) don't
-// carry data-ak="sign-in-to-save" / "continue-to-step2" in Webflow, so they're found by href when
-// the data-ak isn't there.
 function getSignInBtn() {
-  return document.querySelector('[data-ak="sign-in-to-save"]') || document.querySelector('.app_nav_right a[href$="/log-in"]');
+  return document.querySelector('[data-ak="sign-in-to-save"]');
 }
 
 function getContinueBtn() {
-  return document.querySelector('[data-ak="continue-to-step2"]') || document.querySelector('.app_nav_right a[href$="/verify-itinerary"]');
+  return document.querySelector('[data-ak="continue-to-step2"]');
 }
 
 // Reveal sign-in-to-save/continue-to-step2/save-itinerary as soon as auth state is known,
@@ -105,34 +102,61 @@ const noPhotoPlaceholder = `data:image/svg+xml,${encodeURIComponent('<svg xmlns=
 const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
 const attractionslimit = 5;
 
+// Arrival and Departure each have a Plane / Train / Car toggle (the page's own [data-toggle-scope]
+// script shows one mode's fields at a time), with a search box per mode. Whichever box the guest
+// picks from, the place is saved under the same key (ak-arrival-airport / ak-departure-airport),
+// along with the mode it was picked under.
+// nameSelector is the name in the "Selected" box's picked state — the .itinerary_logistics_select_wrap
+// right after the empty one ("Nothing selected yet", which carries the data-ak).
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
+  { markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] + .itinerary_logistics_select_wrap .u-hotel-color-brand p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft' },
+  { markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] + .itinerary_logistics_select_wrap .u-hotel-color-brand p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
 ];
+
+// Search box per mode: data-ak="<prefix>-<autocompleteSuffix>". Car takes any address.
+const TRANSPORT_MODES = {
+  plane: { autocompleteSuffix: 'airport-autocomplete', includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'] },
+  train: { autocompleteSuffix: 'train-autocomplete', includedPrimaryTypes: ['train_station', 'transit_station', 'subway_station', 'light_rail_station', 'bus_station'], placeholder: 'Add station...' },
+  car: { autocompleteSuffix: 'address-autocomplete', includedPrimaryTypes: null, placeholder: 'Add address...' },
+};
 
 const placeAutocompleteEls = {};
 
 const MAP_POPUP_FIELDS = [
   { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel', updateKey: 'ak-update-hotel' },
-  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey, updateKey }) => ({ nameSelector, markerKey, storageKey, updateKey })),
+  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey, updateKey, prefix }) => ({ nameSelector, markerKey, storageKey, updateKey, prefix })),
 ];
 
+// Train's carrier/number are kept apart from the plane's, so switching modes doesn't mix them up.
 const AIRPORT_FLIGHT_FIELDS = [
   { suffix: 'time', key: 'flightTime' },
   { suffix: 'carrier-name', key: 'carrierName' },
   { suffix: 'flight-number', key: 'flightNumber' },
+  { suffix: 'train-carrier-name', key: 'trainCarrierName' },
+  { suffix: 'train-number', key: 'trainNumber' },
 ];
+
+// The Arrival / Departure block (the page script keeps its current mode in data-toggle-scope).
+function getTransportFrame(prefix) {
+  return document.querySelector(`[data-ak="${prefix}-time"]`)?.closest('[data-toggle-scope]') || null;
+}
+
+function getTransportMode(prefix) {
+  const mode = getTransportFrame(prefix)?.getAttribute('data-toggle-scope');
+  return TRANSPORT_MODES[mode] ? mode : 'plane';
+}
+
+// Clicks the mode's toggle, so the page script shows that mode's fields.
+function setTransportMode(prefix, mode) {
+  if (!TRANSPORT_MODES[mode] || getTransportMode(prefix) === mode) return;
+  getTransportFrame(prefix)?.querySelector(`[data-toggle="${mode}"]`)?.click();
+}
 
 const flightFieldSaveTimers = {};
 
 const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
 const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
 const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
-
-// On hotel-next the hidden item template in each of the main slider's lists (Visit and Eat) is
-// tagged data-ak="restaurant-location" in Webflow; everything below clones and looks for
-// "attraction-location", so retag them before anything runs.
-$attractionsSlider.querySelectorAll('[data-ak="restaurant-location"]').forEach($el => $el.setAttribute('data-ak', 'attraction-location'));
 
 // [data-ak="attraction-location"] / [data-ak-type-title] / [data-ak-type-dropzone] etc. also exist
 // inside the itinerary_ui_slider duplicate markup (data-ak="locations-slider-2"), so delegated
@@ -215,6 +239,10 @@ MAP_POPUP_FIELDS.forEach(field => {
   const $el = document.querySelector(field.nameSelector);
   field.defaultText = $el ? $el.textContent : '';
 });
+
+// Both "Selected" box states are shown in the markup — start on the empty one until restoreAirports()
+// or a pick says otherwise.
+AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelector(nameSelector)));
 
 const mapReady = initMap(mapCenter, mapZoom);
 async function initMap(center, zoom) {
@@ -384,11 +412,6 @@ window.addEventListener('load', async () => {
     const dataAk = e.target.getAttribute?.('data-ak');
     if (!dataAk) return;
 
-    // On hotel-next, data-ak="arrival-time" / "departure-flight-number" each sit on several inputs
-    // (both the Arrival and Departure blocks, plane and train). Only the first one is saved, the
-    // same one restoreAirports() fills in, so a Departure field can't overwrite the Arrival value.
-    if (document.querySelector(`[data-ak="${dataAk}"]`) !== e.target) return;
-
     for (const { storageKey, updateKey, prefix, draftKey } of AIRPORT_FIELDS) {
       const field = AIRPORT_FLIGHT_FIELDS.find(({ suffix }) => dataAk === `${prefix}-${suffix}`);
       if (!field) continue;
@@ -400,6 +423,18 @@ window.addEventListener('load', async () => {
       }, 500);
       return;
     }
+  });
+
+  // The Plane / Train / Car pick is saved with that arrival/departure. Only real clicks —
+  // restoreAirports() switches modes with .click() too, and that shouldn't count as an edit.
+  document.body.addEventListener('click', e => {
+    const $toggle = e.isTrusted && e.target.closest('[data-toggle]');
+    if (!$toggle) return;
+    const field = AIRPORT_FIELDS.find(({ prefix }) => getTransportFrame(prefix)?.contains($toggle));
+    if (!field) return;
+
+    setUnsavedChangesFlag();
+    saveAirportFlightFieldLocal(field.storageKey, field.updateKey, field.draftKey, 'mode', $toggle.dataset.toggle);
   });
 
   document.body.addEventListener('submit', e => {
@@ -833,23 +868,24 @@ async function autoSetFixedHotel() {
 async function setupAirportAutocomplete() {
   await google.maps.importLibrary('places');
 
-  AIRPORT_FIELDS.forEach(({ dataAk, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey }) => {
-    const $wrap = document.querySelector(`[data-ak="${dataAk}"]`);
-    if (!$wrap) return;
-
-    initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey);
+  AIRPORT_FIELDS.forEach(field => {
+    Object.entries(TRANSPORT_MODES).forEach(([mode, { autocompleteSuffix }]) => {
+      const $wrap = document.querySelector(`[data-ak="${field.prefix}-${autocompleteSuffix}"]`);
+      if ($wrap) initAirportAutocomplete($wrap, field, mode);
+    });
   });
 }
 
-function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey) {
+function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey }, mode) {
+  const { includedPrimaryTypes, placeholder: modePlaceholder } = TRANSPORT_MODES[mode];
   const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
     componentRestrictions: { country: ['us'] },
     includedRegionCodes: ['us'],
     locationBias: { radius: 5000.0, center: mapCenter },
-    includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'],
+    ...(includedPrimaryTypes ? { includedPrimaryTypes } : {}),
   });
-  if (placeholder) placeAutocomplete.placeholder = placeholder;
-  placeAutocompleteEls[markerKey] = placeAutocomplete;
+  placeAutocomplete.placeholder = modePlaceholder || placeholder;
+  placeAutocompleteEls[`${markerKey}-${mode}`] = placeAutocomplete;
 
   getOffscreenWidgetHolder().appendChild(placeAutocomplete);
 
@@ -871,9 +907,9 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
       flightFields[key] = document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value || '';
     });
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, ...flightFields };
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, ...flightFields, mode };
 
-    const pin = getCorrectTransportationPinUrl(type);
+    const pin = getCorrectTransportationPinUrl(type, mode);
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
     if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
     markerObj[markerKey] = marker;
@@ -892,7 +928,9 @@ function initAirportAutocomplete($wrap, markerKey, storageKey, updateKey, nameSe
   moveWhenVisible($wrap, placeAutocomplete);
 }
 
-function getCorrectTransportationPinUrl(type) {
+// A driving start/end point is just an address, so it gets the map's default pin (null).
+function getCorrectTransportationPinUrl(type, mode) {
+  if (mode === 'car') return null;
   if (!type) return airportMarkerPinUrl;
   if (type.includes('bus_station')) return busPinUrl;
   if (type.includes('train_station')) return trainPinUrl;
@@ -909,7 +947,7 @@ function createMarker(title, position, editorialSummary = title, type = [], mark
     map,
     position,
     title,
-    content: markerPinImg,
+    ...(markerPinSrc ? { content: markerPinImg } : {}),
     gmpClickable: true,
   });
 
@@ -1029,8 +1067,7 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
   const $popupActionBtn = $mapPopup.querySelector('.map_card_btn_wrap');
   if ($popupActionBtn) {
     const $existingMatch = findItineraryMatch(saveObj);
-    // hotel-next's popup button is a plain link with no popup-action-label inside, so its own text is the label.
-    const $actionLabel = $popupActionBtn.querySelector('[data-ak="popup-action-label"]') || $popupActionBtn.querySelector('a');
+    const $actionLabel = $popupActionBtn.querySelector('[data-ak="popup-action-label"]');
 
     if (!$existingMatch && saveObj?._isSearchResult) {
       if ($actionLabel) $actionLabel.textContent = 'Add Activity';
@@ -1075,19 +1112,32 @@ function findMapPopupField(marker) {
   return MAP_POPUP_FIELDS.find(({ markerKey }) => markerObj[markerKey] === marker) || null;
 }
 
-// The remove-location icon sits in .ci009_left-icons-wrap, a sibling of the name element inside
-// .flex-row — it starts [data-ak-hidden] in the markup since there's nothing to remove
-// until a hotel/airport is actually added, and shouldn't reappear for the default placeholder text.
-function getRemoveIconWrap($nameEl) {
-  return $nameEl?.closest('.flex-row')?.querySelector('.ci009_left-icons-wrap') || null;
+// Shows/hides what goes with a picked hotel/airport, so there's nothing to remove until one is
+// actually added:
+// - Carlton Arms markup: the remove-location icon in .ci009_left-icons-wrap, a sibling of the name
+//   element inside .flex-row.
+// - hotel-next's "Selected" box: two .itinerary_logistics_select_wrap siblings, the empty state
+//   ("Nothing selected yet") then the picked state (name + ✕) — only one shows at a time.
+function setPickedState($nameEl, picked) {
+  const toggleHidden = ($el, hidden) => hidden ? $el.setAttribute('data-ak-hidden', 'true') : $el.removeAttribute('data-ak-hidden');
+
+  const $iconWrap = $nameEl?.closest('.flex-row')?.querySelector('.ci009_left-icons-wrap');
+  if ($iconWrap) toggleHidden($iconWrap, !picked);
+
+  const $pickedBox = $nameEl?.closest('.itinerary_logistics_select_wrap');
+  const $emptyBox = $pickedBox?.previousElementSibling;
+  if ($emptyBox?.matches('.itinerary_logistics_select_wrap')) {
+    toggleHidden($pickedBox, !picked);
+    toggleHidden($emptyBox, picked);
+  }
 }
 
 function showRemoveIcon($nameEl) {
-  getRemoveIconWrap($nameEl)?.removeAttribute('data-ak-hidden');
+  setPickedState($nameEl, true);
 }
 
 function hideRemoveIcon($nameEl) {
-  getRemoveIconWrap($nameEl)?.setAttribute('data-ak-hidden', 'true');
+  setPickedState($nameEl, false);
 }
 
 function clearMapPopupField(field) {
@@ -1418,10 +1468,11 @@ function handleRemoveLocation(e) {
     return;
   }
 
-  // Hotel/airport fields aren't [data-ak="attraction-location"] items — their remove-location link is a
-  // sibling of the [data-ak-map-popup] trigger (e.g. [data-ak="map-hotel-name"]) inside .flex-row, not an
-  // ancestor, so look sideways for it and match the same way handleFieldMapPopup does off its data-ak.
-  const $fieldTrigger = e.target.closest('.flex-row')?.querySelector('[data-ak-map-popup]');
+  // Hotel/airport fields aren't [data-ak="attraction-location"] items — their remove-location link sits
+  // next to the [data-ak-map-popup] trigger (e.g. [data-ak="map-hotel-name"]), not inside it: in .flex-row
+  // on Carlton Arms markup, in the "Selected" box's .itinerary_logistics_form_item on hotel-next. So look
+  // sideways for it and match the same way handleFieldMapPopup does off its data-ak.
+  const $fieldTrigger = (e.target.closest('.itinerary_logistics_form_item') || e.target.closest('.flex-row'))?.querySelector('[data-ak-map-popup]');
   const triggerName = $fieldTrigger?.getAttribute('data-ak');
   const field = triggerName && MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
   if (!field) return;
@@ -1462,7 +1513,10 @@ function handleSectionDeactivateOnClickAway(e) {
 }
 
 function handleFieldMapPopup(e) {
-  const $trigger = e.target.closest('[data-ak-map-popup]');
+  if (e.target.closest('[data-ak="remove-location"]')) return; // handleRemoveLocation's
+  // On hotel-next the picked "Selected" box (name + ✕) is the empty box's sibling, not inside the trigger.
+  const $trigger = e.target.closest('[data-ak-map-popup]')
+    || e.target.closest('.itinerary_logistics_select_wrap')?.parentElement.querySelector('[data-ak-map-popup]');
   if (!$trigger) return;
   e.preventDefault();
 
@@ -1478,7 +1532,9 @@ function handleFieldMapPopup(e) {
   }
 
   if (!saveObj?.location) {
-    placeAutocompleteEls[field.markerKey]?.focus();
+    // Arrival/departure: the search box of whichever mode is showing.
+    const autocompleteKey = field.prefix ? `${field.markerKey}-${getTransportMode(field.prefix)}` : field.markerKey;
+    placeAutocompleteEls[autocompleteKey]?.focus();
     return;
   }
 
@@ -1624,8 +1680,8 @@ function restoreAirports() {
       return;
     }
 
-    const { displayName, location, editorialSummary, type } = saveObj;
-    const pin = getCorrectTransportationPinUrl(type);
+    const { displayName, location, editorialSummary, type, mode } = saveObj;
+    const pin = getCorrectTransportationPinUrl(type, mode);
     const marker = createMarker(displayName, location, editorialSummary, type, pin, saveObj);
     if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
     markerObj[markerKey] = marker;
@@ -1638,6 +1694,7 @@ function restoreAirports() {
       const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
       if ($field && saveObj[key]) $field.value = saveObj[key];
     });
+    setTransportMode(prefix, mode);
   });
 }
 
@@ -1654,6 +1711,7 @@ function restoreAirportFlightDraft(prefix, draftKey) {
     const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
     if ($field && draft[key]) $field.value = draft[key];
   });
+  setTransportMode(prefix, draft.mode);
 }
 
 function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value) {
