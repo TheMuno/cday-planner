@@ -453,6 +453,10 @@ getSignInBtn()?.addEventListener('click', e => {
   const $signInBtn = e.currentTarget;
   const signInHref = $signInBtn.getAttribute('href') || '/log-in';
   e.preventDefault();
+  // firebase-auth.js sends the user back to ak-login-redirect after signing in. Always set it to this
+  // page here, so neither a missing value (its /smart-guide/itinerary fallback) nor another tab that
+  // overwrote it sends them elsewhere.
+  localStorage['ak-login-redirect'] = '/hotel-next/itinerary';
   window.location.href = signInHref;
 });
 
