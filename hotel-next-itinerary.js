@@ -75,15 +75,16 @@ function getContinueBtn() {
 onAuthStateChanged(auth, user => {
   const $continueBtn = getContinueBtn();
   const $signInBtn = getSignInBtn();
-  const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
+  // There's more than one save-itinerary (the nav link and the logistics form's submit), so all of them.
+  const $saveBtns = document.querySelectorAll('[data-ak="save-itinerary"]');
   if (user) {
     $continueBtn?.removeAttribute('data-ak-hidden');
-    $saveBtn?.removeAttribute('data-ak-hidden');
+    $saveBtns.forEach($btn => $btn.removeAttribute('data-ak-hidden'));
     $signInBtn?.setAttribute('data-ak-hidden', 'true');
   } else {
     $signInBtn?.removeAttribute('data-ak-hidden');
     $continueBtn?.setAttribute('data-ak-hidden', 'true');
-    $saveBtn?.setAttribute('data-ak-hidden', 'true');
+    $saveBtns.forEach($btn => $btn.setAttribute('data-ak-hidden', 'true'));
   }
 });
 
@@ -519,24 +520,24 @@ function resetStepLink($link) {
   $text?.querySelector('.ak-step2-spinner')?.remove();
 }
 
-// On hotel-next, save-itinerary is the logistics form's <input type="submit"> ("Save trip details"),
-// which has no inner HTML to hold a spinner — its value (text only) is swapped instead.
-const $saveBtn = document.querySelector('[data-ak="save-itinerary"]');
-const saveBtnIsInput = $saveBtn?.tagName === 'INPUT';
-const saveBtnOriginalHTML = saveBtnIsInput ? $saveBtn.value : $saveBtn?.innerHTML;
+// On hotel-next there are two save-itinerary buttons ("Save trip details"): the nav link (<a>) and
+// the logistics form's <input type="submit">. The input has no inner HTML to hold a spinner, so its
+// value (text only) is swapped instead. Each button keeps its own original label.
+const $saveBtns = [...document.querySelectorAll('[data-ak="save-itinerary"]')];
+const saveBtnOriginalLabels = new Map($saveBtns.map($btn => [$btn, $btn.tagName === 'INPUT' ? $btn.value : $btn.innerHTML]));
 
-function setSaveBtnLabel(html, text) {
-  if (saveBtnIsInput) $saveBtn.value = text;
-  else $saveBtn.innerHTML = html;
+function setSaveBtnLabel($btn, html, text) {
+  if ($btn.tagName === 'INPUT') $btn.value = text;
+  else $btn.innerHTML = html;
 }
 
-function resetSaveBtn() {
-  if (!$saveBtn) return;
-  $saveBtn.classList.remove('ak-saving');
-  $saveBtn.disabled = false;
-  $saveBtn.style.opacity = '';
-  $saveBtn.style.minWidth = '';
-  setSaveBtnLabel(saveBtnOriginalHTML, saveBtnOriginalHTML);
+function resetSaveBtn($btn) {
+  const original = saveBtnOriginalLabels.get($btn);
+  $btn.classList.remove('ak-saving');
+  $btn.disabled = false;
+  $btn.style.opacity = '';
+  $btn.style.minWidth = '';
+  setSaveBtnLabel($btn, original, original);
 }
 
 // The Plan / Verify / Guide step links (the current one, Plan, excluded) — on Carlton Arms this was
@@ -549,7 +550,7 @@ const stepLinkSelector = '.app_title_steps_item[href]:not(.w--current)';
 window.addEventListener('pageshow', e => {
   if (!e.persisted) return;
   resetContinueBtn();
-  resetSaveBtn();
+  $saveBtns.forEach(resetSaveBtn);
   document.querySelectorAll(stepLinkSelector).forEach(resetStepLink);
 });
 
@@ -584,15 +585,16 @@ $continueBtn?.addEventListener('click', async e => {
   }
 });
 
-$saveBtn?.addEventListener('click', async e => {
+$saveBtns.forEach($saveBtn => $saveBtn.addEventListener('click', async e => {
   e.preventDefault();
   const $btn = e.currentTarget;
-  if ($btn.classList.contains('ak-saving')) return;
+  // Either button mid-save blocks both, so the trip isn't saved twice at once.
+  if ($saveBtns.some($b => $b.classList.contains('ak-saving'))) return;
 
   injectStep2SpinnerStyle();
 
   $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
-  setSaveBtnLabel('<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>', 'Saving...');
+  setSaveBtnLabel($btn, '<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>', 'Saving...');
   $btn.classList.add('ak-saving');
   $btn.disabled = true;
   $btn.style.opacity = '0.8';
@@ -602,7 +604,7 @@ $saveBtn?.addEventListener('click', async e => {
     // Success confirmation before restoring -- only save-itinerary stays on the page after
     // saving (continue-to-step2 and the step links navigate away immediately), so this is
     // the only save action a checkmark would actually be seen on.
-    setSaveBtnLabel('<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>', 'Saved!');
+    setSaveBtnLabel($btn, '<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>', 'Saved!');
     await new Promise(resolve => setTimeout(resolve, 900));
   } catch (err) {
     console.error(err);
@@ -610,9 +612,9 @@ $saveBtn?.addEventListener('click', async e => {
       ? "We couldn't save your trip. Please try again in a moment."
       : "You're offline — please check your internet connection and try again.");
   } finally {
-    resetSaveBtn();
+    resetSaveBtn($btn);
   }
-});
+}));
 
 // The Verify / Guide step links point straight at their pages — without this they navigate before
 // the trip is saved, same gap continue-to-step2 used to have.
