@@ -220,7 +220,7 @@ const FIXED_HOTELS = {
 };
 const fixedHotel = FIXED_HOTELS[localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral']] || null;
 const mapCenter = fixedHotel?.center || { lat: 40.7580, lng: -73.9855 };
-const mapZoom = fixedHotel ? 17 : 14;
+const mapZoom = fixedHotel ? 16 : 13;
 
 // "Welcome to [Hotel Name]" and "Hotel: [ Hotel Name ]". A fixed hotel's name is known up front, so
 // it goes in right away rather than waiting on the Places round-trip.
