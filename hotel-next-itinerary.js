@@ -252,11 +252,13 @@ AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelect
 // The line under the name in the "Selected" box. The markup only has a car version ("Driving - No
 // carrier needed", data-toggle-show="car"), so it's taken off the page's toggle script and kept shown,
 // with its text set per mode instead: the flight/train details typed in for plane/train, and the
-// markup's own text for car.
+// markup's own text for car. The drive-time line below can carry data-toggle-show="car" too, so it's
+// skipped here.
 const transportSummaries = {};
 AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
   const $line = document.querySelector(nameSelector)
-    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-toggle-show="car"]');
+    ?.closest('.itinerary_logistics_select_inner')
+    ?.querySelector('[data-toggle-show="car"]:not([data-ak="drive-time"], [data-ak="drive-time"] *)');
   if (!$line) return;
   $line.removeAttribute('data-toggle-show');
   $line.removeAttribute('data-toggle-off');
