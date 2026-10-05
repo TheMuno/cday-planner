@@ -292,32 +292,48 @@ function updateTransportSummary(prefix) {
 // way as the summary line above). Its text is authored in Webflow with a "[time]" placeholder (e.g.
 // "Driving - Estimated arrival: [time]"), swapped for whatever's typed in that block's time field
 // (arrival-time / departure-time) — so the wording around it can be changed in Webflow without
-// touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]"). Each text node
-// holding the placeholder keeps its original text as the template, so the swap can be redone on
-// every edit. Shown only in Car mode, and hidden while the time is empty so the bare placeholder
+// touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]"). Each placeholder is
+// swapped for a <span data-ak-time-slot> whose text is the time. The line and its slots are looked
+// up fresh on every update rather than held from page load, since other page scripts can re-render
+// that rich text after this runs, and a re-render that brings the placeholder back just gets
+// wrapped again. Shown only in Car mode, and hidden while the time is empty so the bare placeholder
 // never shows. Mode switches reach here via toggle:change below.
 const TIME_PLACEHOLDER = /\[\s*time\s*\]/gi;
-const driveTimeLines = {};
-AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
-  const $line = document.querySelector(nameSelector)
-    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-ak="drive-time"]');
-  if (!$line) return;
-  const templates = [];
+
+function getDriveTimeLine(prefix) {
+  const { nameSelector } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
+  return document.querySelector(nameSelector)
+    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-ak="drive-time"]') || null;
+}
+
+function wrapTimePlaceholders($line) {
+  const nodes = [];
   const walker = document.createTreeWalker($line, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
-    const node = walker.currentNode;
-    if (node.nodeValue.search(TIME_PLACEHOLDER) !== -1) templates.push({ node, template: node.nodeValue });
+    if (walker.currentNode.nodeValue.search(TIME_PLACEHOLDER) !== -1) nodes.push(walker.currentNode);
   }
-  driveTimeLines[prefix] = { $line, templates };
-});
+  nodes.forEach(node => {
+    const $frag = document.createDocumentFragment();
+    node.nodeValue.split(TIME_PLACEHOLDER).forEach((text, i) => {
+      if (i) {
+        const $slot = document.createElement('span');
+        $slot.setAttribute('data-ak-time-slot', '');
+        $frag.append($slot);
+      }
+      if (text) $frag.append(text);
+    });
+    node.replaceWith($frag);
+  });
+}
 
 function updateDriveTime(prefix) {
-  const driveTime = driveTimeLines[prefix];
-  if (!driveTime) return;
+  const $line = getDriveTimeLine(prefix);
+  if (!$line) return;
+  wrapTimePlaceholders($line);
   const time = document.querySelector(`[data-ak="${prefix}-time"]`)?.value.trim() || '';
-  driveTime.templates.forEach(({ node, template }) => { node.nodeValue = template.replace(TIME_PLACEHOLDER, () => time); });
-  if (time && getTransportMode(prefix) === 'car') driveTime.$line.removeAttribute('data-ak-hidden');
-  else driveTime.$line.setAttribute('data-ak-hidden', 'true');
+  $line.querySelectorAll('[data-ak-time-slot]').forEach($slot => { $slot.textContent = time; });
+  if (time && getTransportMode(prefix) === 'car') $line.removeAttribute('data-ak-hidden');
+  else $line.setAttribute('data-ak-hidden', 'true');
 }
 
 // The Train/Car fields carry data-ak-hidden in the markup so they don't flash before the page toggle
