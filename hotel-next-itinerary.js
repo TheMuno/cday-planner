@@ -74,7 +74,8 @@ function getContinueBtn() {
 // nothing there.
 onAuthStateChanged(auth, user => {
   const $continueBtn = getContinueBtn();
-  const $signInBtn = getSignInBtn();
+  // Every copy, not just the first -- a page can end up with more than one (e.g. a duplicated nav).
+  const $signInBtns = document.querySelectorAll('[data-ak="sign-in-to-save"]');
   // There's more than one save-itinerary (the nav link and the logistics form's submit), so all of them.
   // One marked data-ak-show-signed-out in Webflow stays visible when signed out too (its click
   // sends the user to sign in instead -- see the save handler below).
@@ -82,9 +83,9 @@ onAuthStateChanged(auth, user => {
   if (user) {
     $continueBtn?.removeAttribute('data-ak-hidden');
     $saveBtns.forEach($btn => $btn.removeAttribute('data-ak-hidden'));
-    $signInBtn?.setAttribute('data-ak-hidden', 'true');
+    $signInBtns.forEach($btn => $btn.setAttribute('data-ak-hidden', 'true'));
   } else {
-    $signInBtn?.removeAttribute('data-ak-hidden');
+    $signInBtns.forEach($btn => $btn.removeAttribute('data-ak-hidden'));
     $continueBtn?.setAttribute('data-ak-hidden', 'true');
     $saveBtns.forEach($btn => $btn.hasAttribute('data-ak-show-signed-out')
       ? $btn.removeAttribute('data-ak-hidden')
@@ -316,7 +317,9 @@ function updateTransportSummary(prefix) {
   getTransportLines(prefix).forEach(({ $line, mode }) => {
     if (mode === 'plane' || mode === 'train') {
       ($line.querySelector('p') || $line).textContent = getTransportDetails(prefix, mode);
-      $line.removeAttribute('data-ak-hidden');
+      // Only the current mode's line is shown, so the other lines' wrappers don't take up space.
+      if (getTransportMode(prefix) === mode) $line.removeAttribute('data-ak-hidden');
+      else $line.setAttribute('data-ak-hidden', 'true');
     } else if (mode === 'car') {
       wrapTimePlaceholders($line);
       $line.querySelectorAll('[data-ak-time-slot]').forEach($slot => { $slot.textContent = time; });
@@ -572,10 +575,10 @@ function goToSignIn() {
   window.location.href = signInHref;
 }
 
-getSignInBtn()?.addEventListener('click', e => {
+document.querySelectorAll('[data-ak="sign-in-to-save"]').forEach($btn => $btn.addEventListener('click', e => {
   e.preventDefault();
   goToSignIn();
-});
+}));
 
 // Shared by continue-to-step2, save-itinerary and the step links — whichever is clicked first injects it.
 function injectStep2SpinnerStyle() {
