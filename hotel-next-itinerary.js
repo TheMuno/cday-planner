@@ -249,63 +249,33 @@ MAP_POPUP_FIELDS.forEach(field => {
 // or a pick says otherwise.
 AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelector(nameSelector)));
 
-// The line under the name in the "Selected" box. The markup only has a car version ("Driving - No
-// carrier needed", data-toggle-show="car"), so it's taken off the page's toggle script and kept shown,
-// with its text set per mode instead: the flight/train details typed in for plane/train, and the
-// markup's own text for car. The drive-time line below can carry data-toggle-show="car" too, so it's
-// skipped here.
-const transportSummaries = {};
-AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
-  const $line = document.querySelector(nameSelector)
-    ?.closest('.itinerary_logistics_select_inner')
-    ?.querySelector('[data-toggle-show="car"]:not([data-ak="drive-time"], [data-ak="drive-time"] *)');
-  if (!$line) return;
-  $line.removeAttribute('data-toggle-show');
-  $line.removeAttribute('data-toggle-off');
-  const $text = $line.querySelector('p') || $line;
-  transportSummaries[prefix] = { $text, carText: $text.textContent };
-});
-
-// With none of the details filled in, plane/train fall back to the picked place's neighborhood
-// (saved with it as `neighborhood`), and failing that to an "Add ... details" prompt.
-function updateTransportSummary(prefix) {
-  updateDriveTime(prefix);
-  const summary = transportSummaries[prefix];
-  if (!summary) return;
-  const val = suffix => document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim() || '';
-  const mode = getTransportMode(prefix);
-  const join = (...parts) => parts.filter(Boolean).join(' · ');
-  const { storageKey } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
-  let neighborhood = '';
-  try {
-    neighborhood = JSON.parse(localStorage[storageKey] || 'null')?.neighborhood || '';
-  } catch (e) {}
-  if (mode === 'plane') {
-    summary.$text.textContent = join(val('carrier-name'), val('flight-number'), val('time')) || neighborhood || 'Add flight details';
-  } else if (mode === 'train') {
-    const trainNum = val('train-number');
-    summary.$text.textContent = join(val('train-carrier-name'), trainNum && `Train ${trainNum}`, val('time')) || neighborhood || 'Add train details';
-  } else {
-    summary.$text.textContent = summary.carText;
-  }
-}
-
-// The drive-time line in each "Selected" box (Arrival and Departure each have one, found the same
-// way as the summary line above). Its text is authored in Webflow with a "[time]" placeholder (e.g.
-// "Driving - Estimated arrival: [time]"), swapped for whatever's typed in that block's time field
-// (arrival-time / departure-time) — so the wording around it can be changed in Webflow without
-// touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]"). Each placeholder is
-// swapped for a <span data-ak-time-slot> whose text is the time. The line and its slots are looked
-// up fresh on every update rather than held from page load, since other page scripts can re-render
-// that rich text after this runs, and a re-render that brings the placeholder back just gets
-// wrapped again. Shown only in Car mode, and hidden while the time is empty so the bare placeholder
-// never shows. Mode switches reach here via toggle:change below.
+// The per-mode lines under the name in each "Selected" box: [data-ak="transport-line"] divs, one per
+// mode, told apart by data-toggle-show ("plane", "train" or "car") on the line itself or on a div
+// inside it — the page toggle script uses that to show only the current mode's line. The older
+// [data-ak="drive-time"] line counts as a car line. Arrival's and Departure's lines are found from
+// their own picked name, so the two blocks never mix.
+// - plane/train: the line's text is set to the details typed in, joined with " · " (e.g.
+//   "Delta · DL123 · 2:20 PM", "Amtrak · Train 42 · 2:20 PM"), with any empty field just left out.
+//   With none filled in, it falls back to the picked place's neighborhood (saved with it as
+//   `neighborhood`), and failing that to an "Add ... details" prompt.
+// - car: its text is authored in Webflow with a "[time]" placeholder (e.g. "Driving - Estimated
+//   arrival: [time]"), swapped for the time typed in — so the wording around it can be changed in
+//   Webflow without touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]").
+//   Each placeholder becomes a <span data-ak-time-slot> holding the time. Hidden while the time is
+//   empty so the bare placeholder never shows.
+// Lines are looked up fresh on every update rather than held from page load, since other page scripts
+// can re-render that rich text after this runs. Mode switches reach here via toggle:change below.
 const TIME_PLACEHOLDER = /\[\s*time\s*\]/gi;
 
-function getDriveTimeLine(prefix) {
+function getTransportLines(prefix) {
   const { nameSelector } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
-  return document.querySelector(nameSelector)
-    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-ak="drive-time"]') || null;
+  const $box = document.querySelector(nameSelector)?.closest('.itinerary_logistics_select_inner');
+  if (!$box) return [];
+  return [...$box.querySelectorAll('[data-ak="transport-line"], [data-ak="drive-time"]')].map($line => {
+    const $toggle = $line.matches('[data-toggle-show]') ? $line : $line.querySelector('[data-toggle-show]');
+    const mode = $line.matches('[data-ak="drive-time"]') ? 'car' : $toggle?.getAttribute('data-toggle-show').trim();
+    return { $line, mode };
+  });
 }
 
 function wrapTimePlaceholders($line) {
@@ -328,14 +298,32 @@ function wrapTimePlaceholders($line) {
   });
 }
 
-function updateDriveTime(prefix) {
-  const $line = getDriveTimeLine(prefix);
-  if (!$line) return;
-  wrapTimePlaceholders($line);
+function getTransportDetails(prefix, mode) {
+  const val = suffix => document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim() || '';
+  const join = (...parts) => parts.filter(Boolean).join(' · ');
+  const { storageKey } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
+  let neighborhood = '';
+  try {
+    neighborhood = JSON.parse(localStorage[storageKey] || 'null')?.neighborhood || '';
+  } catch (e) {}
+  if (mode === 'plane') return join(val('carrier-name'), val('flight-number'), val('time')) || neighborhood || 'Add flight details';
+  const trainNum = val('train-number');
+  return join(val('train-carrier-name'), trainNum && `Train ${trainNum}`, val('time')) || neighborhood || 'Add train details';
+}
+
+function updateTransportSummary(prefix) {
   const time = document.querySelector(`[data-ak="${prefix}-time"]`)?.value.trim() || '';
-  $line.querySelectorAll('[data-ak-time-slot]').forEach($slot => { $slot.textContent = time; });
-  if (time && getTransportMode(prefix) === 'car') $line.removeAttribute('data-ak-hidden');
-  else $line.setAttribute('data-ak-hidden', 'true');
+  getTransportLines(prefix).forEach(({ $line, mode }) => {
+    if (mode === 'plane' || mode === 'train') {
+      ($line.querySelector('p') || $line).textContent = getTransportDetails(prefix, mode);
+      $line.removeAttribute('data-ak-hidden');
+    } else if (mode === 'car') {
+      wrapTimePlaceholders($line);
+      $line.querySelectorAll('[data-ak-time-slot]').forEach($slot => { $slot.textContent = time; });
+      if (time && getTransportMode(prefix) === 'car') $line.removeAttribute('data-ak-hidden');
+      else $line.setAttribute('data-ak-hidden', 'true');
+    }
+  });
 }
 
 // The Train/Car fields carry data-ak-hidden in the markup so they don't flash before the page toggle
