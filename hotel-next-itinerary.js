@@ -237,14 +237,39 @@ function setHotelNameText(name) {
     const $text = $el.querySelector('h1, h2, p');
     if ($text) $text.textContent = name;
   });
+  setWelcomeHasHotel(true);
   finishWelcomeMsg();
+}
+
+// With no hotel (demo, nothing saved or picked, or the hotel removed), the hero reads just "Welcome":
+// the "Welcome to" text node loses its " to" and the hero's own [data-ak="hotel-name"] is hidden.
+// Picking a hotel puts both back. The authored text is captured up front so it can be restored.
+const $welcomeMsg = document.querySelector('[data-ak="welcome-msg"]');
+const $welcomeHotelName = $welcomeMsg?.querySelector('[data-ak="hotel-name"]') || null;
+const $welcomeTextNode = (() => {
+  const $h = $welcomeMsg && [...$welcomeMsg.querySelectorAll('h1, h2, p')].find($el => !$welcomeHotelName?.contains($el));
+  return $h ? [...$h.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) : null;
+})();
+const welcomeTemplateText = $welcomeTextNode?.nodeValue ?? '';
+let welcomeHasHotel = false;
+
+function setWelcomeHasHotel(hasHotel) {
+  welcomeHasHotel = hasHotel;
+  if ($welcomeTextNode) {
+    $welcomeTextNode.nodeValue = hasHotel ? welcomeTemplateText : welcomeTemplateText.replace(/\s+to\s*$/i, '');
+  }
+  if (hasHotel) $welcomeHotelName?.removeAttribute('data-ak-hidden');
+  else $welcomeHotelName?.setAttribute('data-ak-hidden', 'true');
 }
 
 // "Welcome to [Hotel Name]" shimmers (data-ak-skeleton-pulse, set in Webflow) until the hotel name is
 // in: straight away for a fixed hotel, otherwise once the saved trip is restored (see tripRestored
-// below) -- with or without a saved hotel, so it never gets stuck. Webflow's [Hotel Name] then stays.
+// below) -- with or without a saved hotel, so it never gets stuck. With no hotel by then it's just
+// "Welcome".
 function finishWelcomeMsg() {
-  document.querySelector('[data-ak="welcome-msg"]')?.removeAttribute('data-ak-skeleton-pulse');
+  if (!$welcomeMsg) return;
+  if (!fixedHotel && !welcomeHasHotel) setWelcomeHasHotel(false);
+  $welcomeMsg.removeAttribute('data-ak-skeleton-pulse');
 }
 if (fixedHotel) setHotelNameText(fixedHotel.name);
 
@@ -1301,7 +1326,10 @@ function clearMapPopupField(field) {
   hideRemoveIcon($nameEl);
 
   setUnsavedChangesFlag();
-  if (field.storageKey === 'ak-hotel') restoreTripHeadingName();
+  if (field.storageKey === 'ak-hotel') {
+    restoreTripHeadingName();
+    if (!fixedHotel) setWelcomeHasHotel(false);
+  }
 }
 
 function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = null } = {}) {
