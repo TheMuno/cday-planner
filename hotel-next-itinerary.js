@@ -540,8 +540,8 @@ window.addEventListener('load', async () => {
     }
   });
 
-  // The Plane / Train / Car pick is saved with that arrival/departure. Only real clicks —
-  // restoreAirports() switches modes with .click() too, and that shouldn't count as an edit.
+  // Switching Plane / Train / Car swaps in that mode's own pick (see switchAirportMode()). Only real
+  // clicks — restoreAirports() switches modes with .click() too, and that shouldn't count as an edit.
   document.body.addEventListener('click', e => {
     const $toggle = e.isTrusted && e.target.closest('[data-toggle]');
     if (!$toggle) return;
@@ -549,7 +549,7 @@ window.addEventListener('load', async () => {
     if (!field) return;
 
     setUnsavedChangesFlag();
-    saveAirportFlightFieldLocal(field.storageKey, field.updateKey, field.draftKey, 'mode', $toggle.dataset.toggle);
+    switchAirportMode(field, $toggle.dataset.toggle);
   });
 
   document.body.addEventListener('submit', e => {
@@ -1840,7 +1840,8 @@ function restoreHotel() {
 }
 
 function restoreAirports() {
-  AIRPORT_FIELDS.forEach(({ markerKey, storageKey, nameSelector, prefix, draftKey }) => {
+  AIRPORT_FIELDS.forEach(field => {
+    const { storageKey, prefix, draftKey } = field;
     let saveObj;
     try {
       saveObj = JSON.parse(localStorage[storageKey] || 'null');
@@ -1853,15 +1854,8 @@ function restoreAirports() {
       return;
     }
 
-    const { displayName, location, editorialSummary, type, mode } = saveObj;
-    const pin = getCorrectTransportationPinUrl(type, mode);
-    const marker = createMarker(displayName, location, editorialSummary, type, pin, saveObj);
-    if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
-    markerObj[markerKey] = marker;
-
-    const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
-    if ($nameEl) $nameEl.textContent = displayName;
-    showRemoveIcon($nameEl);
+    const { location, mode } = saveObj;
+    showAirportPick(field, saveObj);
 
     AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
       const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
@@ -1885,6 +1879,86 @@ function restoreAirports() {
       });
     }
   });
+}
+
+function createAirportMarker(saveObj) {
+  const { displayName, location, editorialSummary, type, mode } = saveObj;
+  return createMarker(displayName, location, editorialSummary, type, getCorrectTransportationPinUrl(type, mode), saveObj);
+}
+
+// Puts a saved arrival/departure place in its "Selected" box, and on the map — with `marker` if it's
+// already there, or a new one.
+function showAirportPick({ markerKey, nameSelector }, saveObj, marker = null) {
+  const { displayName } = saveObj;
+  if (markerObj[markerKey] && markerObj[markerKey] !== marker) markerObj[markerKey].setMap(null);
+  markerObj[markerKey] = marker || createAirportMarker(saveObj);
+
+  const $nameEl = document.querySelector(nameSelector);
+  if ($nameEl) $nameEl.textContent = displayName;
+  showRemoveIcon($nameEl);
+}
+
+// Each mode keeps its own arrival/departure pick: switching from Plane (LaGuardia) to Train shows
+// "Nothing selected yet" (or the station picked earlier under Train), and switching back brings
+// LaGuardia back. The current mode's pick stays under storageKey — the one in the "Selected" box, on
+// the map, and saved with the trip — while the other modes' picks wait in a local stash
+// (ak-arrival-airport-by-mode / ak-departure-airport-by-mode), keyed by mode. Their markers come off
+// the map but are kept in stashedAirportMarkers (keyed "<markerKey>-<mode>"), so switching back just
+// puts the same marker back. Typed details are in separate per-mode inputs (carrier/number) or shared
+// (time), so they're left as they are.
+const stashedAirportMarkers = {};
+
+function getAirportStash(storageKey) {
+  try {
+    return JSON.parse(localStorage[`${storageKey}-by-mode`] || 'null') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function switchAirportMode(field, mode) {
+  const { storageKey, updateKey, draftKey, markerKey, nameSelector, prefix } = field;
+  const stashKey = `${storageKey}-by-mode`;
+  let current;
+  try {
+    current = JSON.parse(localStorage[storageKey] || 'null');
+  } catch (e) {
+    current = null;
+  }
+  const stash = getAirportStash(storageKey);
+
+  if (current?.location) {
+    const currentMode = TRANSPORT_MODES[current.mode] ? current.mode : 'plane';
+    if (currentMode === mode) return;
+    stash[currentMode] = current;
+    if (markerObj[markerKey]) {
+      markerObj[markerKey].map = null;
+      stashedAirportMarkers[`${markerKey}-${currentMode}`] = markerObj[markerKey];
+    }
+    delete markerObj[markerKey];
+  }
+  const next = stash[mode];
+  delete stash[mode];
+  localStorage[stashKey] = JSON.stringify(stash);
+
+  if (next) {
+    localStorage[storageKey] = JSON.stringify(next);
+    const nextMarker = stashedAirportMarkers[`${markerKey}-${mode}`] || null;
+    delete stashedAirportMarkers[`${markerKey}-${mode}`];
+    if (nextMarker) nextMarker.map = map;
+    showAirportPick(field, next, nextMarker);
+  } else {
+    if (current?.location) {
+      localStorage.removeItem(storageKey);
+      const $nameEl = document.querySelector(nameSelector);
+      if ($nameEl) $nameEl.textContent = field.defaultText || '';
+      hideRemoveIcon($nameEl);
+    }
+    // No pick in this mode: the mode is kept with the typed-in details, as before a pick is made.
+    saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, 'mode', mode);
+  }
+  localStorage[updateKey] = true;
+  updateTransportSummary(prefix);
 }
 
 function restoreAirportFlightDraft(prefix, draftKey) {
