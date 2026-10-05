@@ -1056,9 +1056,9 @@ function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, name
   moveWhenVisible($wrap, placeAutocomplete);
 }
 
-// A driving start/end point is just an address, so it gets the map's default pin (null).
+// A driving start/end point is just an address, so it gets the camera pin (the site's default).
 function getCorrectTransportationPinUrl(type, mode) {
-  if (mode === 'car') return null;
+  if (mode === 'car') return cameraPinUrl;
   if (!type) return airportMarkerPinUrl;
   if (type.includes('bus_station')) return busPinUrl;
   if (type.includes('train_station')) return trainPinUrl;
@@ -1068,14 +1068,16 @@ function getCorrectTransportationPinUrl(type, mode) {
 function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
   const markerPinImg = document.createElement('img');
   const isRestaurant = type.includes('restaurant') || type.includes('food');
-  markerPinImg.src = isRestaurant && markerPinSrc !== hotelMarkerPinUrl ? foodForkPinUrl : markerPinSrc;
+  // Restaurants always get the knife & fork; anything without a pin falls back to the camera.
+  const pinSrc = isRestaurant && markerPinSrc !== hotelMarkerPinUrl ? foodForkPinUrl : (markerPinSrc || cameraPinUrl);
+  markerPinImg.src = pinSrc;
   markerPinImg.className = 'ak-marker-pin';
 
   const marker = new google.maps.marker.AdvancedMarkerElement({
     map,
     position,
     title,
-    ...(markerPinSrc ? { content: markerPinImg } : {}),
+    content: markerPinImg,
     gmpClickable: true,
   });
 
