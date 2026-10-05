@@ -121,12 +121,13 @@ $datesSource?.addEventListener('change', () => {
 
 // Where "Customize now" goes, by the hotel picked -- mirrors hotelMap/resolveHotel() in
 // flow-trial.js. `referral` is saved as ak-hotel-referral / ak-flow-trial-hotel, same keys
-// flow-trial.js sets for firebase-auth.js. Anything not matched (e.g. Radio City Apartments)
-// falls back to the demo hotel, same as flow-trial.js.
+// flow-trial.js sets for firebase-auth.js. `tag` must match a key in FLOW_TRIAL_HOTELS
+// (functions/index.js) to route to that hotel's own sheet. "Radio City Hall" is the demo hotel,
+// and anything else not matched falls back to it too, same as flow-trial.js.
 const hotelMap = {
-  'carlton': { redirect: '/carlton-arms/itinerary', referral: 'carlton-arms' },
-  'compton': { redirect: '/compton/itinerary', referral: 'compton' },
-  'demo': { redirect: '/demo-hotel/itinerary', referral: 'demo' },
+  'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms', referral: 'carlton-arms' },
+  'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville', referral: 'compton' },
+  'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo', referral: 'demo' },
 };
 
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
@@ -146,6 +147,38 @@ function storeFlowTrialKeys() {
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
 }
 
+// Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
+// Guests" tab. The server finds each value by its key (last+name, travel+date, guest, reservation),
+// so the keys below are those fields' data-ak names. Travel dates are sent from the hidden
+// flatpickr input ("2026-10-06 to 2026-10-08"), which the server reformats.
+const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
+const [$hotelField, $reservationField, $lastNameField, $guestCountField] = [
+  ['hotel-name', 'Hotel'],
+  ['reservation-num', 'Reservation number'],
+  ['last-name', 'Guest last name'],
+  ['guest-count', 'Number of guests'],
+].map(([ak, label]) => $lookupForm && ($lookupForm.querySelector(`[data-ak="${ak}"]`) || findFieldByLabel(label)));
+
+function saveLookupSubmission() {
+  const value = $field => $field?.value.trim() || '';
+  const fields = {
+    hotel: value($hotelField),
+    'user-travel-dates': value($datesSource),
+    'last-name': value($lastNameField),
+    'guest-count': value($guestCountField),
+    'reservation-num': value($reservationField),
+  };
+  // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
+  fetch(SAVE_FLOW_TRIAL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hotel: resolveHotel().tag, fields }),
+    keepalive: true,
+  }).then(res => {
+    if (!res.ok) throw new Error(`saveFlowTrialSubmission responded ${res.status}`);
+  }).catch(err => console.error('Failed to save look-up submission:', err));
+}
+
 // Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
 const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 
@@ -154,6 +187,7 @@ const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 function continueToHotel() {
   if (!validateLookupForm()) return;
   storeFlowTrialKeys();
+  saveLookupSubmission();
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
   if (href && href !== '#') window.location.href = href;
