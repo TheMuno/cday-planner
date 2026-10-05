@@ -267,6 +267,7 @@ AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
 // With none of the details filled in, plane/train fall back to the picked place's neighborhood
 // (saved with it as `neighborhood`), and failing that to an "Add ... details" prompt.
 function updateTransportSummary(prefix) {
+  updateDriveTime(prefix);
   const summary = transportSummaries[prefix];
   if (!summary) return;
   const val = suffix => document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim() || '';
@@ -285,6 +286,38 @@ function updateTransportSummary(prefix) {
   } else {
     summary.$text.textContent = summary.carText;
   }
+}
+
+// The drive-time line in each "Selected" box (Arrival and Departure each have one, found the same
+// way as the summary line above). Its text is authored in Webflow with a "[time]" placeholder (e.g.
+// "Driving - Estimated arrival: [time]"), swapped for whatever's typed in that block's time field
+// (arrival-time / departure-time) — so the wording around it can be changed in Webflow without
+// touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]"). Each text node
+// holding the placeholder keeps its original text as the template, so the swap can be redone on
+// every edit. Shown only in Car mode, and hidden while the time is empty so the bare placeholder
+// never shows. Mode switches reach here via toggle:change below.
+const TIME_PLACEHOLDER = /\[\s*time\s*\]/gi;
+const driveTimeLines = {};
+AIRPORT_FIELDS.forEach(({ nameSelector, prefix }) => {
+  const $line = document.querySelector(nameSelector)
+    ?.closest('.itinerary_logistics_select_inner')?.querySelector('[data-ak="drive-time"]');
+  if (!$line) return;
+  const templates = [];
+  const walker = document.createTreeWalker($line, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.nodeValue.search(TIME_PLACEHOLDER) !== -1) templates.push({ node, template: node.nodeValue });
+  }
+  driveTimeLines[prefix] = { $line, templates };
+});
+
+function updateDriveTime(prefix) {
+  const driveTime = driveTimeLines[prefix];
+  if (!driveTime) return;
+  const time = document.querySelector(`[data-ak="${prefix}-time"]`)?.value.trim() || '';
+  driveTime.templates.forEach(({ node, template }) => { node.nodeValue = template.replace(TIME_PLACEHOLDER, () => time); });
+  if (time && getTransportMode(prefix) === 'car') driveTime.$line.removeAttribute('data-ak-hidden');
+  else driveTime.$line.setAttribute('data-ak-hidden', 'true');
 }
 
 // The Train/Car fields carry data-ak-hidden in the markup so they don't flash before the page toggle
