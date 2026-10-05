@@ -183,7 +183,8 @@ const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 } },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
-const fixedHotel = FIXED_HOTELS[localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral']] || null;
+const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
+const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
@@ -236,6 +237,14 @@ function setHotelNameText(name) {
     const $text = $el.querySelector('h1, h2, p');
     if ($text) $text.textContent = name;
   });
+  finishWelcomeMsg();
+}
+
+// "Welcome to [Hotel Name]" shimmers (data-ak-skeleton-pulse, set in Webflow) until the hotel name is
+// in: straight away for a fixed hotel, otherwise once the saved trip is restored (see tripRestored
+// below) -- with or without a saved hotel, so it never gets stuck. Webflow's [Hotel Name] then stays.
+function finishWelcomeMsg() {
+  document.querySelector('[data-ak="welcome-msg"]')?.removeAttribute('data-ak-skeleton-pulse');
 }
 if (fixedHotel) setHotelNameText(fixedHotel.name);
 
@@ -417,6 +426,9 @@ const tripRestored = new Promise((resolve, reject) => {
   rejectTripRestored = reject;
 });
 tripRestored.catch(() => {}); // reported by whichever click handler awaits it
+tripRestored.finally(finishWelcomeMsg).catch(() => {});
+// In case the restore never settles (e.g. the Maps script fails to load), the shimmer still comes down.
+setTimeout(finishWelcomeMsg, 10000);
 
 window.addEventListener('load', async () => {
   document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
@@ -921,7 +933,7 @@ async function setupHotelAutocomplete() {
 
     placeAutocomplete.value = '';
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents) };
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), guestPicked: true };
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
@@ -977,7 +989,7 @@ async function autoSetFixedHotel() {
   const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
   const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents) };
+  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), fixedHotel: fixedHotelKey };
 
   const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
   if (markerObj['hotel']) markerObj['hotel'].setMap(null);
@@ -1835,7 +1847,7 @@ function restoreHotel() {
   } catch (e) {
     return;
   }
-  if (!saveObj?.location) return;
+  if (!saveObj?.location || isLeftoverFixedHotel(saveObj)) return;
 
   const { displayName, location, editorialSummary, type } = saveObj;
   const marker = createMarker(displayName, location, editorialSummary, type, hotelMarkerPinUrl, saveObj);
@@ -2174,14 +2186,25 @@ function getTripCity() {
   let hotel;
   try { hotel = JSON.parse(localStorage['ak-hotel'] || 'null'); } catch (e) { hotel = null; }
   if (!hotel?.city) return '';
-  if (fixedHotel && !isNearFixedHotel(hotel.location)) return '';
+  if (fixedHotel ? !isNearFixedHotel(hotel.location) : isLeftoverFixedHotel(hotel)) return '';
   return hotel.city;
 }
 
-function isNearFixedHotel(location) {
+function isNearFixedHotel(location, hotel = fixedHotel) {
   if (!location) return false;
-  const { lat, lng } = fixedHotel.center;
+  const { lat, lng } = hotel.center;
   return Math.abs(location.lat - lat) < 0.005 && Math.abs(location.lng - lng) < 0.005;
+}
+
+// On the demo flow (no fixed hotel), a saved hotel that was put there by a Carlton Arms/Compton visit
+// (autoSetFixedHotel() marks it `fixedHotel`) belongs to that hotel, not this trip, so it isn't
+// restored or used for the heading. Hotels saved before that mark existed are recognized by being at
+// a fixed hotel's coords -- unless the guest picked it themselves (`guestPicked`).
+function isLeftoverFixedHotel(hotel) {
+  if (!hotel) return false;
+  if (hotel.fixedHotel) return true;
+  if (hotel.guestPicked) return false;
+  return Object.values(FIXED_HOTELS).some(entry => isNearFixedHotel(hotel.location, entry));
 }
 
 // The hotel's city from its Place address, or '' for New York City (the heading's default, N.Y.C).
