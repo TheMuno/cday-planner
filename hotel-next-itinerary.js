@@ -76,6 +76,8 @@ onAuthStateChanged(auth, user => {
   const $continueBtn = getContinueBtn();
   const $signInBtn = getSignInBtn();
   // There's more than one save-itinerary (the nav link and the logistics form's submit), so all of them.
+  // One marked data-ak-show-signed-out in Webflow stays visible when signed out too (its click
+  // sends the user to sign in instead -- see the save handler below).
   const $saveBtns = document.querySelectorAll('[data-ak="save-itinerary"]');
   if (user) {
     $continueBtn?.removeAttribute('data-ak-hidden');
@@ -84,7 +86,9 @@ onAuthStateChanged(auth, user => {
   } else {
     $signInBtn?.removeAttribute('data-ak-hidden');
     $continueBtn?.setAttribute('data-ak-hidden', 'true');
-    $saveBtns.forEach($btn => $btn.setAttribute('data-ak-hidden', 'true'));
+    $saveBtns.forEach($btn => $btn.hasAttribute('data-ak-show-signed-out')
+      ? $btn.removeAttribute('data-ak-hidden')
+      : $btn.setAttribute('data-ak-hidden', 'true'));
   }
 });
 
@@ -468,7 +472,10 @@ window.addEventListener('load', async () => {
     expandContentWrapOnDrag(e);
   });
   document.body.addEventListener('drop', handleDrop);
-  document.body.addEventListener('dragend', () => { $draggedAttraction = null; });
+  document.body.addEventListener('dragend', () => {
+    $draggedAttraction = null;
+    clearDropMarker();
+  });
 
   document.body.addEventListener('input', e => {
     if (!e.target.matches('.ak-notes')) return;
@@ -515,17 +522,20 @@ window.addEventListener('load', async () => {
 // onAuthStateChanged reveals sign-in-to-save/continue-to-step2/save-itinerary as soon as auth is
 // known, and until these handlers exist a click just follows the element's default link — skipping
 // the save. The save itself still waits on tripRestored (see above), with the spinner showing meanwhile.
-getSignInBtn()?.addEventListener('click', e => {
-  // Navigate wherever the button itself points, same as continue-to-step2 below, instead of
-  // hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
-  const $signInBtn = e.currentTarget;
-  const signInHref = $signInBtn.getAttribute('href') || '/log-in';
-  e.preventDefault();
+// Navigate wherever sign-in-to-save itself points, same as continue-to-step2 below, instead of
+// hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
+function goToSignIn() {
+  const signInHref = getSignInBtn()?.getAttribute('href') || '/log-in';
   // firebase-auth.js sends the user back to ak-login-redirect after signing in. Always set it to this
   // page here, so neither a missing value (its /smart-guide/itinerary fallback) nor another tab that
   // overwrote it sends them elsewhere.
   localStorage['ak-login-redirect'] = '/hotel-next/itinerary';
   window.location.href = signInHref;
+}
+
+getSignInBtn()?.addEventListener('click', e => {
+  e.preventDefault();
+  goToSignIn();
 });
 
 // Shared by continue-to-step2, save-itinerary and the step links — whichever is clicked first injects it.
@@ -659,6 +669,9 @@ $continueBtn?.addEventListener('click', async e => {
 
 $saveBtns.forEach($saveBtn => $saveBtn.addEventListener('click', async e => {
   e.preventDefault();
+  // Signed out (only reachable via the data-ak-show-signed-out button): there's no account to save
+  // to, so send them to sign in. Their edits are already in localStorage and come back after login.
+  if (!auth.currentUser) return goToSignIn();
   const $btn = e.currentTarget;
   // Either button mid-save blocks both, so the trip isn't saved twice at once.
   if ($saveBtns.some($b => $b.classList.contains('ak-saving'))) return;
@@ -1649,6 +1662,44 @@ function removeAttractionLocation($attraction) {
 
 let $draggedAttraction = null;
 
+// Where a drop lands: before the first item (other than the one being dragged) whose middle is below
+// the pointer, or at the end of the list when there's none. The template item stays hidden in each
+// list ([data-ak-hidden]), so it's skipped, and its place in the DOM doesn't matter.
+function getDropTarget($dropZone, clientY) {
+  const items = [...$dropZone.querySelectorAll(':scope > [data-ak="attraction-location"]:not([data-ak-hidden])')]
+    .filter($item => $item !== $draggedAttraction);
+  const $before = items.find($item => {
+    const { top, height } = $item.getBoundingClientRect();
+    return clientY < top + height / 2;
+  });
+  if ($before) return { $item: $before, position: 'before' };
+  const $last = items[items.length - 1];
+  return $last ? { $item: $last, position: 'after' } : null;
+}
+
+// The line showing where the dragged item will go: a 2px bar above or below that item.
+let $dropMarkerItem = null;
+function showDropMarker(target) {
+  if (!document.getElementById('ak-drop-marker-style')) {
+    const style = document.createElement('style');
+    style.id = 'ak-drop-marker-style';
+    style.textContent = `
+      [data-ak-drop-marker="before"] { box-shadow: 0 -2px 0 0 currentColor; }
+      [data-ak-drop-marker="after"] { box-shadow: 0 2px 0 0 currentColor; }
+    `;
+    document.head.appendChild(style);
+  }
+  if ($dropMarkerItem && $dropMarkerItem !== target?.$item) clearDropMarker();
+  if (!target) return;
+  target.$item.setAttribute('data-ak-drop-marker', target.position);
+  $dropMarkerItem = target.$item;
+}
+
+function clearDropMarker() {
+  $dropMarkerItem?.removeAttribute('data-ak-drop-marker');
+  $dropMarkerItem = null;
+}
+
 function handleDragStart(e) {
   const $dragEl = e.target.closest('[data-ak="attraction-location"]');
   if (!$dragEl || !isInAttractionsSlider($dragEl)) return;
@@ -1659,9 +1710,13 @@ function handleDragStart(e) {
 
 function handleDragOver(e) {
   const $dropZone = e.target.closest('[data-ak-type-dropzone]');
-  if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
+  if (!$dropZone || !isInAttractionsSlider($dropZone) || !$draggedAttraction) {
+    clearDropMarker();
+    return;
+  }
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  showDropMarker(getDropTarget($dropZone, e.clientY));
 }
 
 function expandContentWrapOnDrag(e) {
@@ -1681,8 +1736,11 @@ function handleDrop(e) {
 
   const $fromSlide = $draggedAttraction.closest('.w-slide');
 
-  $dropZone.appendChild($draggedAttraction);
+  const target = getDropTarget($dropZone, e.clientY);
+  if (target) target.$item.insertAdjacentElement(target.position === 'before' ? 'beforebegin' : 'afterend', $draggedAttraction);
+  else $dropZone.appendChild($draggedAttraction);
   $draggedAttraction = null;
+  clearDropMarker();
 
   const $toSlide = $dropZone.closest('.w-slide');
 
