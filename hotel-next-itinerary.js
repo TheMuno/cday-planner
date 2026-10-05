@@ -171,6 +171,19 @@ function isInAttractionsSlider($el) {
   return $el.closest('[data-ak="locations-slider"]') === $attractionsSlider;
 }
 
+// hotel-next serves whichever hotel the guest picked on the look-up form: lookup-form.js saves it as
+// ak-flow-trial-hotel ('carlton-arms' / 'compton' / 'demo'). Carlton Arms and Compton are fixed
+// hotels, same as their own pages: hotel-autocomplete is skipped and the Place is resolved from
+// these known coords instead of user input (see autoSetFixedHotel()). The same coords are the
+// initial map center, zoomed in close, so the hotel is on-screen from first paint. Anything else
+// (demo, or landing here directly) works like the demo-hotel pages: no fixed hotel, a general NYC
+// view, and the saved hotel restored by restoreHotel(). A hotel's city (when not NYC) also goes in the
+// trip heading -- see restoreTripHeadingName(). Declared up here because that runs straight away.
+const FIXED_HOTELS = {
+  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 } },
+  'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
+};
+const fixedHotel = FIXED_HOTELS[localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral']] || null;
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
 
@@ -213,18 +226,6 @@ const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 // Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
 window.chipMarkers = chipMarkers;
 
-// hotel-next serves whichever hotel the guest picked on the look-up form: lookup-form.js saves it as
-// ak-flow-trial-hotel ('carlton-arms' / 'compton' / 'demo'). Carlton Arms and Compton are fixed
-// hotels, same as their own pages: hotel-autocomplete is skipped and the Place is resolved from
-// these known coords instead of user input (see autoSetFixedHotel()). The same coords are the
-// initial map center, zoomed in close, so the hotel is on-screen from first paint. Anything else
-// (demo, or landing here directly) works like the demo-hotel pages: no fixed hotel, a general NYC
-// view, and the saved hotel restored by restoreHotel().
-const FIXED_HOTELS = {
-  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 } },
-  'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
-};
-const fixedHotel = FIXED_HOTELS[localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral']] || null;
 const mapCenter = fixedHotel?.center || { lat: 40.7580, lng: -73.9855 };
 const mapZoom = fixedHotel ? 16 : 13;
 
@@ -910,7 +911,7 @@ async function setupHotelAutocomplete() {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
 
     map.panTo(place.viewport || place.location);
 
@@ -920,7 +921,7 @@ async function setupHotelAutocomplete() {
 
     placeAutocomplete.value = '';
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents) };
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
@@ -934,6 +935,7 @@ async function setupHotelAutocomplete() {
     localStorage['ak-hotel'] = JSON.stringify(saveObj);
     localStorage['ak-update-hotel'] = true;
     setUnsavedChangesFlag();
+    restoreTripHeadingName();
   });
 
   wireOverflowEscapeOnFocus(placeAutocomplete);
@@ -953,7 +955,7 @@ async function autoSetFixedHotel() {
   try {
     ({ places } = await google.maps.places.Place.searchByText({
       textQuery: fixedHotel.textQuery,
-      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
       locationBias: { radius: 200.0, center: fixedHotel.center },
       maxResultCount: 1,
     }));
@@ -975,7 +977,7 @@ async function autoSetFixedHotel() {
   const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
   const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl };
+  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents) };
 
   const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
   if (markerObj['hotel']) markerObj['hotel'].setMap(null);
@@ -988,6 +990,7 @@ async function autoSetFixedHotel() {
   localStorage['ak-hotel'] = JSON.stringify(saveObj);
   localStorage['ak-update-hotel'] = true;
   setUnsavedChangesFlag();
+  restoreTripHeadingName();
 
   // Surface the hotel's popup right away, same as clicking its marker (createMarker's gmp-click
   // handler below) — a fixed hotel is never user-picked, so this is the only chance to show it. No scrollToMapPopupTop() here: that scrolls the page, which would be jarring on load.
@@ -1286,6 +1289,7 @@ function clearMapPopupField(field) {
   hideRemoveIcon($nameEl);
 
   setUnsavedChangesFlag();
+  if (field.storageKey === 'ak-hotel') restoreTripHeadingName();
 }
 
 function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = null } = {}) {
@@ -2162,13 +2166,47 @@ function restoreTripDaySlides(onSettled) {
 // Split into two halves so each can run at module start (see the top of the file) instead of
 // waiting on 'load' or the Firebase auth round-trip, then re-run after syncWithDB().
 // Both return true only if they actually filled in a value.
+// A fixed hotel's typed-in city wins (it's there on first paint). Otherwise it's the city Google gave
+// for the saved hotel (ak-hotel's city, set when the hotel is picked/looked up) -- for a fixed hotel,
+// only once ak-hotel is actually that hotel, so a previous trip's hotel doesn't flash in first.
+function getTripCity() {
+  if (fixedHotel?.city) return fixedHotel.city;
+  let hotel;
+  try { hotel = JSON.parse(localStorage['ak-hotel'] || 'null'); } catch (e) { hotel = null; }
+  if (!hotel?.city) return '';
+  if (fixedHotel && !isNearFixedHotel(hotel.location)) return '';
+  return hotel.city;
+}
+
+function isNearFixedHotel(location) {
+  if (!location) return false;
+  const { lat, lng } = fixedHotel.center;
+  return Math.abs(location.lat - lat) < 0.005 && Math.abs(location.lng - lng) < 0.005;
+}
+
+// The hotel's city from its Place address, or '' for New York City (the heading's default, N.Y.C).
+// NYC addresses often have no locality, just a borough as sublocality, so those count as NYC too.
+function getCityFromAddress(addressComponents = []) {
+  const find = type => addressComponents.find(c => c.types.includes(type))?.longText || '';
+  const city = find('locality') || find('postal_town');
+  const state = addressComponents.find(c => c.types.includes('administrative_area_level_1'))?.shortText;
+  const NYC_NAMES = ['New York', 'Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'The Bronx', 'Staten Island'];
+  if (state === 'NY' && (NYC_NAMES.includes(city) || (!city && NYC_NAMES.includes(find('sublocality_level_1'))))) return '';
+  return city;
+}
+
 function restoreTripHeadingName() {
   if (!$headingH2 || !headingTemplateText) return false;
+  // The destination after "to" is Webflow's (N.Y.C) unless the hotel is somewhere else, e.g. Compton → Bentonville.
+  const city = getTripCity();
+  let headingText = city ? headingTemplateText.replace(/(\bto\s+).+$/i, `$1${city}`) : headingTemplateText;
   let tripName = localStorage['ak-user-name'] || auth.currentUser?.displayName?.split(/\s+/)[0] || auth.currentUser?.email?.split('@')[0] || '';
-  if (!tripName) return false;
-  tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
-  $headingH2.textContent = headingTemplateText.replace(/^\S+/, `${tripName}'s`);
-  return true;
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    headingText = headingText.replace(/^\S+/, `${tripName}'s`);
+  }
+  $headingH2.textContent = headingText;
+  return !!tripName;
 }
 
 function restoreTripDateLine() {
