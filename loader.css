@@ -89,7 +89,7 @@
   inset: 0;
   background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
-  animation: akSkeletonShimmer 1.5s infinite, akHeroFallbackHide 0s 12s forwards;
+  animation: akSkeletonShimmer 2.2s infinite, akHeroFallbackHide 0s 12s forwards;
   pointer-events: none;
 }
 
