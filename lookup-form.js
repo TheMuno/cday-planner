@@ -144,6 +144,9 @@ function storeFlowTrialKeys() {
   const { referral } = resolveHotel();
   localStorage.setItem('ak-hotel-referral', referral);
   localStorage.setItem('ak-flow-trial-hotel', referral);
+  // firebase-auth.js clears the two keys above on sign-in, so the /stay pages read the hotel from this
+  // one, which nothing clears (stay-itinerary.js also saves it with the trip as stayHotel).
+  localStorage.setItem('ak-stay-hotel', referral);
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
 }
 

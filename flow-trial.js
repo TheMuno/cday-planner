@@ -228,6 +228,9 @@ function storeFlowTrialKeys() {
     // Tells firebase-auth.js this sign-in came through flow-trial: it sends the email to the
     // hotel's "Saves" tab on login without showing the opt-in modal.
     localStorage.setItem('ak-flow-trial-hotel', resolveHotel().referral);
+    // firebase-auth.js clears the two keys above on sign-in, so the /stay pages read the hotel from
+    // this one, which nothing clears.
+    localStorage.setItem('ak-stay-hotel', resolveHotel().referral);
     // Lets the login step find this submission's Views row and fill in the email there.
     localStorage.setItem('ak-flow-trial-reservation', document.querySelector('[data-ak="reservation-num"]')?.value.trim() || '');
 }

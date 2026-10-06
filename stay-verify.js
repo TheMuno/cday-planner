@@ -40,8 +40,12 @@ const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
-const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
-const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
+// firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
+// ak-stay-hotel (set by the look-up form and stay-itinerary.js), and saved with the trip as stayHotel
+// for other devices -- see syncWithDB(). The old keys still count for anyone who picked a hotel before.
+const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
+if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
+let fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 
 // The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
 // swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
@@ -51,23 +55,21 @@ const $navLogo = document.querySelector('[data-ak="nav-logo"]');
 function revealNavLogo() {
   $navLogo?.setAttribute('data-ak-logo-ready', 'true');
 }
-if ($navLogo) {
-  const logoUrl = fixedHotel?.logo;
-  if (logoUrl) {
-    const $logoImg = new Image();
-    $logoImg.onload = () => {
-      $logoImg.alt = fixedHotel.name;
-      $logoImg.className = 'ak-nav-logo-img';
-      $navLogo.replaceChildren($logoImg);
-      revealNavLogo();
-    };
-    $logoImg.onerror = revealNavLogo;
-    $logoImg.src = logoUrl;
-  } else {
+function showHotelLogo() {
+  const hotel = fixedHotel;
+  if (!$navLogo || !hotel?.logo) return revealNavLogo();
+  const $logoImg = new Image();
+  $logoImg.onload = () => {
+    $logoImg.alt = hotel.name;
+    $logoImg.className = 'ak-nav-logo-img';
+    $navLogo.replaceChildren($logoImg);
     revealNavLogo();
-  }
-  setTimeout(revealNavLogo, 10000);
+  };
+  $logoImg.onerror = revealNavLogo;
+  $logoImg.src = hotel.logo;
 }
+showHotelLogo();
+setTimeout(revealNavLogo, 10000);
 
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
@@ -191,6 +193,22 @@ async function syncWithDB() {
   if (!localStorage['ak-travel-days'] && dbData.travelDates) localStorage['ak-travel-days'] = dbData.travelDates;
   if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
   if (!localStorage['ak-attractions-saved'] && dbData.savedAttractions) localStorage['ak-attractions-saved'] = dbData.savedAttractions;
+  if (!localStorage['ak-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
+
+  // This browser doesn't know the trip's hotel (another device, cleared storage): take it from the
+  // trip -- stayHotel, or for trips saved before that, the key stay-itinerary.js put on the saved hotel.
+  if (!localStorage['ak-stay-hotel']) {
+    let savedHotel = null;
+    try { savedHotel = JSON.parse(dbData.hotel || 'null'); } catch (e) {}
+    const tripHotelKey = dbData.stayHotel || (FIXED_HOTELS[savedHotel?.fixedHotel] ? savedHotel.fixedHotel : '');
+    if (tripHotelKey) {
+      localStorage['ak-stay-hotel'] = tripHotelKey;
+      if (FIXED_HOTELS[tripHotelKey] && !fixedHotel) {
+        fixedHotel = FIXED_HOTELS[tripHotelKey];
+        showHotelLogo();
+      }
+    }
+  }
 }
 
 // --- Day dropdowns ---

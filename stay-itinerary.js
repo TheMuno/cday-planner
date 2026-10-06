@@ -183,7 +183,11 @@ const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
-const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
+// firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
+// ak-stay-hotel, which nothing clears, and saved with the trip (stayHotel) for other devices -- see
+// syncWithDB(). The old keys still count for anyone who picked a hotel before ak-stay-hotel existed.
+const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
+if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
 const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
@@ -2602,6 +2606,23 @@ async function syncWithDB() {
       localStorage['ak-attractions-saved'] = dbData.savedAttractions;
     }
   }
+
+  // This browser doesn't know the trip's hotel (another device, cleared storage): take it from the
+  // trip -- stayHotel, or for trips saved before that, the key autoSetFixedHotel() put on the saved
+  // hotel. fixedHotel is read once at the top and drives the map, logo, hero and hotel, so the page
+  // reloads to pick it up; every DB value is in localStorage by now, and it only happens once.
+  if (!localStorage['ak-stay-hotel']) {
+    let savedHotel = null;
+    try { savedHotel = JSON.parse(dbData.hotel || 'null'); } catch (e) {}
+    const tripHotelKey = dbData.stayHotel || (FIXED_HOTELS[savedHotel?.fixedHotel] ? savedHotel.fixedHotel : '');
+    if (tripHotelKey) {
+      localStorage['ak-stay-hotel'] = tripHotelKey;
+      if (FIXED_HOTELS[tripHotelKey] && localStorage['ak-stay-hotel'] === tripHotelKey) {
+        window.location.reload();
+        return new Promise(() => {}); // nothing else should run before the reload
+      }
+    }
+  }
 }
 
 async function saveAttractionsDB() {
@@ -2621,6 +2642,8 @@ async function saveAttractionsDB() {
     // ak-flow-trial-reservation: the reservation number from the look-up form (lookup-form.js).
     confirmationNum: localStorage['ak-hotel-conf'] || localStorage['ak-flow-trial-reservation'] || '',
   };
+  // Which hotel this trip is for ('carlton-arms' / 'compton' / 'demo'), so other devices know it too.
+  if (localStorage['ak-stay-hotel']) saveObj.stayHotel = localStorage['ak-stay-hotel'];
 
   saveObj.adultNum = localStorage['ak-adult-num'] ?? null;
   saveObj.childrenNum = localStorage['ak-children-num'] ?? null;
