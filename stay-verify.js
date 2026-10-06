@@ -35,13 +35,39 @@ function getDb() {
   return dbPromise;
 }
 
-// Same fixed hotels as stay-itinerary.js, only what the heading's city needs.
+// Same fixed hotels as stay-itinerary.js, only what the heading's city and the nav logo need.
 const FIXED_HOTELS = {
-  'carlton-arms': { center: { lat: 40.7401607, lng: -73.9852042 } },
-  'compton': { city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
+  'carlton-arms': { name: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
+  'compton': { name: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
 const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
+
+// The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
+// swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
+// hidden until data-ak-logo-ready is set here, so the Khonsu logo never flashes up first. If the
+// hotel's logo fails to load, the SVG is shown instead. (Mirrors stay-itinerary.js.)
+const $navLogo = document.querySelector('[data-ak="nav-logo"]');
+function revealNavLogo() {
+  $navLogo?.setAttribute('data-ak-logo-ready', 'true');
+}
+if ($navLogo) {
+  const logoUrl = fixedHotel?.logo;
+  if (logoUrl) {
+    const $logoImg = new Image();
+    $logoImg.onload = () => {
+      $logoImg.alt = fixedHotel.name;
+      $logoImg.className = 'ak-nav-logo-img';
+      $navLogo.replaceChildren($logoImg);
+      revealNavLogo();
+    };
+    $logoImg.onerror = revealNavLogo;
+    $logoImg.src = logoUrl;
+  } else {
+    revealNavLogo();
+  }
+  setTimeout(revealNavLogo, 10000);
+}
 
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
