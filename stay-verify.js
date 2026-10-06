@@ -281,8 +281,9 @@ function populateVerifyTable($tableWrap, items) {
   });
 }
 
-// One day per travel date that has attractions or restaurants; a day's Attractions/Restaurants block
-// is hidden when it has none (same rule as the PDF). The first day starts open, the rest closed.
+// One day per travel date; a day's Attractions/Restaurants block is hidden when it has none (same
+// rule as the PDF), and a day with neither shows its [data-ak="no-item-added"] message instead
+// (it starts off data-ak-hidden). The first day starts open, the rest closed.
 let renderedKey = null;
 function populateVerifyContent() {
   if (!$daysWrap || !$dayTemplate) return;
@@ -302,7 +303,6 @@ function populateVerifyContent() {
     const attractions = (slide.attractions || []).filter(Boolean);
     const restaurants = (slide.restaurants || []).filter(Boolean);
     const totalCount = attractions.length + restaurants.length;
-    if (!totalCount) return;
 
     const $day = $dayTemplate.cloneNode(true);
 
@@ -322,6 +322,11 @@ function populateVerifyContent() {
         return;
       }
       populateVerifyTable($tableWrap, items);
+    });
+
+    $day.querySelectorAll('[data-ak="no-item-added"]').forEach($el => {
+      if (totalCount) $el.setAttribute('data-ak-hidden', 'true');
+      else $el.removeAttribute('data-ak-hidden');
     });
 
     // Same accessibility setup the page script gives the days it binds.
