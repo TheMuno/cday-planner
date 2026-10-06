@@ -180,7 +180,7 @@ function isInAttractionsSlider($el) {
 // view, and the saved hotel restored by restoreHotel(). A hotel's city (when not NYC) also goes in the
 // trip heading -- see restoreTripHeadingName(). Declared up here because that runs straight away.
 const FIXED_HOTELS = {
-  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 } },
+  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
 const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
@@ -272,6 +272,23 @@ function finishWelcomeMsg() {
   $welcomeMsg.removeAttribute('data-ak-skeleton-pulse');
 }
 if (fixedHotel) setHotelNameText(fixedHotel.name);
+
+// The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage swaps it in; every other
+// hotel keeps Webflow's image. The new one is preloaded and only swapped in once it has loaded, so
+// there's no blank flash -- and if it fails, Webflow's image stays. srcset/sizes are cleared, or the
+// browser keeps picking Webflow's responsive versions of the old image.
+function setHeroImage(url) {
+  const $heroImg = document.querySelector('[data-ak="hero-img"]');
+  if (!$heroImg || !url) return;
+  const preload = new Image();
+  preload.onload = () => {
+    $heroImg.removeAttribute('srcset');
+    $heroImg.removeAttribute('sizes');
+    $heroImg.src = url;
+  };
+  preload.src = url;
+}
+if (fixedHotel?.heroImage) setHeroImage(fixedHotel.heroImage);
 
 // Captured before initMap() below starts anything async — autoSetFixedHotel() (chained off
 // mapReady) writes the hotel name into one of these same elements, and this used to run on 'load',
