@@ -349,6 +349,22 @@ MAP_POPUP_FIELDS.forEach(field => {
   field.defaultText = $el ? $el.textContent : '';
 });
 
+// "Hotel: [ Hotel Name ]" in Logistics: with no hotel the name ([data-ak="map-hotel-name"]) is blank and
+// its whole row, label included ([data-ak="map-hotel-row"], which starts with data-ak-hidden in
+// Webflow), is hidden instead of showing the "[ Hotel Name ]" placeholder. A fixed hotel's name is
+// known up front, so it shows right away; autoSetFixedHotel() swaps in the Places name later.
+function setMapHotelName(name) {
+  const $wrap = document.querySelector('[data-ak="map-hotel-name"]');
+  const $nameEl = $wrap?.querySelector('p');
+  if ($nameEl) $nameEl.textContent = name || '';
+  [document.querySelector('[data-ak="map-hotel-row"]'), $wrap].forEach($el => {
+    if (name) $el?.removeAttribute('data-ak-hidden');
+    else $el?.setAttribute('data-ak-hidden', 'true');
+  });
+}
+MAP_POPUP_FIELDS.find(({ storageKey }) => storageKey === 'ak-hotel').defaultText = '';
+setMapHotelName(fixedHotel?.name || '');
+
 // Both "Selected" box states are shown in the markup — start on the empty one until restoreAirports()
 // or a pick says otherwise.
 AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelector(nameSelector)));
@@ -1038,7 +1054,7 @@ async function setupHotelAutocomplete() {
     markerObj['hotel'] = marker;
 
     const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
-    if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+    setMapHotelName(displayName);
     showRemoveIcon($hotelNameEl);
     setHotelNameText(displayName);
 
@@ -1094,7 +1110,7 @@ async function autoSetFixedHotel() {
   markerObj['hotel'] = marker;
 
   const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
-  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+  setMapHotelName(displayName);
   showRemoveIcon($hotelNameEl);
 
   localStorage['ak-hotel'] = JSON.stringify(saveObj);
@@ -1400,6 +1416,7 @@ function clearMapPopupField(field) {
 
   setUnsavedChangesFlag();
   if (field.storageKey === 'ak-hotel') {
+    setMapHotelName('');
     restoreTripHeadingName();
     if (!fixedHotel) setWelcomeHasHotel(false);
   }
@@ -2058,7 +2075,7 @@ function restoreHotel() {
   markerObj['hotel'] = marker;
 
   const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
-  if ($hotelNameEl) $hotelNameEl.textContent = displayName;
+  setMapHotelName(displayName);
   showRemoveIcon($hotelNameEl);
   setHotelNameText(displayName);
 }
