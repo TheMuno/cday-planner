@@ -274,21 +274,37 @@ function finishWelcomeMsg() {
 if (fixedHotel) setHotelNameText(fixedHotel.name);
 
 // The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage swaps it in; every other
-// hotel keeps Webflow's image. The new one is preloaded and only swapped in once it has loaded, so
-// there's no blank flash -- and if it fails, Webflow's image stays. srcset/sizes are cleared, or the
-// browser keeps picking Webflow's responsive versions of the old image.
-function setHeroImage(url) {
-  const $heroImg = document.querySelector('[data-ak="hero-img"]');
-  if (!$heroImg || !url) return;
-  const preload = new Image();
-  preload.onload = () => {
-    $heroImg.removeAttribute('srcset');
-    $heroImg.removeAttribute('sizes');
-    $heroImg.src = url;
-  };
-  preload.src = url;
+// hotel keeps Webflow's image. loader.css keeps the image hidden behind a full-size shimmer until
+// data-ak-hero-ready is set here, so Webflow's image never flashes up before the swap. The new image
+// is preloaded first; srcset/sizes are cleared, or the browser keeps picking Webflow's responsive
+// versions of the old one. If it fails to load, Webflow's image is shown instead. After 10s the
+// image is shown regardless, so the shimmer never gets stuck.
+const $heroImg = document.querySelector('[data-ak="hero-img"]');
+function revealHeroImage() {
+  $heroImg?.setAttribute('data-ak-hero-ready', 'true');
 }
-if (fixedHotel?.heroImage) setHeroImage(fixedHotel.heroImage);
+function whenImageLoaded($img, callback) {
+  if ($img.complete && $img.naturalWidth) return callback();
+  $img.addEventListener('load', callback, { once: true });
+  $img.addEventListener('error', callback, { once: true });
+}
+if ($heroImg) {
+  const heroUrl = fixedHotel?.heroImage;
+  if (heroUrl) {
+    const preload = new Image();
+    preload.onload = () => {
+      $heroImg.removeAttribute('srcset');
+      $heroImg.removeAttribute('sizes');
+      $heroImg.src = heroUrl;
+      whenImageLoaded($heroImg, revealHeroImage);
+    };
+    preload.onerror = () => whenImageLoaded($heroImg, revealHeroImage);
+    preload.src = heroUrl;
+  } else {
+    whenImageLoaded($heroImg, revealHeroImage);
+  }
+  setTimeout(revealHeroImage, 10000);
+}
 
 // Captured before initMap() below starts anything async — autoSetFixedHotel() (chained off
 // mapReady) writes the hotel name into one of these same elements, and this used to run on 'load',
