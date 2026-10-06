@@ -180,7 +180,7 @@ function isInAttractionsSlider($el) {
 // view, and the saved hotel restored by restoreHotel(). A hotel's city (when not NYC) also goes in the
 // trip heading -- see restoreTripHeadingName(). Declared up here because that runs straight away.
 const FIXED_HOTELS = {
-  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png' },
+  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
 };
 const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
@@ -313,6 +313,32 @@ if ($heroImg) {
     whenImageLoaded($heroImg, revealHeroImage);
   }
   setTimeout(revealHeroImage, 10000);
+}
+
+// The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
+// swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
+// hidden until data-ak-logo-ready is set here, so the Khonsu logo never flashes up first. If the
+// hotel's logo fails to load, the SVG is shown instead.
+const $navLogo = document.querySelector('[data-ak="nav-logo"]');
+function revealNavLogo() {
+  $navLogo?.setAttribute('data-ak-logo-ready', 'true');
+}
+if ($navLogo) {
+  const logoUrl = fixedHotel?.logo;
+  if (logoUrl) {
+    const $logoImg = new Image();
+    $logoImg.onload = () => {
+      $logoImg.alt = fixedHotel.name;
+      $logoImg.className = 'ak-nav-logo-img';
+      $navLogo.replaceChildren($logoImg);
+      revealNavLogo();
+    };
+    $logoImg.onerror = revealNavLogo;
+    $logoImg.src = logoUrl;
+  } else {
+    revealNavLogo();
+  }
+  setTimeout(revealNavLogo, 10000);
 }
 
 // Captured before initMap() below starts anything async — autoSetFixedHotel() (chained off
