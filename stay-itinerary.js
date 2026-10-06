@@ -1,0 +1,3246 @@
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM",
+    authDomain: "askkhonsu-map.firebaseapp.com",
+    projectId: "askkhonsu-map",
+    storageBucket: "askkhonsu-map.appspot.com",
+    messagingSenderId: "266031876218",
+    appId: "1:266031876218:web:ec93411f1c13d9731e93c3",
+    measurementId: "G-Z7F4NJ4PHW"
+};
+
+const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// firebase-firestore.js is only actually needed once a Firestore read/write happens
+// (retrieveDBData/saveAttractionsDB). As a static import it used to be fetched — and block
+// evaluation of this entire module, including the onAuthStateChanged registration below that
+// reveals sign-in-to-save/continue-to-step2 — before any code here could run at all. That's
+// what made the sign-in button take so long to appear on slow mobile connections. Loading it
+// lazily keeps that registration's critical path down to just firebase-app + firebase-auth.
+let dbPromise = null;
+function getDb() {
+  if (!dbPromise) {
+    dbPromise = import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js").then(mod => {
+      // Long-polling avoids ad blockers / proxies that kill the default WebChannel streaming
+      // connection, which is what causes "Could not reach Cloud Firestore backend" timeouts.
+      let db;
+      try {
+        db = mod.initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+      } catch (e) {
+        db = mod.getFirestore(app); // Firestore already initialized for this app elsewhere on the page
+      }
+      return { ...mod, db };
+    });
+  }
+  return dbPromise;
+}
+
+// Mints (once) the caller's shareToken so it exists in Firestore before it's ever needed
+// downstream (itinerary-list, PDF report links) — same idempotent call customize-itinerary.js's
+// finish button uses; getMyShareToken only writes if the account doesn't already have one, so
+// calling this on every save is cheap and safe. Errors are swallowed: a missing shareToken
+// shouldn't block saving the itinerary itself, and the next save just tries minting it again.
+// firebase-functions.js is loaded lazily on first use, same reason as getDb() above.
+let functionsPromise = null;
+function ensureShareToken() {
+  if (!functionsPromise) {
+    functionsPromise = import("https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js")
+      .then(mod => ({ functions: mod.getFunctions(app), httpsCallable: mod.httpsCallable }));
+  }
+  return functionsPromise
+    .then(({ functions, httpsCallable }) => httpsCallable(functions, 'getMyShareToken')())
+    .catch(err => {
+      functionsPromise = null; // let the next save retry the import too
+      console.error('getMyShareToken failed', err);
+    });
+}
+
+function getSignInBtn() {
+  return document.querySelector('[data-ak="sign-in-to-save"]');
+}
+
+function getContinueBtn() {
+  return document.querySelector('[data-ak="continue-to-step2"]');
+}
+
+// Reveal sign-in-to-save/continue-to-step2/save-itinerary as soon as auth state is known,
+// independent of window 'load' (waits on every page resource, incl. images), mapReady (Maps
+// script + library loads), and syncWithDB (Firestore round-trip). Those can be slow/variable on
+// a bad connection, and none of them are actually needed to know which button to show — gating
+// the reveal on them left the buttons invisible long enough that users would think there was
+// nothing there.
+onAuthStateChanged(auth, user => {
+  const $continueBtn = getContinueBtn();
+  // Every copy, not just the first -- a page can end up with more than one (e.g. a duplicated nav).
+  const $signInBtns = document.querySelectorAll('[data-ak="sign-in-to-save"]');
+  // There's more than one save-itinerary (the nav link and the logistics form's submit), so all of them.
+  // One marked data-ak-show-signed-out in Webflow stays visible when signed out too (its click
+  // sends the user to sign in instead -- see the save handler below).
+  const $saveBtns = document.querySelectorAll('[data-ak="save-itinerary"]');
+  if (user) {
+    $continueBtn?.removeAttribute('data-ak-hidden');
+    $saveBtns.forEach($btn => $btn.removeAttribute('data-ak-hidden'));
+    $signInBtns.forEach($btn => $btn.setAttribute('data-ak-hidden', 'true'));
+  } else {
+    $signInBtns.forEach($btn => $btn.removeAttribute('data-ak-hidden'));
+    $continueBtn?.setAttribute('data-ak-hidden', 'true');
+    $saveBtns.forEach($btn => $btn.hasAttribute('data-ak-show-signed-out')
+      ? $btn.removeAttribute('data-ak-hidden')
+      : $btn.setAttribute('data-ak-hidden', 'true'));
+  }
+});
+
+const cameraPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6c29e5f2d2eb42bffc_cam.png';
+const foodForkPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6899df6ccc71c7d26c3f411c_rest.png';
+const hotelMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879b831dec5947617d34e3__hotel.png';
+const airportMarkerPinUrl = 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/68879bb7f77423763223d449__airport.png';
+const busPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/68b9c734dec75c736ea75eaa_bus.png';
+const trainPinUrl = 'https://cdn.prod.website-files.com/68935fa3de135948255cdf3b/68b9c7346b2a3e350322617a_train.png';
+const restaurantPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAMAAACfWMssAAAACXBIWXMAAAAcAAAAHAAPAbmPAAAAulBMVEUAAAAAAAAAAAD///8AAAD////r6+sAAADQ0NBxcXFdXV2UlJT///////8AAAD///////98fHz7+/v///////////////////8AAADMzMz7+/v39/fz8/MZGRnn5+f///////////////+wsLDMzMyIiIj////7wC373Ij///v/67z/99//++/7wDH7xD37yEn7xDn70Gn/++v7zFX756z/45z72Hj/9+v71G3/46T7xDX/78j/89j/89DtKlaHAAAAJnRSTlMATT33DJDYLLRxaIAmTBPjaHXzvDDQx+shsPfz51TQ3zwINJSASBwWgW4AAAMLSURBVHja7f3FovMqFAZQxGP1eu34F6nXK//7v9YlREgoleGd7NEphxVgZ0MYSv+TKNX05kdXVbsfTb1Wele19CoKUdVbb7Byh3TdhP56uZjPF8u1H25IQ6f8gn0TNjtvvUJszzNCv5+wLx04+hfvLi7+EdC/HrlSG8FewCjdB2g/SNNnA9Ot9zC2UzQ+Ra6sIlx5T2IVQhXk6FPFbu49jfkO6t2YpQZ23svYocGt86uNcP4azkO0i7nVMV15b8RqCj3vvhE8y6fvH9K3tA2Qr4QO9sk/dncPOEyjep2dkp97dJgr45g88YRZUZJMxpFO6XJEOTegn/S7gpNhtkfCpMVnQ7YwS5cwQ1H6bHPNkqbLDK0spee0Y4CCXM0YDNLGc5bYKrKeUxTkIbedp2mfLaqxK2GTTW0fd9os45+7HGSFtUFcPrVs3Z63SOZ2jOU1B9nKQ9SSJfpZm7cO8jIUDUgyFi+yibX3QLKk3nIbfI0mhR9Y5qB3SuSVTPyWuusi12OJDwq7yLemcrpkbuMXds4CXQoDcBsqkokLTqTC19z/5wgoVHnoHQKywhV1niDmUCkcclONxowdjgsRXGBI4aiYnDhW/+jqpiK5xIjCSeF1xHEhLiBHKW4CucaEQitfAIkjJRMc6DsVSB8Whb+5kis474EM8UvhX67IM4cD/fMkkhv8UdjLbaso5swlsngAkm3Vo1Drs43MO5E8o6/FG9JmRwc9c1HIViT/5SQ5OuzYSabBet65qI5IkbMn+zDMBGpudjzSw4J/O5HM2sjx6CYzlSTFyA5kcnjcvVUi2Tbew1BSJ1Xs3CfgvozybeQTYFcyKCnW+x8diw1Ihhy//5kb5wYkiXXe/bA6plQIpT5451M+qCtFJ2myO3h9eRi4ssZBqSLXX19X6jJZ4L10Xl2QHJGL5Nh6diWzxmJH1qnItvHoEmjYsqJJj8KUZdeA4NppuLJsSk+iosiy3ecvun1blpWK9DwiKjs/1mQ0VNXhaGL9OPIbLAqNTLgYpia9GVrPVGKjmD2x+g8/BE5ERFWgyAAAAABJRU5ErkJggg==';
+const cameraPreselectPinUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAMAAACfWMssAAAACXBIWXMAAAAcAAAAHAAPAbmPAAAAtFBMVEUAAAAAAAAAAAD///8AAAD///8AAADQ0NBxcXHr6+tdXV2UlJTz8/P///////8AAAD39/f///98fHz////////7+/v////////////7+/sAAADMzMz39/cZGRnn5+f///////////+wsLDMzMyIiIj////73Ij///v/67z7wDH7wC37zFX7yEn735T70Gn756z/++//46T/89z/+/P/9+v/45z/++v7xD37xDX7xDn/78z/99+JjJk3AAAAJXRSTlMATT33DJAstHHYaIDnJkwT62h1vDDz0Mfr9yGw81TQPAg0lIBINOsfYwAAAtZJREFUeNrt/ce2qkoQhgGQlGg2qztXB6LZ9P7vdRqEBklyZ3fyz2DVV6mrw1D4n6gzaI2suSzPrVFr0GlKjVt9eFG/NW6AdWfM9EyQ714ovbg+Imf2Y9Z9g30zbLtz7Bc5uy1Dv2uwrxbAEV3tgq7oCND6quI6U8CnEixCTximFW36nMDDsSvlPGDyWcZ1ZSA3u0Y3AnJJjz5lCKhdKxqAXIjZmUBgv1UAk1ydX1Mg9D1ICUxfe9uCx81uoNsDWlnuG7BjN5KDITsJMzjlDbxYeYcnmKVcF465dXe2yYQfcuT1CN1MQFTFFUmUhhzDNgl43R0PTDi7q3D457jjJlsY85buEncBVIov8443tg88m201uOV1QP/JdeDMC4AacaMzPMdnAKQU3BOyLwUJDOISUQkYuOG3G5SAKC5yBH4BxKEvGk4vwgXQh1EEWuAWQMb5d4zvfug/D7pgReAcLnlwTxN7ZNN9HrzAPAIx0DyIbDfOELs8JDeigCNQLoKO7SUJemzdCqAcgetiqm46QgErqZDquqo59RGT5nwUlwNxa+ajUKMPHxGoFgfgHo5yJDb+9zyIQI3A35KRYzl4B7YXvdB/HiTwG4F/JUMe7l7qOKzdzqEAnuEvApeZbQWcRNEaUcQ5DrJttYxAZZVuZEh1IJ5HDpkfic0OVspzQ2rp0QE1ik3Y0aE9OaGt877uq7l9bIJAb8egYvLj0cdVHI4Xmx2PZpypIEg6P5Bd5JUKJdN1Al1KOKGn/ZcrQOtxUJDU5peOmgZkITfNr7lNJiBrrNH0YjXawouk4aLJVb4YSq+coIjm4v3jYWGKSg4UeuLw/XNlKLICi6Tx7oFklHEhuVHrnmTqppxjdUqiplc9AnVNlBShSm1RNBlafHbqpii2hRr1JFHUVvmH7koTRakn1CtEReNH/bDWsry2PtQfQ2yAhVJYwq9qK0JDKcu29GSk9rKc+gfdFlLeciqJYQAAAABJRU5ErkJggg==';
+const insiderTipsUrl = 'https://us-central1-askkhonsu-map.cloudfunctions.net/getInsiderTips';
+const placesApiKey = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
+const noPhotoPlaceholder = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400"><rect width="800" height="400" fill="#ece9e4"/><circle cx="400" cy="185" r="60" fill="none" stroke="#aaa" stroke-width="3"/><g transform="translate(380,165) scale(1.667)"><path d="M12 15.2c1.77 0 3.2-1.43 3.2-3.2S13.77 8.8 12 8.8 8.8 10.23 8.8 12s1.43 3.2 3.2 3.2zM9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="#bbb"/></g></svg>')}`;
+
+const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
+const attractionslimit = 5;
+
+// Arrival and Departure each have a Plane / Train / Car toggle (the page's own [data-toggle-scope]
+// script shows one mode's fields at a time), with a search box per mode. Whichever box the guest
+// picks from, the place is saved under the same key (ak-arrival-airport / ak-departure-airport),
+// along with the mode it was picked under.
+// nameSelector is the name in the "Selected" box's picked state — the .itinerary_logistics_select_wrap
+// right after the empty one ("Nothing selected yet", which carries the data-ak).
+const AIRPORT_FIELDS = [
+  { markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] + .itinerary_logistics_select_wrap .u-hotel-color-brand p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft' },
+  { markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] + .itinerary_logistics_select_wrap .u-hotel-color-brand p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
+];
+
+// Search box per mode: data-ak="<prefix>-<autocompleteSuffix>". Car takes any address.
+const TRANSPORT_MODES = {
+  plane: { autocompleteSuffix: 'airport-autocomplete', includedPrimaryTypes: ['airport', 'ferry_terminal', 'international_airport', 'bus_station', 'train_station'] },
+  train: { autocompleteSuffix: 'train-autocomplete', includedPrimaryTypes: ['train_station', 'transit_station', 'subway_station', 'light_rail_station', 'bus_station'], placeholder: 'Add station...' },
+  car: { autocompleteSuffix: 'address-autocomplete', includedPrimaryTypes: null, placeholder: 'Add address...' },
+};
+
+const placeAutocompleteEls = {};
+
+const MAP_POPUP_FIELDS = [
+  { nameSelector: '[data-ak="map-hotel-name"] p', markerKey: 'hotel', storageKey: 'ak-hotel', updateKey: 'ak-update-hotel' },
+  ...AIRPORT_FIELDS.map(({ nameSelector, markerKey, storageKey, updateKey, prefix }) => ({ nameSelector, markerKey, storageKey, updateKey, prefix })),
+];
+
+// Train's carrier/number are kept apart from the plane's, so switching modes doesn't mix them up.
+const AIRPORT_FLIGHT_FIELDS = [
+  { suffix: 'time', key: 'flightTime' },
+  { suffix: 'carrier-name', key: 'carrierName' },
+  { suffix: 'flight-number', key: 'flightNumber' },
+  { suffix: 'train-carrier-name', key: 'trainCarrierName' },
+  { suffix: 'train-number', key: 'trainNumber' },
+];
+
+// The Arrival / Departure block (the page script keeps its current mode in data-toggle-scope).
+function getTransportFrame(prefix) {
+  return document.querySelector(`[data-ak="${prefix}-time"]`)?.closest('[data-toggle-scope]') || null;
+}
+
+function getTransportMode(prefix) {
+  const mode = getTransportFrame(prefix)?.getAttribute('data-toggle-scope');
+  return TRANSPORT_MODES[mode] ? mode : 'plane';
+}
+
+// Clicks the mode's toggle, so the page script shows that mode's fields.
+function setTransportMode(prefix, mode) {
+  if (!TRANSPORT_MODES[mode] || getTransportMode(prefix) === mode) return;
+  getTransportFrame(prefix)?.querySelector(`[data-toggle="${mode}"]`)?.click();
+}
+
+const flightFieldSaveTimers = {};
+
+const $attractionsSlider = document.querySelector('[data-ak="locations-slider"]');
+const $attractionsSliderMask = $attractionsSlider.querySelector('.w-slider-mask');
+const $unsavedChanges = document.querySelector('[data-ak="slider-locations-changes"]');
+
+// [data-ak="attraction-location"] / [data-ak-type-title] / [data-ak-type-dropzone] etc. also exist
+// inside the itinerary_ui_slider duplicate markup (data-ak="locations-slider-2"), so delegated
+// document.body listeners need this guard — a bare closest() would happily match that slider too.
+function isInAttractionsSlider($el) {
+  return $el.closest('[data-ak="locations-slider"]') === $attractionsSlider;
+}
+
+// hotel-next serves whichever hotel the guest picked on the look-up form: lookup-form.js saves it as
+// ak-flow-trial-hotel ('carlton-arms' / 'compton' / 'demo'). Carlton Arms and Compton are fixed
+// hotels, same as their own pages: hotel-autocomplete is skipped and the Place is resolved from
+// these known coords instead of user input (see autoSetFixedHotel()). The same coords are the
+// initial map center, zoomed in close, so the hotel is on-screen from first paint. Anything else
+// (demo, or landing here directly) works like the demo-hotel pages: no fixed hotel, a general NYC
+// view, and the saved hotel restored by restoreHotel(). A hotel's city (when not NYC) also goes in the
+// trip heading -- see restoreTripHeadingName(). Declared up here because that runs straight away.
+const FIXED_HOTELS = {
+  'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
+  'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
+};
+const fixedHotelKey = localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
+const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
+const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
+const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
+
+// Captured once, before restoreTripHeadingName() ever mutates it — the Webflow markup's own
+// h2 text (e.g. "My Trip to N.Y.C") is the template; only its first word gets swapped, so the
+// rest of the sentence is whatever's authored in Webflow instead of a hardcoded destination.
+const $headingH2 = $tripHeadingLine?.querySelector('h2') || null;
+const headingTemplateText = $headingH2?.textContent ?? '';
+
+// Travel dates and trip name both come from localStorage (picked upstream, before this page ever
+// loads), so render them right away instead of inside the 'load' handler below — 'load' waits on
+// every image, font and the Maps script, which left these skeletons up for seconds on slow mobile
+// connections. As a module script this already runs after the HTML is parsed, so both elements
+// exist here. Each skeleton only comes down if its value was actually found — otherwise it stays
+// up (rather than flashing Webflow's placeholder text) until finishTripHeading() retries below,
+// once auth and the DB copy are known.
+if (restoreTripDateLine()) $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+if (restoreTripHeadingName()) $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+
+// Second (and last) attempt, after syncWithDB(): fills in anything that only existed in the DB or
+// the signed-in account, then drops both skeletons regardless — if there's still no value by now
+// there never will be on this load, so Webflow's placeholder text is the right thing to show.
+function finishTripHeading() {
+  restoreTripHeadingName();
+  restoreTripDateLine();
+  $tripHeadingLine?.removeAttribute('data-ak-skeleton-pulse');
+  $tripDateLine?.removeAttribute('data-ak-skeleton-pulse');
+}
+
+let map;
+let infoWindow;
+let insiderTipsData = null;
+let addedAttractions = 0;
+let notesSaveTimer = null;
+const markerObj = {};
+const chipMarkers = {};
+const attractionChipMarkers = {};
+const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
+
+// Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
+window.chipMarkers = chipMarkers;
+
+const mapCenter = fixedHotel?.center || { lat: 40.7580, lng: -73.9855 };
+const mapZoom = fixedHotel ? 16 : 13;
+
+// "Welcome to [Hotel Name]" and "Hotel: [ Hotel Name ]". A fixed hotel's name is known up front, so
+// it goes in right away rather than waiting on the Places round-trip.
+function setHotelNameText(name) {
+  document.querySelectorAll('[data-ak="hotel-name"]').forEach($el => {
+    const $text = $el.querySelector('h1, h2, p');
+    if ($text) $text.textContent = name;
+  });
+  setWelcomeHasHotel(true);
+  finishWelcomeMsg();
+}
+
+// With no hotel (demo, nothing saved or picked, or the hotel removed), the hero reads just "Welcome":
+// the "Welcome to" text node loses its " to" and the hero's own [data-ak="hotel-name"] is hidden.
+// Picking a hotel puts both back. The authored text is captured up front so it can be restored.
+const $welcomeMsg = document.querySelector('[data-ak="welcome-msg"]');
+const $welcomeHotelName = $welcomeMsg?.querySelector('[data-ak="hotel-name"]') || null;
+const $welcomeTextNode = (() => {
+  const $h = $welcomeMsg && [...$welcomeMsg.querySelectorAll('h1, h2, p')].find($el => !$welcomeHotelName?.contains($el));
+  return $h ? [...$h.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()) : null;
+})();
+const welcomeTemplateText = $welcomeTextNode?.nodeValue ?? '';
+let welcomeHasHotel = false;
+
+function setWelcomeHasHotel(hasHotel) {
+  welcomeHasHotel = hasHotel;
+  if ($welcomeTextNode) {
+    $welcomeTextNode.nodeValue = hasHotel ? welcomeTemplateText : welcomeTemplateText.replace(/\s+to\s*$/i, '');
+  }
+  if (hasHotel) $welcomeHotelName?.removeAttribute('data-ak-hidden');
+  else $welcomeHotelName?.setAttribute('data-ak-hidden', 'true');
+}
+
+// "Welcome to [Hotel Name]" stays hidden (data-ak-skeleton-pulse, set in Webflow; loader.css hides it
+// with no shimmer of its own) until both its text and the hero image are ready, so Webflow's default
+// text never shows. The text is ready straight away for a fixed hotel, otherwise once the saved trip
+// is restored (see tripRestored below) -- with or without a saved hotel, so it never gets stuck. With
+// no hotel by then it's just "Welcome".
+let welcomeTextReady = false;
+let heroImageReady = !document.querySelector('[data-ak="hero-img"]');
+function finishWelcomeMsg() {
+  if (!$welcomeMsg) return;
+  if (!fixedHotel && !welcomeHasHotel) setWelcomeHasHotel(false);
+  welcomeTextReady = true;
+  showWelcomeIfReady();
+}
+function showWelcomeIfReady() {
+  if (welcomeTextReady && heroImageReady) $welcomeMsg?.removeAttribute('data-ak-skeleton-pulse');
+}
+if (fixedHotel) setHotelNameText(fixedHotel.name);
+
+// The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage swaps it in; every other
+// hotel keeps Webflow's image. loader.css keeps the image hidden behind a full-size shimmer until
+// data-ak-hero-ready is set here, so Webflow's image never flashes up before the swap. The new image
+// is preloaded first; srcset/sizes are cleared, or the browser keeps picking Webflow's responsive
+// versions of the old one. If it fails to load, Webflow's image is shown instead. After 10s the
+// image is shown regardless, so the shimmer never gets stuck. The welcome text waits on this too.
+const $heroImg = document.querySelector('[data-ak="hero-img"]');
+function revealHeroImage() {
+  $heroImg?.setAttribute('data-ak-hero-ready', 'true');
+  heroImageReady = true;
+  showWelcomeIfReady();
+}
+function whenImageLoaded($img, callback) {
+  if ($img.complete && $img.naturalWidth) return callback();
+  $img.addEventListener('load', callback, { once: true });
+  $img.addEventListener('error', callback, { once: true });
+}
+if ($heroImg) {
+  const heroUrl = fixedHotel?.heroImage;
+  if (heroUrl) {
+    const preload = new Image();
+    preload.onload = () => {
+      $heroImg.removeAttribute('srcset');
+      $heroImg.removeAttribute('sizes');
+      $heroImg.src = heroUrl;
+      whenImageLoaded($heroImg, revealHeroImage);
+    };
+    preload.onerror = () => whenImageLoaded($heroImg, revealHeroImage);
+    preload.src = heroUrl;
+  } else {
+    whenImageLoaded($heroImg, revealHeroImage);
+  }
+  setTimeout(revealHeroImage, 10000);
+}
+
+// The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
+// swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
+// hidden until data-ak-logo-ready is set here, so the Khonsu logo never flashes up first. If the
+// hotel's logo fails to load, the SVG is shown instead.
+const $navLogo = document.querySelector('[data-ak="nav-logo"]');
+function revealNavLogo() {
+  $navLogo?.setAttribute('data-ak-logo-ready', 'true');
+}
+if ($navLogo) {
+  const logoUrl = fixedHotel?.logo;
+  if (logoUrl) {
+    const $logoImg = new Image();
+    $logoImg.onload = () => {
+      $logoImg.alt = fixedHotel.name;
+      $logoImg.className = 'ak-nav-logo-img';
+      $navLogo.replaceChildren($logoImg);
+      revealNavLogo();
+    };
+    $logoImg.onerror = revealNavLogo;
+    $logoImg.src = logoUrl;
+  } else {
+    revealNavLogo();
+  }
+  setTimeout(revealNavLogo, 10000);
+}
+
+// Captured before initMap() below starts anything async — autoSetFixedHotel() (chained off
+// mapReady) writes the hotel name into one of these same elements, and this used to run on 'load',
+// which an image-heavy page can reach *after* that write, capturing the hotel name as the "default".
+MAP_POPUP_FIELDS.forEach(field => {
+  const $el = document.querySelector(field.nameSelector);
+  field.defaultText = $el ? $el.textContent : '';
+});
+
+// "Hotel: [ Hotel Name ]" in Logistics: with no hotel the name ([data-ak="map-hotel-name"]) is blank and
+// its whole row, label included ([data-ak="map-hotel-row"], which starts with data-ak-hidden in
+// Webflow), is hidden instead of showing the "[ Hotel Name ]" placeholder. A fixed hotel's name is
+// known up front, so it shows right away; autoSetFixedHotel() swaps in the Places name later.
+function setMapHotelName(name) {
+  const $wrap = document.querySelector('[data-ak="map-hotel-name"]');
+  const $nameEl = $wrap?.querySelector('p');
+  if ($nameEl) $nameEl.textContent = name || '';
+  [document.querySelector('[data-ak="map-hotel-row"]'), $wrap].forEach($el => {
+    if (name) $el?.removeAttribute('data-ak-hidden');
+    else $el?.setAttribute('data-ak-hidden', 'true');
+  });
+}
+MAP_POPUP_FIELDS.find(({ storageKey }) => storageKey === 'ak-hotel').defaultText = '';
+setMapHotelName(fixedHotel?.name || '');
+
+// Both "Selected" box states are shown in the markup — start on the empty one until restoreAirports()
+// or a pick says otherwise.
+AIRPORT_FIELDS.forEach(({ nameSelector }) => hideRemoveIcon(document.querySelector(nameSelector)));
+
+// The per-mode lines under the name in each "Selected" box: [data-ak="transport-line"] divs, one per
+// mode, told apart by data-toggle-show ("plane", "train" or "car") on the line itself or on a div
+// inside it — the page toggle script uses that to show only the current mode's line. The older
+// [data-ak="drive-time"] line counts as a car line. Arrival's and Departure's lines are found from
+// their own picked name, so the two blocks never mix.
+// - plane/train: the line's text is set to the details typed in, joined with " · " (e.g.
+//   "Delta · DL123 · 2:20 PM", "Amtrak · Train 42 · 2:20 PM"), with any empty field just left out.
+//   With none filled in, it falls back to the picked place's neighborhood (saved with it as
+//   `neighborhood`), and failing that to an "Add ... details" prompt.
+// - car: its text is authored in Webflow with a "[time]" placeholder (e.g. "Driving - Estimated
+//   arrival: [time]"), swapped for the time typed in — so the wording around it can be changed in
+//   Webflow without touching this. Any case and inner spacing matches too ("[TIME]", "[ time ]").
+//   Each placeholder becomes a <span data-ak-time-slot> holding the time. Hidden while the time is
+//   empty so the bare placeholder never shows.
+// Lines are looked up fresh on every update rather than held from page load, since other page scripts
+// can re-render that rich text after this runs. Mode switches reach here via toggle:change below.
+const TIME_PLACEHOLDER = /\[\s*time\s*\]/gi;
+
+function getTransportLines(prefix) {
+  const { nameSelector } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
+  const $box = document.querySelector(nameSelector)?.closest('.itinerary_logistics_select_inner');
+  if (!$box) return [];
+  return [...$box.querySelectorAll('[data-ak="transport-line"], [data-ak="drive-time"]')].map($line => {
+    const $toggle = $line.matches('[data-toggle-show]') ? $line : $line.querySelector('[data-toggle-show]');
+    const mode = $line.matches('[data-ak="drive-time"]') ? 'car' : $toggle?.getAttribute('data-toggle-show').trim();
+    return { $line, mode };
+  });
+}
+
+function wrapTimePlaceholders($line) {
+  const nodes = [];
+  const walker = document.createTreeWalker($line, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    if (walker.currentNode.nodeValue.search(TIME_PLACEHOLDER) !== -1) nodes.push(walker.currentNode);
+  }
+  nodes.forEach(node => {
+    const $frag = document.createDocumentFragment();
+    node.nodeValue.split(TIME_PLACEHOLDER).forEach((text, i) => {
+      if (i) {
+        const $slot = document.createElement('span');
+        $slot.setAttribute('data-ak-time-slot', '');
+        $frag.append($slot);
+      }
+      if (text) $frag.append(text);
+    });
+    node.replaceWith($frag);
+  });
+}
+
+function getTransportDetails(prefix, mode) {
+  const val = suffix => document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim() || '';
+  const join = (...parts) => parts.filter(Boolean).join(' · ');
+  const { storageKey } = AIRPORT_FIELDS.find(field => field.prefix === prefix);
+  let neighborhood = '';
+  try {
+    neighborhood = JSON.parse(localStorage[storageKey] || 'null')?.neighborhood || '';
+  } catch (e) {}
+  if (mode === 'plane') return join(val('carrier-name'), val('flight-number'), val('time')) || neighborhood || 'Add flight details';
+  const trainNum = val('train-number');
+  return join(val('train-carrier-name'), trainNum && `Train ${trainNum}`, val('time')) || neighborhood || 'Add train details';
+}
+
+function updateTransportSummary(prefix) {
+  const time = document.querySelector(`[data-ak="${prefix}-time"]`)?.value.trim() || '';
+  getTransportLines(prefix).forEach(({ $line, mode }) => {
+    if (mode === 'plane' || mode === 'train') {
+      ($line.querySelector('p') || $line).textContent = getTransportDetails(prefix, mode);
+      // Only the current mode's line is shown, so the other lines' wrappers don't take up space.
+      if (getTransportMode(prefix) === mode) $line.removeAttribute('data-ak-hidden');
+      else $line.setAttribute('data-ak-hidden', 'true');
+    } else if (mode === 'car') {
+      wrapTimePlaceholders($line);
+      $line.querySelectorAll('[data-ak-time-slot]').forEach($slot => { $slot.textContent = time; });
+      if (time && getTransportMode(prefix) === 'car') $line.removeAttribute('data-ak-hidden');
+      else $line.setAttribute('data-ak-hidden', 'true');
+    }
+  });
+}
+
+// The Train/Car fields carry data-ak-hidden in the markup so they don't flash before the page toggle
+// script runs; that script only hides/shows them with data-toggle-off and never removes data-ak-hidden,
+// which would keep them (and the search boxes waiting to move into them) hidden in every mode. Once
+// the toggle script has set a block's mode, data-toggle-off takes over and data-ak-hidden comes off.
+function releaseTransportFields($frame) {
+  $frame?.querySelectorAll('[data-toggle-show][data-ak-hidden]').forEach($el => {
+    if ($el.closest('[data-toggle-scope]') === $frame) $el.removeAttribute('data-ak-hidden');
+  });
+}
+// The toggle script may have already run (it sets data-toggle-off on the hidden modes' fields).
+AIRPORT_FIELDS.forEach(({ prefix }) => {
+  const $frame = getTransportFrame(prefix);
+  if ($frame?.querySelector('[data-toggle-off]')) releaseTransportFields($frame);
+});
+
+// toggle:change is the page toggle script's own event, fired on the Arrival/Departure block.
+document.addEventListener('toggle:change', e => {
+  const field = AIRPORT_FIELDS.find(({ prefix }) => getTransportFrame(prefix) === e.target);
+  if (!field) return;
+  releaseTransportFields(e.target);
+  updateTransportSummary(field.prefix);
+});
+document.addEventListener('input', e => {
+  const dataAk = e.target.getAttribute?.('data-ak');
+  const field = dataAk && AIRPORT_FIELDS.find(({ prefix }) =>
+    AIRPORT_FLIGHT_FIELDS.some(({ suffix }) => dataAk === `${prefix}-${suffix}`));
+  if (field) updateTransportSummary(field.prefix);
+});
+AIRPORT_FIELDS.forEach(({ prefix }) => updateTransportSummary(prefix));
+
+const mapReady = initMap(mapCenter, mapZoom);
+async function initMap(center, zoom) {
+  const $map = document.querySelector('[data-ak="map"]');
+  const { Map, InfoWindow } = await google.maps.importLibrary('maps');
+  await google.maps.importLibrary('marker');
+  await google.maps.importLibrary('places');
+  map = new Map($map, {
+    zoom,
+    center,
+    // mapId: 'd604d19d3ee253cb9ac6f7f8',
+    mapId: 'DEMO_MAP_ID',
+    mapTypeControl: false,
+  });
+  infoWindow = new InfoWindow();
+  return map;
+}
+
+// A fixed hotel doesn't depend on auth, Firestore sync, or trip-day slide restoration — it used to
+// be nested inside the 'load' handler's restoreTripDaySlides() callback, behind syncWithDB() and
+// slide setup, which added several unrelated network round-trips in front of it and made the hotel
+// name show up late on mobile. Kick it off as soon as the map itself is ready instead, in parallel
+// with all of that.
+if (fixedHotel) mapReady.then(() => autoSetFixedHotel());
+
+// Only needs a plain fetch — no reason to wait on 'load' (every image, font, the Maps script).
+loadInsiderTips();
+
+// Auth + the Firestore read don't depend on 'load' either, so start them now and let them run
+// while the rest of the page downloads; the 'load' handler just awaits the result.
+const dbSyncReady = (async () => {
+  await new Promise(resolve => onAuthStateChanged(auth, resolve));
+
+  // Bridge: keep ak-userMail consistent so the rest of the code works unchanged (mirrors customize-itinerary.js).
+  if (auth.currentUser) localStorage['ak-userMail'] = auth.currentUser.email;
+
+  if (auth.currentUser) localStorage.removeItem('ak-addedAttractions-count');
+  addedAttractions = Number(localStorage['ak-addedAttractions-count'] || 0);
+
+  try {
+    await syncWithDB();
+  } finally {
+    // Runs on a failed DB read too, so the skeletons can't get stuck up.
+    finishTripHeading();
+  }
+})();
+
+// Settles once the saved trip is actually on the page (slides, attractions, airports, notes).
+// saveAttractionsDB() saves what's in the DOM, not localStorage, so the save-then-navigate handlers
+// below (wired right away, not on 'load') must wait for this — saving any earlier would overwrite
+// the user's saved trip with the page's still-empty slides. Rejects if the restore fails, so those
+// handlers show their "couldn't save" alert instead of spinning forever.
+let resolveTripRestored, rejectTripRestored;
+const tripRestored = new Promise((resolve, reject) => {
+  resolveTripRestored = resolve;
+  rejectTripRestored = reject;
+});
+tripRestored.catch(() => {}); // reported by whichever click handler awaits it
+tripRestored.finally(finishWelcomeMsg).catch(() => {});
+// In case the restore never settles (e.g. the Maps script fails to load), the shimmer still comes down.
+setTimeout(finishWelcomeMsg, 10000);
+
+window.addEventListener('load', async () => {
+  document.querySelector('[data-ak="map-popup"]')?.querySelector('.map-popup-close')?.addEventListener('click', () => {
+    document.querySelector('[data-ak="map-popup"]')?.setAttribute('data-ak-hidden', 'true');
+  });
+
+  // These can add places to the day slides, so they stay behind 'load' with the other editing
+  // handlers below rather than being usable before the saved trip is restored.
+  setupAutocompleteInp();
+  setupHotelAutocomplete();
+  setupAirportAutocomplete();
+
+  try {
+    await dbSyncReady;
+  } catch (err) {
+    rejectTripRestored(err);
+    throw err;
+  }
+  // restoreTripDaySlides() itself only clones slides and sets day/date text from localStorage — no
+  // map access — so it runs here without waiting on mapReady. Only its callback needs the map (to
+  // drop markers via createMarker()), so mapReady is awaited there instead, letting the Maps library
+  // chain finish loading in parallel with the slide setup + syncWithDB() above rather than after them.
+  restoreTripDaySlides(async () => {
+    try {
+      await mapReady;
+      restoreAttractions();
+      syncAllNoItemAdded();
+      // A fixed hotel comes from autoSetFixedHotel() (already kicked off in parallel above, as soon
+      // as mapReady resolved), not from localStorage — restoring from localStorage here would race
+      // it and could clobber the fixed hotel with a stale saved value.
+      if (!fixedHotel) restoreHotel();
+      restoreAirports();
+      restoreTripNotes();
+      // Webflow.push() runs the callback once Webflow's own init (including IX2, which is what the
+      // clicks inside unwrapSectionsWithContent() need bound) is actually ready, instead of guessing.
+      if (window.Webflow) window.Webflow.push(unwrapSectionsWithContent);
+      else unwrapSectionsWithContent();
+      resolveTripRestored();
+    } catch (err) {
+      rejectTripRestored(err);
+      throw err;
+    }
+  });
+  if (localStorage['ak-unsaved-changes']) setUnsavedChangesFlag();
+
+  document.querySelector('.itinerary_ui_bulk_finish')?.addEventListener('click', e => {
+    e.preventDefault();
+    handleBulkImport();
+  });
+
+  const $cuisineChipWrap = document.querySelector('[data-ak="cuisine-chips"]');
+  const $attractionChipWrap = document.querySelector('[data-ak="attraction-chips"]');
+  wireChipWrap($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+  wireChipWrap($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+
+  // 'idle' fires once after the user stops panning/zooming, but also after things that don't move the
+  // viewport at all (e.g. the map container resizing when the popup panel opens/closes) — bail out unless
+  // the bounds actually changed, so those no-op idles don't burn a Places API call per active chip.
+  // Wired via mapReady.then(...) rather than touching the bare `map` variable directly — the Maps
+  // library chain can still be loading here on a slow connection, and touching `map` before it resolves
+  // would throw and skip every listener wired below it (drag-and-drop, popups, autosave, etc.).
+  mapReady.then(map => {
+    let lastIdleBoundsKey = null;
+    map.addListener('idle', () => {
+      const boundsKeyNow = boundsKey(map.getBounds());
+      if (boundsKeyNow === lastIdleBoundsKey) return;
+      lastIdleBoundsKey = boundsKeyNow;
+
+      refreshViewportAwareChips($cuisineChipWrap, CHIP_CONFIG, chipMarkers, restaurantPreselectPinUrl);
+      refreshViewportAwareChips($attractionChipWrap, ATTRACTION_CHIP_CONFIG, attractionChipMarkers, cameraPreselectPinUrl);
+    });
+  });
+
+  // Mirrors customize-itinerary.js's .ak-toggle-wrap.transit toggle, adapted to a real checkbox
+  // input (checked state drives the layer directly instead of an odd/even click counter).
+  // data-ak="toggle-subway" sits on the <label> wrapper in the markup, not the <input> itself.
+  const $subwayToggle = document.querySelector('[data-ak="toggle-subway"] input[type="checkbox"]');
+  let transitLayer = null;
+  $subwayToggle?.addEventListener('change', () => {
+    if ($subwayToggle.checked) {
+      transitLayer = transitLayer || new google.maps.TransitLayer();
+      transitLayer.setMap(map);
+    } else {
+      transitLayer?.setMap(null);
+    }
+  });
+
+  document.body.addEventListener('click', handleRemoveLocation);
+  document.body.addEventListener('click', handlePopupOpen);
+  document.body.addEventListener('click', handleFieldMapPopup);
+  document.body.addEventListener('click', handleSectionActivate);
+  document.addEventListener('click', noteSliderDropdownState, true);
+  document.body.addEventListener('click', toggleUnboundSliderDropdown);
+  document.body.addEventListener('keydown', handleSliderDropdownKey);
+  document.body.addEventListener('click', handleTypeSectionToggle);
+  document.body.addEventListener('click', handleSectionDeactivateOnClickAway);
+
+  document.body.addEventListener('dragstart', handleDragStart);
+  document.body.addEventListener('dragover', e => {
+    handleDragOver(e);
+    expandContentWrapOnDrag(e);
+  });
+  document.body.addEventListener('drop', handleDrop);
+  document.body.addEventListener('dragend', () => {
+    $draggedAttraction = null;
+    clearDropMarker();
+  });
+
+  document.body.addEventListener('input', e => {
+    if (!e.target.matches('.ak-notes')) return;
+    setUnsavedChangesFlag();
+    clearTimeout(notesSaveTimer);
+    notesSaveTimer = setTimeout(() => saveTripNotesLocal(e.target), 500);
+  });
+
+  document.body.addEventListener('input', e => {
+    const dataAk = e.target.getAttribute?.('data-ak');
+    if (!dataAk) return;
+
+    for (const { storageKey, updateKey, prefix, draftKey } of AIRPORT_FIELDS) {
+      const field = AIRPORT_FLIGHT_FIELDS.find(({ suffix }) => dataAk === `${prefix}-${suffix}`);
+      if (!field) continue;
+
+      setUnsavedChangesFlag();
+      clearTimeout(flightFieldSaveTimers[dataAk]);
+      flightFieldSaveTimers[dataAk] = setTimeout(() => {
+        saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, field.key, e.target.value);
+      }, 500);
+      return;
+    }
+  });
+
+  // Switching Plane / Train / Car swaps in that mode's own pick (see switchAirportMode()). Only real
+  // clicks — restoreAirports() switches modes with .click() too, and that shouldn't count as an edit.
+  document.body.addEventListener('click', e => {
+    const $toggle = e.isTrusted && e.target.closest('[data-toggle]');
+    if (!$toggle) return;
+    const field = AIRPORT_FIELDS.find(({ prefix }) => getTransportFrame(prefix)?.contains($toggle));
+    if (!field) return;
+
+    setUnsavedChangesFlag();
+    switchAirportMode(field, $toggle.dataset.toggle);
+  });
+
+  document.body.addEventListener('submit', e => {
+    if (e.target.querySelector('.ak-notes, gmp-place-autocomplete')) e.preventDefault();
+  });
+});
+
+// The navigation/save buttons below are wired right away rather than on 'load': the top-level
+// onAuthStateChanged reveals sign-in-to-save/continue-to-step2/save-itinerary as soon as auth is
+// known, and until these handlers exist a click just follows the element's default link — skipping
+// the save. The save itself still waits on tripRestored (see above), with the spinner showing meanwhile.
+// Navigate wherever sign-in-to-save itself points, same as continue-to-step2 below, instead of
+// hardcoding '/log-in' — keeps it in sync with whatever that page links to in Webflow.
+function goToSignIn() {
+  const signInHref = getSignInBtn()?.getAttribute('href') || '/log-in';
+  // firebase-auth.js sends the user back to ak-login-redirect after signing in. Always set it to this
+  // page here (its current path, so a page rename can't leave it pointing at a dead URL), so neither a
+  // missing value (its /smart-guide/itinerary fallback) nor another tab that overwrote it sends them elsewhere.
+  localStorage['ak-login-redirect'] = window.location.pathname;
+  window.location.href = signInHref;
+}
+
+document.querySelectorAll('[data-ak="sign-in-to-save"]').forEach($btn => $btn.addEventListener('click', e => {
+  e.preventDefault();
+  goToSignIn();
+}));
+
+// Shared by continue-to-step2, save-itinerary and the step links — whichever is clicked first injects it.
+function injectStep2SpinnerStyle() {
+  if (document.getElementById('ak-step2-spinner-style')) return;
+  const style = document.createElement('style');
+  style.id = 'ak-step2-spinner-style';
+  style.textContent = `
+    @keyframes ak-step2-spin { to { transform: rotate(360deg); } }
+    .ak-step2-spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: ak-step2-spin 0.7s linear infinite;
+      opacity: 0.8; flex-shrink: 0;
+    }
+    .ak-step2-btn-loading { display: inline-flex; align-items: center; gap: 8px; }
+    @keyframes ak-step2-check-circle { to { stroke-dashoffset: 0; } }
+    @keyframes ak-step2-check-mark { to { stroke-dashoffset: 0; } }
+    .ak-step2-check circle {
+      fill: none; stroke: currentColor; stroke-width: 2;
+      stroke-dasharray: 63; stroke-dashoffset: 63;
+      animation: ak-step2-check-circle 0.35s ease-out forwards;
+    }
+    .ak-step2-check path {
+      fill: none; stroke: currentColor; stroke-width: 2.5;
+      stroke-linecap: round; stroke-linejoin: round;
+      stroke-dasharray: 18; stroke-dashoffset: 18;
+      animation: ak-step2-check-mark 0.25s ease-out 0.3s forwards;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// Waits out the page load + trip restore first; the 10s save timeout starts only after that, so a
+// slow page load isn't mistaken for a failed save.
+async function saveTripAfterRestore() {
+  await tripRestored;
+  const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
+  await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
+}
+
+const $continueBtn = getContinueBtn();
+const continueBtnOriginalHTML = $continueBtn?.innerHTML;
+
+// Navigate wherever the button itself points — its href is authored in Webflow (hotel-next skips
+// the pass calculator and links straight to verify-itinerary), so the destination stays in sync
+// with whatever that page links to instead of being recomputed here.
+const continueHref = $continueBtn?.getAttribute('href') || '#';
+
+function resetContinueBtn() {
+  if (!$continueBtn) return;
+  $continueBtn.classList.remove('ak-saving');
+  $continueBtn.disabled = false;
+  $continueBtn.style.opacity = '';
+  $continueBtn.style.minWidth = '';
+  $continueBtn.innerHTML = continueBtnOriginalHTML;
+}
+
+function resetStepLink($link) {
+  delete $link.dataset.akSaving;
+  $link.style.opacity = '';
+  const $text = $link.querySelector('.u-body-cod');
+  $text?.classList.remove('ak-step2-btn-loading');
+  $text?.querySelector('.ak-step2-spinner')?.remove();
+}
+
+// On hotel-next there are two save-itinerary buttons ("Save trip details"): the nav link (<a>) and
+// the logistics form's <input type="submit">. The input has no inner HTML to hold a spinner, so its
+// value (text only) is swapped instead. Each button keeps its own original label.
+const $saveBtns = [...document.querySelectorAll('[data-ak="save-itinerary"]')];
+const saveBtnOriginalLabels = new Map($saveBtns.map($btn => [$btn, $btn.tagName === 'INPUT' ? $btn.value : $btn.innerHTML]));
+
+function setSaveBtnLabel($btn, html, text) {
+  if ($btn.tagName === 'INPUT') $btn.value = text;
+  else $btn.innerHTML = html;
+}
+
+function resetSaveBtn($btn) {
+  const original = saveBtnOriginalLabels.get($btn);
+  $btn.classList.remove('ak-saving');
+  $btn.disabled = false;
+  $btn.style.opacity = '';
+  $btn.style.minWidth = '';
+  setSaveBtnLabel($btn, original, original);
+}
+
+// The Plan / Verify / Guide step links (the current one, Plan, excluded) — on Carlton Arms this was
+// the "Calc" link; hotel-next has none and goes Plan → Verify → Guide.
+const stepLinkSelector = '.app_title_steps_item[href]:not(.w--current)';
+
+// Bfcache restores the page (and its DOM/JS state) exactly as it was when the user navigated away,
+// so without this the buttons (and the step links) can come back stuck mid-spinner if they hit
+// back after clicking one.
+window.addEventListener('pageshow', e => {
+  if (!e.persisted) return;
+  resetContinueBtn();
+  $saveBtns.forEach(resetSaveBtn);
+  document.querySelectorAll(stepLinkSelector).forEach(resetStepLink);
+});
+
+$continueBtn?.addEventListener('click', async e => {
+  e.preventDefault();
+  const $btn = e.currentTarget;
+  if ($btn.classList.contains('ak-saving')) return;
+
+  injectStep2SpinnerStyle();
+
+  const loadingText = 'Verifying...';
+  $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+  $btn.innerHTML = `<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>${loadingText}</span>`;
+  $btn.classList.add('ak-saving');
+  $btn.disabled = true;
+  $btn.style.opacity = '0.8';
+
+  try {
+    await saveTripAfterRestore();
+    window.location.href = continueHref;
+  } catch (err) {
+    console.error(err);
+    $btn.innerHTML = 'Failed, try again!';
+    $btn.classList.remove('ak-saving');
+    $btn.disabled = false;
+    $btn.style.opacity = '';
+    setTimeout(() => { $btn.innerHTML = continueBtnOriginalHTML; $btn.style.minWidth = ''; }, 1000);
+
+    alertify.alert(navigator.onLine
+      ? "We couldn't save your trip. Please try again in a moment."
+      : "You're offline — please check your internet connection and try again.");
+  }
+});
+
+$saveBtns.forEach($saveBtn => $saveBtn.addEventListener('click', async e => {
+  e.preventDefault();
+  // Signed out (only reachable via the data-ak-show-signed-out button): there's no account to save
+  // to, so send them to sign in. Their edits are already in localStorage and come back after login.
+  if (!auth.currentUser) return goToSignIn();
+  const $btn = e.currentTarget;
+  // Either button mid-save blocks both, so the trip isn't saved twice at once.
+  if ($saveBtns.some($b => $b.classList.contains('ak-saving'))) return;
+
+  injectStep2SpinnerStyle();
+
+  $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+  setSaveBtnLabel($btn, '<span class="ak-step2-btn-loading"><span class="ak-step2-spinner"></span>Saving...</span>', 'Saving...');
+  $btn.classList.add('ak-saving');
+  $btn.disabled = true;
+  $btn.style.opacity = '0.8';
+
+  try {
+    await saveTripAfterRestore();
+    // Success confirmation before restoring -- only save-itinerary stays on the page after
+    // saving (continue-to-step2 and the step links navigate away immediately), so this is
+    // the only save action a checkmark would actually be seen on.
+    setSaveBtnLabel($btn, '<span class="ak-step2-btn-loading"><svg class="ak-step2-check" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3 3 7-7"/></svg>Saved!</span>', 'Saved!');
+    await new Promise(resolve => setTimeout(resolve, 900));
+  } catch (err) {
+    console.error(err);
+    alertify.alert(navigator.onLine
+      ? "We couldn't save your trip. Please try again in a moment."
+      : "You're offline — please check your internet connection and try again.");
+  } finally {
+    resetSaveBtn($btn);
+  }
+}));
+
+// The Verify / Guide step links point straight at their pages — without this they navigate before
+// the trip is saved, same gap continue-to-step2 used to have.
+document.querySelectorAll(stepLinkSelector).forEach($link => {
+  $link.addEventListener('click', async e => {
+    e.preventDefault();
+    if ($link.dataset.akSaving) return;
+    $link.dataset.akSaving = 'true';
+    $link.style.opacity = '0.8';
+
+    injectStep2SpinnerStyle();
+
+    // Insert the spinner right before the step's name text itself, not just anywhere in the link,
+    // since the link also contains the step-number bubble before it.
+    const $text = $link.querySelector('.u-body-cod');
+    const $spinner = document.createElement('span');
+    $spinner.className = 'ak-step2-spinner';
+    if ($text) {
+      $text.classList.add('ak-step2-btn-loading');
+      $text.insertBefore($spinner, $text.firstChild);
+    }
+
+    try {
+      await saveTripAfterRestore();
+      window.location.href = $link.getAttribute('href');
+    } catch (err) {
+      console.error(err);
+      resetStepLink($link);
+      alertify.alert(navigator.onLine
+        ? "We couldn't save your trip. Please try again in a moment."
+        : "You're offline — please check your internet connection and try again.");
+    }
+  });
+});
+
+
+// Main map search autocomplete
+async function setupAutocompleteInp() {
+  await google.maps.importLibrary('places');
+
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    locationBias: { radius: 5000.0, center: mapCenter },
+  });
+
+  placeAutocomplete.placeholder = 'Add an activity...';
+  document.querySelector('[data-ak="map-autocomplete"]').appendChild(placeAutocomplete);
+
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
+
+    const saveObj = await buildSaveObjFromPlace(place);
+    map.panTo(saveObj.location);
+
+    const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+    const status = addSearchResultToItinerary(saveObj, marker);
+    if (status !== 'added') marker.map = null;
+
+    placeAutocomplete.value = '';
+  });
+}
+
+// gmp-place-autocomplete computes its internal (closed-shadow-root) click/focus handling at the
+// moment it's connected to the document. If that happens while an ancestor is display:none (e.g.
+// a hover dropdown that starts hidden), that internal handling never recovers — it renders fine
+// once visible but stays permanently unclickable, and there's no way to patch a closed shadow
+// root from outside. So never let it connect while hidden: create + connect it inside a tiny
+// offscreen-but-genuinely-laid-out holder (NOT display:none, so it initializes correctly), wire
+// its listener there, then just MOVE (not recreate) the already-working element into the real
+// slot once that slot becomes visible. Reparenting an initialized custom element preserves its
+// working internal state.
+function getOffscreenWidgetHolder() {
+  let $holder = document.getElementById('ak-offscreen-widget-holder');
+  if (!$holder) {
+    $holder = document.createElement('div');
+    $holder.id = 'ak-offscreen-widget-holder';
+    $holder.style.cssText = 'position:fixed; top:0; left:-99999px; width:300px; height:44px;';
+    document.body.appendChild($holder);
+  }
+  return $holder;
+}
+
+function findNearestClippingAncestor($el) {
+  for (let node = $el.parentElement; node; node = node.parentElement) {
+    const cs = getComputedStyle(node);
+    if (cs.overflow !== 'visible' || cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+      return node;
+    }
+  }
+  return null;
+}
+
+// itinerary_ui_fields_drop grows its own inline height via a Webflow/JS hover
+// interaction, and forcing its overflow to visible at placement time (before
+// that interaction has run) stops it from ever setting that height — it stays
+// collapsed and nothing renders. So don't touch it up front; only relax the
+// clip once the widget actually has focus (by then the panel has already
+// grown normally), and restore it on blur so the next hover-open cycle is
+// undisturbed.
+function wireOverflowEscapeOnFocus($el) {
+  let $clippingAncestor = null;
+  let originalOverflow = '';
+  $el.addEventListener('focusin', () => {
+    $clippingAncestor = findNearestClippingAncestor($el);
+    if (!$clippingAncestor) return;
+    originalOverflow = $clippingAncestor.style.overflow;
+    $clippingAncestor.style.overflow = 'visible';
+  });
+  $el.addEventListener('focusout', () => {
+    if (!$clippingAncestor) return;
+    $clippingAncestor.style.overflow = originalOverflow;
+    $clippingAncestor = null;
+  });
+}
+
+function moveWhenVisible($wrap, $el) {
+  // The Webflow-authored ancestor chain around these dropdown fields sets
+  // pointer-events: none (it's meant as a non-interactive preview box); only
+  // the absolutely-positioned .itinerary_ui_fields_drop panel re-enables it.
+  // The bare custom element has no Webflow class to pick up an override, so
+  // it silently inherits none and swallows nothing — every click passes
+  // through it. Re-enable explicitly; a descendant's pointer-events: auto
+  // wins over an ancestor's none.
+  $wrap.style.pointerEvents = 'auto';
+  $el.style.pointerEvents = 'auto';
+
+  const $hiddenAncestor = findHiddenAncestor($wrap);
+  if (!$hiddenAncestor) {
+    $wrap.appendChild($el);
+    return;
+  }
+
+  const observer = new ResizeObserver(entries => {
+    if (!entries.some(entry => entry.contentRect.width > 0 && entry.contentRect.height > 0)) return;
+    observer.disconnect();
+    $wrap.appendChild($el);
+  });
+  observer.observe($hiddenAncestor);
+}
+
+function findHiddenAncestor($el) {
+  for (let node = $el.parentElement; node; node = node.parentElement) {
+    if (getComputedStyle(node).display === 'none') return node;
+  }
+  return null;
+}
+
+async function setupHotelAutocomplete() {
+  await google.maps.importLibrary('places');
+
+  const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
+  if (!$wrap) return;
+
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    componentRestrictions: { country: ['us'] },
+    includedRegionCodes: ['us'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    includedPrimaryTypes: ['lodging', 'hotel'],
+  });
+  placeAutocomplete.placeholder = 'Add hotel...';
+  placeAutocompleteEls['hotel'] = placeAutocomplete;
+
+  getOffscreenWidgetHolder().appendChild(placeAutocomplete);
+
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+
+    map.panTo(place.viewport || place.location);
+
+    const placeObj = place.toJSON();
+    const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+    placeAutocomplete.value = '';
+
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), guestPicked: true };
+
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+    if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+    markerObj['hotel'] = marker;
+
+    const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+    setMapHotelName(displayName);
+    showRemoveIcon($hotelNameEl);
+    setHotelNameText(displayName);
+
+    localStorage['ak-hotel'] = JSON.stringify(saveObj);
+    localStorage['ak-update-hotel'] = true;
+    setUnsavedChangesFlag();
+    restoreTripHeadingName();
+  });
+
+  wireOverflowEscapeOnFocus(placeAutocomplete);
+  moveWhenVisible($wrap, placeAutocomplete);
+}
+
+// Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
+// a name search biased to the fixed hotel's known coords instead of a user-picked autocomplete
+// prediction — a fixed hotel has nothing for the user to pick. Text Search (by name) is used
+// rather than Nearby Search (by proximity) because the nearest lodging result to these coords isn't
+// reliably the hotel itself (e.g. Freehand New York sits closer to Carlton Arms's exact point) —
+// searching by name pins down the actual named hotel.
+async function autoSetFixedHotel() {
+  await google.maps.importLibrary('places');
+
+  let places;
+  try {
+    ({ places } = await google.maps.places.Place.searchByText({
+      textQuery: fixedHotel.textQuery,
+      fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'],
+      locationBias: { radius: 200.0, center: fixedHotel.center },
+      maxResultCount: 1,
+    }));
+  } catch (e) {
+    // The map itself is already centered on the hotel regardless (see mapCenter/initMap above) —
+    // only the marker/saved place data depend on this lookup succeeding.
+    alertify.alert(navigator.onLine
+      ? "We couldn't load the hotel details. Please reload the page to try again."
+      : "You're offline — please check your internet connection and reload the page.");
+    return;
+  }
+
+  const place = places?.[0];
+  if (!place) return;
+
+  map.panTo(place.location);
+
+  const placeObj = place.toJSON();
+  const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+  const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+  const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), fixedHotel: fixedHotelKey };
+
+  const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+  markerObj['hotel'] = marker;
+
+  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+  setMapHotelName(displayName);
+  showRemoveIcon($hotelNameEl);
+
+  localStorage['ak-hotel'] = JSON.stringify(saveObj);
+  localStorage['ak-update-hotel'] = true;
+  setUnsavedChangesFlag();
+  restoreTripHeadingName();
+
+  // Surface the hotel's popup right away, same as clicking its marker (createMarker's gmp-click
+  // handler below) — a fixed hotel is never user-picked, so this is the only chance to show it. No scrollToMapPopupTop() here: that scrolls the page, which would be jarring on load.
+  openMapPopup(displayName, editorialSummary, saveObj, marker);
+}
+
+async function setupAirportAutocomplete() {
+  await google.maps.importLibrary('places');
+
+  AIRPORT_FIELDS.forEach(field => {
+    Object.entries(TRANSPORT_MODES).forEach(([mode, { autocompleteSuffix }]) => {
+      const $wrap = document.querySelector(`[data-ak="${field.prefix}-${autocompleteSuffix}"]`);
+      if ($wrap) initAirportAutocomplete($wrap, field, mode);
+    });
+  });
+}
+
+function initAirportAutocomplete($wrap, { markerKey, storageKey, updateKey, nameSelector, placeholder, prefix, draftKey }, mode) {
+  const { includedPrimaryTypes, placeholder: modePlaceholder } = TRANSPORT_MODES[mode];
+  const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+    componentRestrictions: { country: ['us'] },
+    includedRegionCodes: ['us'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    ...(includedPrimaryTypes ? { includedPrimaryTypes } : {}),
+  });
+  placeAutocomplete.placeholder = modePlaceholder || placeholder;
+  placeAutocompleteEls[`${markerKey}-${mode}`] = placeAutocomplete;
+
+  getOffscreenWidgetHolder().appendChild(placeAutocomplete);
+
+  placeAutocomplete.addEventListener('gmp-select', async res => {
+    const { placePrediction } = res;
+    const place = placePrediction.toPlace();
+    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI'] });
+
+    map.panTo(place.viewport || place.location);
+
+    const placeObj = place.toJSON();
+    const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
+    const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+
+    placeAutocomplete.value = '';
+    const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
+
+    const flightFields = {};
+    AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+      flightFields[key] = document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value || '';
+    });
+
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, photoUrl, neighborhood, ...flightFields, mode };
+
+    const pin = getCorrectTransportationPinUrl(type, mode);
+    const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, pin, saveObj);
+    if (markerObj[markerKey]) markerObj[markerKey].setMap(null);
+    markerObj[markerKey] = marker;
+
+    const $nameEl = nameSelector ? document.querySelector(nameSelector) : null;
+    if ($nameEl) $nameEl.textContent = displayName;
+    showRemoveIcon($nameEl);
+
+    localStorage[storageKey] = JSON.stringify(saveObj);
+    localStorage[updateKey] = true;
+    localStorage.removeItem(draftKey);
+    setUnsavedChangesFlag();
+    updateTransportSummary(prefix);
+  });
+
+  wireOverflowEscapeOnFocus(placeAutocomplete);
+  moveWhenVisible($wrap, placeAutocomplete);
+}
+
+// A driving start/end point is just an address, so it gets the camera pin (the site's default).
+function getCorrectTransportationPinUrl(type, mode) {
+  if (mode === 'car') return cameraPinUrl;
+  if (!type) return airportMarkerPinUrl;
+  if (type.includes('bus_station')) return busPinUrl;
+  if (type.includes('train_station')) return trainPinUrl;
+  return airportMarkerPinUrl;
+}
+
+function createMarker(title, position, editorialSummary = title, type = [], markerPinSrc = cameraPinUrl, saveObj = null) {
+  const markerPinImg = document.createElement('img');
+  const isRestaurant = type.includes('restaurant') || type.includes('food');
+  // Restaurants always get the knife & fork; anything without a pin falls back to the camera.
+  const pinSrc = isRestaurant && markerPinSrc !== hotelMarkerPinUrl ? foodForkPinUrl : (markerPinSrc || cameraPinUrl);
+  markerPinImg.src = pinSrc;
+  markerPinImg.className = 'ak-marker-pin';
+
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    map,
+    position,
+    title,
+    content: markerPinImg,
+    gmpClickable: true,
+  });
+
+  marker.addListener('gmp-click', () => {
+    openMapPopup(title, editorialSummary, saveObj, marker);
+  });
+
+  return marker;
+}
+
+function openMapPopup(title, editorialSummary, saveObj, marker = null) {
+  const $mapPopup = document.querySelector('[data-ak="map-popup"]');
+  if (!$mapPopup) return;
+
+  const $locationBlock = $mapPopup.querySelector('.map_card_content > .map_card_title:first-child');
+  if (!$locationBlock) return;
+
+  const $titleEl = $locationBlock.querySelector('.u-size-56-28 h2');
+  if ($titleEl) $titleEl.textContent = title || '';
+  const $descEl = $locationBlock.querySelector('.u-size-56-28 + .u-size-24-10 p');
+  if ($descEl) $descEl.textContent = editorialSummary || title || '';
+
+  const $img = $mapPopup.querySelector('.map_card_img_item');
+  // The rating sits in a <p> directly on hotel-next (Carlton Arms wraps it in an <em>).
+  const $ratingNum = $locationBlock.querySelector('.map_card_stars_wrap + .u-size-24-10 p em')
+    || $locationBlock.querySelector('.map_card_stars_wrap + .u-size-24-10 p');
+  const $reviewCount = $locationBlock.querySelector('.map_card_info .u-hflex-left-center:last-child .u-size-24-10:first-child p');
+  const $keyItems = $mapPopup.querySelectorAll('.map_card_key .map_card_key_iem');
+
+  if (saveObj) {
+    if ($img) {
+      showImageWithSpinner($img, saveObj.photoUrl || noPhotoPlaceholder);
+    }
+
+    if ($ratingNum) $ratingNum.textContent = saveObj.rating != null ? saveObj.rating : '';
+
+    if ($reviewCount) {
+      $reviewCount.textContent = saveObj.reviewCount != null ? saveObj.reviewCount.toLocaleString() : '0';
+    }
+
+    const $address = $keyItems[0]?.querySelector('.u-size-24-10 p');
+    const addressVal = saveObj.address || '';
+    if ($address) $address.textContent = addressVal;
+    if ($keyItems[0]) $keyItems[0].style.display = addressVal ? '' : 'none';
+
+    const $hours = $keyItems[1]?.querySelector('.u-size-24-10 p');
+    const hoursVal = getTodayHours(saveObj.openingHours);
+    if ($hours) $hours.textContent = hoursVal;
+    if ($keyItems[1]) $keyItems[1].style.display = hoursVal ? '' : 'none';
+
+    const $phone = $keyItems[2]?.querySelector('.u-size-24-10 p');
+    const phoneVal = saveObj.phone || '';
+    if ($phone) $phone.textContent = phoneVal;
+    if ($keyItems[2]) $keyItems[2].style.display = phoneVal ? '' : 'none';
+
+    const $price = $keyItems[3]?.querySelector('.u-size-24-10 p');
+    const priceVal = formatPriceRange(saveObj.priceRange);
+    if ($price) $price.textContent = priceVal;
+    if ($keyItems[3]) $keyItems[3].style.display = priceVal ? '' : 'none';
+
+    const $closedBadge = $locationBlock.querySelector('.map_card_closed');
+    if ($closedBadge) {
+      const $badgeText = $closedBadge.querySelector('p');
+      const status = saveObj.businessStatus;
+      if (status === 'TEMPORARILY_CLOSED') {
+        if ($badgeText) { $badgeText.textContent = 'Temporarily Closed'; $badgeText.style.color = '#E07B00'; }
+        $closedBadge.style.display = '';
+      } else if (status === 'PERMANENTLY_CLOSED') {
+        if ($badgeText) { $badgeText.textContent = 'Permanently Closed'; $badgeText.style.color = '#D0021B'; }
+        $closedBadge.style.display = '';
+      } else if (status === 'OPERATIONAL') {
+        const openNow = isCurrentlyOpen(saveObj.openingHours);
+        const isOpen = openNow !== false; // null (no hours data) defaults to open
+        if ($badgeText) { $badgeText.textContent = isOpen ? 'Open' : 'Currently Closed'; $badgeText.style.color = isOpen ? '#2E7D32' : '#D0021B'; }
+        $closedBadge.style.display = '';
+      } else {
+        $closedBadge.style.display = 'none';
+      }
+    }
+  }
+
+  // The Webflow section ships with placeholder copy in its <p> — it's always overwritten below so
+  // that copy can never show. The <p> is tagged insider-tip-desc on first lookup because the
+  // reservation badge <p> gets inserted right before it, and a bare '.u-size-24-10 p' would then match the badge.
+  const $tipSection = $mapPopup.querySelector('[data-ak="insider-tips-section"]');
+  let $tipDesc = $mapPopup.querySelector('[data-ak="insider-tip-desc"]');
+  if (!$tipDesc) {
+    $tipDesc = $tipSection?.querySelector('.u-size-24-10 p') || null;
+    $tipDesc?.setAttribute('data-ak', 'insider-tip-desc');
+  }
+  const $tipInsiders = $mapPopup.querySelectorAll('[data-ak-insider]');
+  const rawEntry = insiderTipsData && saveObj?.placeId ? (insiderTipsData[saveObj.placeId] ?? null) : null;
+  const tipText = parseInsiderTip(rawEntry?.tip).desc;
+  const reservationsRequired = rawEntry?.reservationsRequired ?? false;
+  const hasInsiderContent = !!tipText || reservationsRequired;
+
+  let $resBadge = $mapPopup.querySelector('[data-ak="reservation-badge"]');
+  if (!$resBadge && $tipDesc) {
+    $resBadge = document.createElement('p');
+    $resBadge.setAttribute('data-ak', 'reservation-badge');
+    $resBadge.style.cssText = 'display:none;color:#92400E;border-radius:4px;padding:6px 0;font-size:12px;font-weight:600;margin-bottom:12px;';
+    $resBadge.textContent = '⚠️ Reservation Required';
+    $tipDesc.parentElement.insertBefore($resBadge, $tipDesc);
+  }
+  if ($resBadge) {
+    $resBadge.style.display = reservationsRequired ? '' : 'none';
+    // With no tip below it the badge is the section's only content, so it's italicised to stand in as the description.
+    $resBadge.style.fontStyle = reservationsRequired && !tipText ? 'italic' : '';
+  }
+
+  if ($tipDesc) {
+    $tipDesc.textContent = tipText;
+    $tipDesc.style.display = tipText ? '' : 'none';
+  }
+  $tipInsiders.forEach($el => $el.style.display = hasInsiderContent ? '' : 'none');
+
+  const $popupActionBtn = $mapPopup.querySelector('.map_card_btn_wrap');
+  if ($popupActionBtn) {
+    const $existingMatch = findItineraryMatch(saveObj);
+    const $actionLabel = $popupActionBtn.querySelector('[data-ak="popup-action-label"]');
+
+    if (!$existingMatch && saveObj?._isSearchResult) {
+      if ($actionLabel) $actionLabel.textContent = 'Add Activity';
+      $popupActionBtn.onclick = () => {
+        const added = addSearchResultToItinerary(saveObj, marker) === 'added';
+        if (added) $mapPopup.setAttribute('data-ak-hidden', 'true');
+      };
+    } else {
+      if ($actionLabel) $actionLabel.textContent = 'Remove';
+      const $fieldMatch = !$existingMatch ? findMapPopupField(marker) : null;
+      $popupActionBtn.onclick = () => {
+        alertify.confirm(
+          `Remove ${saveObj?.displayName || 'this location'}?`,
+          () => {
+            if ($existingMatch) removeAttractionLocation($existingMatch);
+            else if ($fieldMatch) clearMapPopupField($fieldMatch);
+            $mapPopup.setAttribute('data-ak-hidden', 'true');
+          },
+          () => {}
+        );
+      };
+    }
+  }
+
+  $mapPopup.removeAttribute('data-ak-hidden');
+  requestAnimationFrame(() => {
+    $mapPopup.querySelector('.map_card_-inner')?.scrollTo(0, 0);
+  });
+}
+
+function findItineraryMatch(saveObj) {
+  if (!saveObj) return null;
+  const $attractions = $attractionsSlider.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])');
+  return [...$attractions].find(el =>
+    (saveObj.placeId && el.placeId === saveObj.placeId) ||
+    (saveObj.displayName && el.querySelector('[data-ak="location-title"]')?.textContent.toLowerCase().trim() === saveObj.displayName.toLowerCase().trim())
+  ) || null;
+}
+
+function findMapPopupField(marker) {
+  if (!marker) return null;
+  return MAP_POPUP_FIELDS.find(({ markerKey }) => markerObj[markerKey] === marker) || null;
+}
+
+// Shows/hides what goes with a picked hotel/airport, so there's nothing to remove until one is
+// actually added:
+// - Carlton Arms markup: the remove-location icon in .ci009_left-icons-wrap, a sibling of the name
+//   element inside .flex-row.
+// - hotel-next's "Selected" box: two .itinerary_logistics_select_wrap siblings, the empty state
+//   ("Nothing selected yet") then the picked state (name + ✕) — only one shows at a time.
+function setPickedState($nameEl, picked) {
+  const toggleHidden = ($el, hidden) => hidden ? $el.setAttribute('data-ak-hidden', 'true') : $el.removeAttribute('data-ak-hidden');
+
+  const $iconWrap = $nameEl?.closest('.flex-row')?.querySelector('.ci009_left-icons-wrap');
+  if ($iconWrap) toggleHidden($iconWrap, !picked);
+
+  const $pickedBox = $nameEl?.closest('.itinerary_logistics_select_wrap');
+  const $emptyBox = $pickedBox?.previousElementSibling;
+  if ($emptyBox?.matches('.itinerary_logistics_select_wrap')) {
+    toggleHidden($pickedBox, !picked);
+    toggleHidden($emptyBox, picked);
+  }
+}
+
+function showRemoveIcon($nameEl) {
+  setPickedState($nameEl, true);
+}
+
+function hideRemoveIcon($nameEl) {
+  setPickedState($nameEl, false);
+}
+
+function clearMapPopupField(field) {
+  const marker = markerObj[field.markerKey];
+  if (marker) marker.setMap(null);
+  delete markerObj[field.markerKey];
+
+  localStorage.removeItem(field.storageKey);
+  if (field.updateKey) localStorage[field.updateKey] = true;
+
+  const $nameEl = document.querySelector(field.nameSelector);
+  if ($nameEl) $nameEl.textContent = field.defaultText || '';
+  hideRemoveIcon($nameEl);
+
+  setUnsavedChangesFlag();
+  if (field.storageKey === 'ak-hotel') {
+    setMapHotelName('');
+    restoreTripHeadingName();
+    if (!fixedHotel) setWelcomeHasHotel(false);
+  }
+}
+
+function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = null } = {}) {
+  const displayName = saveObj.displayName;
+  const isRestaurant = (saveObj.type || []).includes('restaurant') || (saveObj.type || []).includes('food');
+
+  const { $currentSlide, slideIndex } = slide || getCurrentSlideInfo();
+  if (!$currentSlide) {
+    console.error('No current slide found — cannot add attraction.');
+    return 'error';
+  }
+  const $typeSection = $currentSlide.querySelector(`[data-ak-type="${isRestaurant ? 'eat' : 'visit'}"]`);
+  const $typeWrap = $typeSection.querySelector('[data-ak-type-dropzone]');
+
+  if (attractionExists($typeWrap, displayName)) {
+    if (!silent) alertify.alert('Sorry, Already Added!');
+    return 'duplicate';
+  }
+
+  if (!auth.currentUser) {
+    if (addedAttractions >= attractionslimit) {
+      if (!silent) alertify.alert('Max Limit Reached. Login To Add More');
+      return 'limit';
+    }
+    updateAttractionsCount('+');
+    localStorage['ak-update-merge-local'] = true;
+  }
+
+  detachFromChipCache(marker);
+
+  markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
+  markerObj[`slide${slideIndex}`].push(marker);
+
+  addAttractionToList(displayName, $typeWrap, marker, saveObj);
+  saveAttractionLocal();
+
+  syncNoItemAdded($typeSection);
+  // If the Attractions/Restaurants dropdown is closed, open it so the new item can be seen.
+  openTypeSection($typeSection);
+
+  $currentSlide.querySelector('[data-ak-types].active')?.classList.remove('active');
+  $typeSection.classList.add('active');
+
+  if (marker?.content) marker.content.src = isRestaurant ? foodForkPinUrl : cameraPinUrl;
+
+  setUnsavedChangesFlag();
+  return 'added';
+}
+
+// Bulk import gives us free-text lines instead of an autocomplete prediction, so each line has to be
+// resolved to a real place first. Text Search (New) does the search + field-fetch in one call, unlike
+// the autocomplete widget flow which needs a separate fetchFields() after a prediction is chosen.
+async function resolvePlaceFromText(query) {
+  const { places } = await google.maps.places.Place.searchByText({
+    textQuery: query,
+    fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'],
+    locationBias: { radius: 5000.0, center: mapCenter },
+    maxResultCount: 1,
+  });
+  return places?.[0] || null;
+}
+
+// Mirrors customize-itinerary.js's extractNeighborhood(): prefer the "neighborhood" address
+// component Places already gave us, else reverse-geocode the coordinates for it, else fall back
+// to the nearest broader area so the ez-guide always has something to show.
+async function extractNeighborhood(addressComponents, lat, lng) {
+  const find = (...types) => addressComponents.find(c => types.some(t => c.types.includes(t)))?.longText;
+  const findLast = (...types) => addressComponents.findLast(c => types.some(t => c.types.includes(t)))?.longText;
+
+  const fromComponents = findLast('neighborhood');
+  if (fromComponents) return fromComponents;
+
+  try {
+    const geocoder = new google.maps.Geocoder();
+    const { results } = await geocoder.geocode({ location: { lat, lng } });
+    for (const result of results) {
+      if (result.types.includes('neighborhood')) {
+        const comp = result.address_components.find(c => c.types.includes('neighborhood'));
+        if (comp) return comp.long_name;
+      }
+    }
+  } catch (_) {}
+
+  return find('sublocality', 'sublocality_level_1') || find('locality') || '';
+}
+
+async function buildSaveObjFromPlace(place) {
+  const placeObj = place.toJSON();
+  const { displayName, id, location: { lat, lng }, editorialSummary, types: type = [] } = placeObj;
+  const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+  const neighborhood = await extractNeighborhood(placeObj.addressComponents || [], lat, lng);
+
+  return {
+    location: { lat, lng },
+    displayName,
+    neighborhood,
+    address: placeObj.formattedAddress || '',
+    editorialSummary,
+    type,
+    placeId: id,
+    rating: placeObj.rating ?? null,
+    website: placeObj.websiteURI || placeObj.websiteUri || '',
+    phone: placeObj.nationalPhoneNumber || '',
+    reviewCount: placeObj.userRatingCount ?? null,
+    photoUrl,
+    openingHours: placeObj.regularOpeningHours || null,
+    priceRange: placeObj.priceRange || null,
+    businessStatus: placeObj.businessStatus || null,
+    _isSearchResult: true,
+    _detailsLoaded: true,
+  };
+}
+
+// A day divider is a line made up of one or more characters that are all "not a word or number"
+// (letters/digits excluded, everything else — dashes, equals signs, underscores, mixed symbols — allowed).
+const DAY_DIVIDER = /^[^a-zA-Z0-9]+$/;
+
+// Splits the bulk-import textarea into one line-array per day: every DAY_DIVIDER line starts a new
+// group. Blank lines are dropped, and empty groups (leading/trailing/doubled dividers) are filtered out.
+function splitIntoDayGroups(text) {
+  const groups = [[]];
+  text.split('\n').forEach(rawLine => {
+    const line = rawLine.trim();
+    if (!line) return;
+    if (DAY_DIVIDER.test(line)) {
+      groups.push([]);
+      return;
+    }
+    groups[groups.length - 1].push(line);
+  });
+  return groups.filter(group => group.length);
+}
+
+// Bulk import can ask for more days than the trip currently has. When it does, clone the last slide
+// (same cloning approach used when a trip is first set up) as a fresh day dated one day later, keeping
+// the hidden [data-ak="attraction-location"] template item addAttractionToList() clones from.
+function createNextDaySlide() {
+  const $slides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+  const $lastSlide = $slides[$slides.length - 1];
+
+  const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const lastDate = new Date($lastSlide.querySelector('[data-ak="types-date"]').textContent);
+  lastDate.setDate(lastDate.getDate() + 1);
+  const label = `${monthArr[lastDate.getMonth()]} ${lastDate.getDate()}`;
+
+  const $newSlide = $lastSlide.cloneNode(true);
+  $newSlide.setAttribute('aria-hidden', 'true');
+  $newSlide.querySelector('[data-ak="types-day"]').textContent = daysArr[lastDate.getDay()];
+  $newSlide.querySelector('[data-ak="types-date"]').textContent = `${label}, ${lastDate.getFullYear()}`;
+
+  $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
+    $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
+  });
+  resetClonedDayDropdowns($newSlide);
+  $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
+  const $notes = $newSlide.querySelector('.ak-notes');
+  if ($notes) $notes.value = '';
+
+  $attractionsSliderMask.append($newSlide);
+  syncAllNoItemAdded($newSlide);
+
+  return { $currentSlide: $newSlide, slideIndex: $slides.length + 1, label };
+}
+
+// Bulk-import textarea: one location per line, days separated by a DAY_DIVIDER line. The first day's
+// group lands on the current day; each following group gets its own day, reusing existing day-slides
+// where available and creating new ones (dated off the last existing day) once those run out.
+async function handleBulkImport() {
+  const $textarea = document.querySelector('.itinerary_ui_bulk_text');
+  const $finishBtn = document.querySelector('.itinerary_ui_bulk_finish');
+  const $bulkWrap = document.querySelector('.itinerary_ui_bulk_wrap');
+  if (!$textarea || $finishBtn?.classList.contains('ak-importing')) return;
+
+  const dayGroups = splitIntoDayGroups($textarea.value);
+  if (!dayGroups.length) return;
+
+  const $label = $finishBtn?.querySelector('[data-ak="popup-action-label"]');
+  const originalLabel = $label?.textContent;
+
+  $finishBtn?.classList.add('ak-importing');
+  $finishBtn?.style.setProperty('pointer-events', 'none');
+  $finishBtn?.style.setProperty('opacity', '0.6');
+  if ($label) $label.textContent = 'Importing...';
+
+  let addedCount = 0;
+  const notFound = [];
+  const skipped = [];
+  const newDayLabels = [];
+
+  const { $currentSlide: $startSlide, slideIndex: startIndex } = getCurrentSlideInfo();
+
+  outer:
+  for (let i = 0; i < dayGroups.length; i++) {
+    // Reuse the day-slide already at this position (starting from the current day) if one exists;
+    // only append a brand-new slide once existing days actually run out — otherwise bulk-importing
+    // into a trip that already has enough days duplicates/extends it instead of filling them in.
+    const slide = (() => {
+      if (i === 0) return { $currentSlide: $startSlide, slideIndex: startIndex };
+
+      const targetIndex = startIndex + i;
+      const $existingSlide = $attractionsSliderMask.querySelectorAll('.w-slide')[targetIndex - 1];
+      if ($existingSlide) return { $currentSlide: $existingSlide, slideIndex: targetIndex };
+
+      const created = createNextDaySlide();
+      newDayLabels.push(created.label);
+      return { $currentSlide: created.$currentSlide, slideIndex: created.slideIndex };
+    })();
+
+    for (const line of dayGroups[i]) {
+      try {
+        const place = await resolvePlaceFromText(line);
+        if (!place) { notFound.push(line); continue; }
+
+        const saveObj = await buildSaveObjFromPlace(place);
+        const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+        const status = addSearchResultToItinerary(saveObj, marker, { silent: true, slide });
+
+        if (status === 'added') {
+          addedCount++;
+        } else {
+          marker.map = null;
+          if (status === 'limit') { skipped.push(line); break outer; }
+          skipped.push(line);
+        }
+      } catch (err) {
+        console.error(err);
+        notFound.push(line);
+      }
+    }
+  }
+
+  if (newDayLabels.length && window.Webflow) {
+    Webflow.destroy();
+    Webflow.ready();
+    Webflow.require('ix2').init();
+    Webflow.require('slider').redraw();
+  }
+
+  $finishBtn?.classList.remove('ak-importing');
+  $finishBtn?.style.removeProperty('pointer-events');
+  $finishBtn?.style.removeProperty('opacity');
+  if ($label) $label.textContent = originalLabel;
+
+  const failed = [...notFound, ...skipped];
+  const summaryParts = [
+    addedCount
+      ? `Added ${addedCount} location${addedCount === 1 ? '' : 's'}.`
+      : `Couldn't add any locations.`,
+  ];
+  if (newDayLabels.length) summaryParts.push(`Added in\n${newDayLabels.join('\n')}`);
+  // failed lines are the user's own raw bulk-import textarea input echoed back — escaped in case
+  // this alertify build renders its message via innerHTML rather than as plain text.
+  if (failed.length) summaryParts.push(`Couldn't add: ${failed.map(escapeHtml).join(', ')}.`);
+  alertify.alert(summaryParts.join('\n\n'));
+
+  if (addedCount) {
+    $textarea.value = '';
+    if ($bulkWrap) $bulkWrap.style.display = 'none';
+  }
+}
+
+function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
+  name = format(name);
+  const $location = $listName.querySelector('[data-ak="attraction-location"]').cloneNode(true);
+  $location.removeAttribute('data-ak-hidden');
+  $location.querySelector('[data-ak="location-title"]').textContent = name;
+  $location.querySelector('[data-ak="location-link-text"]').textContent = saveObj.neighborhood || name;
+  $location.marker = marker;
+  $location.saveObj = saveObj;
+
+  const { placeId } = saveObj;
+  if (placeId) {
+    $location.placeId = placeId;
+    const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
+    if (!placeIds.includes(placeId)) {
+      placeIds.push(placeId);
+      localStorage['ak-place-ids'] = JSON.stringify(placeIds);
+    }
+  }
+
+  $listName.append($location);
+}
+
+// Attractions/Restaurants dropdowns: the dropdown component marks each section's state on
+// data-dd-item ("open"/"closed") and on its trigger's aria-expanded.
+//
+// That component (the page's own <script>) binds each [data-dd-trigger] once, on DOMContentLoaded.
+// Day slides cloned after that (restoreTripDaySlides(), createNextDaySlide()) carry no listeners, so
+// the handlers below toggle any slider dropdown the page script didn't: the capture listener notes the
+// section's state before the click, and the bubble listener toggles it only if it's still unchanged.
+// Sections the page script did bind are left to it, so nothing is toggled twice.
+function setSliderDropdownState($item, open) {
+  $item.setAttribute('data-dd-item', open ? 'open' : 'closed');
+  $item.querySelector('[data-dd-trigger]')?.setAttribute('aria-expanded', open);
+  const $content = $item.querySelector('[data-dd-content]');
+  if ($content) $content.inert = !open;
+}
+
+function toggleSliderDropdown($item) {
+  const willOpen = $item.getAttribute('data-dd-item') !== 'open';
+  const $wrap = $item.closest('[data-dd-group]');
+  if (willOpen && $wrap?.hasAttribute('data-dd-single')) {
+    $wrap.querySelectorAll('[data-dd-item]').forEach($other => {
+      if ($other !== $item) setSliderDropdownState($other, false);
+    });
+  }
+  setSliderDropdownState($item, willOpen);
+}
+
+function getSliderDropdownItem(e) {
+  const $trigger = e.target.closest('[data-dd-trigger]');
+  return $trigger && isInAttractionsSlider($trigger) ? $trigger.closest('[data-dd-item]') : null;
+}
+
+let sliderDropdownBeforeClick = null;
+function noteSliderDropdownState(e) {
+  const $item = getSliderDropdownItem(e);
+  sliderDropdownBeforeClick = $item ? { $item, state: $item.getAttribute('data-dd-item') } : null;
+}
+
+function toggleUnboundSliderDropdown() {
+  const before = sliderDropdownBeforeClick;
+  sliderDropdownBeforeClick = null;
+  if (!before || before.$item.getAttribute('data-dd-item') !== before.state) return;
+  toggleSliderDropdown(before.$item);
+}
+
+// The page script handles Enter/Space on the triggers it bound and calls preventDefault().
+function handleSliderDropdownKey(e) {
+  if ((e.key !== 'Enter' && e.key !== ' ') || e.defaultPrevented) return;
+  const $item = getSliderDropdownItem(e);
+  if (!$item) return;
+  e.preventDefault();
+  toggleSliderDropdown($item);
+  syncNoItemAdded($item.closest('[data-ak-types]'));
+}
+
+// A cloned day starts like the template: Attractions open, Restaurants/Notes closed. Its panels get
+// new ids so they don't duplicate the template's (aria-controls points at them).
+let clonedDropdownCount = 0;
+function resetClonedDayDropdowns($slide) {
+  $slide.querySelectorAll('[data-ak-types][data-dd-item]').forEach($section => {
+    setSliderDropdownState($section, $section.getAttribute('data-ak-type') === 'visit');
+  });
+  $slide.querySelectorAll('[data-dd-item]').forEach($item => {
+    const $content = $item.querySelector('[data-dd-content]');
+    if (!$content) return;
+    $content.id = `ak-dd-clone-${++clonedDropdownCount}`;
+    $item.querySelector('[data-dd-trigger]')?.setAttribute('aria-controls', $content.id);
+  });
+}
+
+function getTypeSectionTrigger($typeSection) {
+  return $typeSection?.querySelector('[data-dd-trigger], [data-ak-type-title]');
+}
+
+function isTypeSectionClosed($typeSection) {
+  return $typeSection?.getAttribute('data-dd-item') === 'closed'
+    || getTypeSectionTrigger($typeSection)?.getAttribute('aria-expanded') === 'false';
+}
+
+function openTypeSection($typeSection) {
+  if (isTypeSectionClosed($typeSection)) getTypeSectionTrigger($typeSection)?.click();
+}
+
+// Each section's "No attractions/restaurants selected yet" row ([data-ak="no-item-added"]): shown
+// while the section has no items, hidden (data-ak-hidden) once it has one.
+function syncNoItemAdded($typeSection) {
+  const $noItem = $typeSection?.querySelector('[data-ak="no-item-added"]');
+  if (!$noItem) return;
+  const hasItems = !!$typeSection.querySelector('[data-ak="attraction-location"]:not([data-ak-hidden])');
+  if (hasItems) $noItem.setAttribute('data-ak-hidden', 'true');
+  else $noItem.removeAttribute('data-ak-hidden');
+}
+
+// On load (once saved items are restored) and for new day slides: every section in the slider.
+function syncAllNoItemAdded($root = $attractionsSliderMask) {
+  $root?.querySelectorAll('[data-ak-types]').forEach(syncNoItemAdded);
+}
+
+// When a section is opened (or closed), bring its empty-state row up to date.
+function handleTypeSectionToggle(e) {
+  const $trigger = e.target.closest('[data-dd-trigger], [data-ak-type-title]');
+  if (!$trigger || !isInAttractionsSlider($trigger)) return;
+  syncNoItemAdded($trigger.closest('[data-ak-types]'));
+}
+
+function getCurrentSlideInfo() {
+  const $currentSlide = $attractionsSliderMask.querySelector('.w-slide:not([aria-hidden="true"])');
+  const slideIndex = [...$attractionsSliderMask.querySelectorAll('.w-slide')].indexOf($currentSlide) + 1;
+  return { $currentSlide, slideIndex };
+}
+
+function attractionExists(wrap, name) {
+  return [...wrap.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden]) [data-ak="location-title"]')]
+    .some(el => el.textContent.toLowerCase().trim() === name.toLowerCase().trim());
+}
+
+function handleRemoveLocation(e) {
+  if (!e.target.closest('[data-ak="remove-location"]')) return;
+
+  const $attraction = e.target.closest('[data-ak="attraction-location"]');
+  if ($attraction && isInAttractionsSlider($attraction)) {
+    const name = $attraction.querySelector('[data-ak="location-title"]')?.textContent?.trim() || 'this location';
+    alertify.confirm(
+      `Remove ${name}?`,
+      () => removeAttractionLocation($attraction),
+      () => {}
+    );
+    return;
+  }
+
+  // Hotel/airport fields aren't [data-ak="attraction-location"] items — their remove-location link sits
+  // next to the [data-ak-map-popup] trigger (e.g. [data-ak="map-hotel-name"]), not inside it: in .flex-row
+  // on Carlton Arms markup, in the "Selected" box's .itinerary_logistics_form_item on hotel-next. So look
+  // sideways for it and match the same way handleFieldMapPopup does off its data-ak.
+  const $fieldTrigger = (e.target.closest('.itinerary_logistics_form_item') || e.target.closest('.flex-row'))?.querySelector('[data-ak-map-popup]');
+  const triggerName = $fieldTrigger?.getAttribute('data-ak');
+  const field = triggerName && MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
+  if (!field) return;
+
+  const name = document.querySelector(field.nameSelector)?.textContent?.trim() || 'this location';
+
+  alertify.confirm(
+    `Remove ${name}?`,
+    () => clearMapPopupField(field),
+    () => {}
+  );
+}
+
+function handlePopupOpen(e) {
+  if (!e.target.closest('[data-ak="popup-open"]')) return;
+  e.preventDefault();
+
+  const $attraction = e.target.closest('[data-ak="attraction-location"]');
+  if (!$attraction?.saveObj || !isInAttractionsSlider($attraction)) return;
+
+  map.panTo($attraction.saveObj.location);
+  openMapPopup($attraction.saveObj.displayName, $attraction.saveObj.editorialSummary, $attraction.saveObj, $attraction.marker);
+  scrollToMapPopupTop();
+}
+
+function handleSectionActivate(e) {
+  const $title = e.target.closest('[data-ak-type-title]');
+  if (!$title || !isInAttractionsSlider($title)) return;
+
+  const $currentSlide = $title.closest('.w-slide');
+  $currentSlide.querySelector('[data-ak-types].active')?.classList.remove('active');
+  $title.closest('[data-ak-types]').classList.add('active');
+}
+
+function handleSectionDeactivateOnClickAway(e) {
+  if (isInAttractionsSlider(e.target)) return;
+  getCurrentSlideInfo().$currentSlide?.querySelector('[data-ak-types].active')?.classList.remove('active');
+}
+
+function handleFieldMapPopup(e) {
+  if (e.target.closest('[data-ak="remove-location"]')) return; // handleRemoveLocation's
+  // On hotel-next the picked "Selected" box (name + ✕) is the empty box's sibling, not inside the trigger.
+  const $trigger = e.target.closest('[data-ak-map-popup]')
+    || e.target.closest('.itinerary_logistics_select_wrap')?.parentElement.querySelector('[data-ak-map-popup]');
+  if (!$trigger) return;
+  e.preventDefault();
+
+  const triggerName = $trigger.getAttribute('data-ak');
+  const field = MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
+  if (!field) return;
+
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage[field.storageKey] || 'null');
+  } catch (err) {
+    saveObj = null;
+  }
+
+  if (!saveObj?.location) {
+    // Arrival/departure: the search box of whichever mode is showing.
+    const autocompleteKey = field.prefix ? `${field.markerKey}-${getTransportMode(field.prefix)}` : field.markerKey;
+    placeAutocompleteEls[autocompleteKey]?.focus();
+    return;
+  }
+
+  map.panTo(saveObj.location);
+  openMapPopup(saveObj.displayName, saveObj.editorialSummary, saveObj, markerObj[field.markerKey]);
+  scrollToMapPopupTop();
+}
+
+function scrollToMapPopupTop() {
+  const $mapPopup = document.querySelector('[data-ak="map-popup"]');
+  if (!$mapPopup) return;
+
+  const margin = 20;
+  const top = $mapPopup.getBoundingClientRect().top + window.scrollY - margin;
+  window.scrollTo({ top, behavior: 'smooth' });
+}
+
+function removeAttractionLocation($attraction) {
+  if ($attraction.marker) $attraction.marker.setMap(null);
+
+  if ($attraction.placeId) {
+    const placeIds = JSON.parse(localStorage['ak-place-ids'] || '[]');
+    const idIndex = placeIds.indexOf($attraction.placeId);
+    if (idIndex !== -1) placeIds.splice(idIndex, 1);
+    localStorage['ak-place-ids'] = JSON.stringify(placeIds);
+  }
+
+  const $slide = $attraction.closest('.w-slide');
+  const $typeSection = $attraction.closest('[data-ak-types]');
+
+  $attraction.remove();
+  syncNoItemAdded($typeSection);
+
+  if ($slide) saveAttractionLocal();
+  if (!auth.currentUser) updateAttractionsCount('-');
+  setUnsavedChangesFlag();
+}
+
+let $draggedAttraction = null;
+
+// Where a drop lands: before the first item (other than the one being dragged) whose middle is below
+// the pointer, or at the end of the list when there's none. The template item stays hidden in each
+// list ([data-ak-hidden]), so it's skipped, and its place in the DOM doesn't matter.
+function getDropTarget($dropZone, clientY) {
+  const items = [...$dropZone.querySelectorAll(':scope > [data-ak="attraction-location"]:not([data-ak-hidden])')]
+    .filter($item => $item !== $draggedAttraction);
+  const $before = items.find($item => {
+    const { top, height } = $item.getBoundingClientRect();
+    return clientY < top + height / 2;
+  });
+  if ($before) return { $item: $before, position: 'before' };
+  const $last = items[items.length - 1];
+  return $last ? { $item: $last, position: 'after' } : null;
+}
+
+// The line showing where the dragged item will go: a 2px bar above or below that item.
+let $dropMarkerItem = null;
+function showDropMarker(target) {
+  if (!document.getElementById('ak-drop-marker-style')) {
+    const style = document.createElement('style');
+    style.id = 'ak-drop-marker-style';
+    style.textContent = `
+      [data-ak-drop-marker="before"] { box-shadow: 0 -2px 0 0 currentColor; }
+      [data-ak-drop-marker="after"] { box-shadow: 0 2px 0 0 currentColor; }
+    `;
+    document.head.appendChild(style);
+  }
+  if ($dropMarkerItem && $dropMarkerItem !== target?.$item) clearDropMarker();
+  if (!target) return;
+  target.$item.setAttribute('data-ak-drop-marker', target.position);
+  $dropMarkerItem = target.$item;
+}
+
+function clearDropMarker() {
+  $dropMarkerItem?.removeAttribute('data-ak-drop-marker');
+  $dropMarkerItem = null;
+}
+
+function handleDragStart(e) {
+  const $dragEl = e.target.closest('[data-ak="attraction-location"]');
+  if (!$dragEl || !isInAttractionsSlider($dragEl)) return;
+  $draggedAttraction = $dragEl;
+  e.dataTransfer.setData('text/plain', $dragEl.querySelector('[data-ak="location-title"]')?.textContent || '');
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleDragOver(e) {
+  const $dropZone = e.target.closest('[data-ak-type-dropzone]');
+  if (!$dropZone || !isInAttractionsSlider($dropZone) || !$draggedAttraction) {
+    clearDropMarker();
+    return;
+  }
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  showDropMarker(getDropTarget($dropZone, e.clientY));
+}
+
+function expandContentWrapOnDrag(e) {
+  const $title = e.target.closest('[data-ak-type-title]');
+  if (!$title || !isInAttractionsSlider($title)) return;
+  openTypeSection($title.closest('[data-ak-types]'));
+}
+
+function handleDrop(e) {
+  const $dropZone = e.target.closest('[data-ak-type-dropzone]');
+  if (!$dropZone || !isInAttractionsSlider($dropZone)) return;
+  e.preventDefault();
+
+  if (!$draggedAttraction) return;
+
+  const $fromSlide = $draggedAttraction.closest('.w-slide');
+  const $fromSection = $draggedAttraction.closest('[data-ak-types]');
+
+  const target = getDropTarget($dropZone, e.clientY);
+  if (target) target.$item.insertAdjacentElement(target.position === 'before' ? 'beforebegin' : 'afterend', $draggedAttraction);
+  else $dropZone.appendChild($draggedAttraction);
+  $draggedAttraction = null;
+  clearDropMarker();
+  syncNoItemAdded($fromSection);
+  syncNoItemAdded($dropZone.closest('[data-ak-types]'));
+
+  const $toSlide = $dropZone.closest('.w-slide');
+
+  if ($fromSlide || $toSlide) saveAttractionLocal();
+  setUnsavedChangesFlag();
+}
+
+// Single source of truth for per-day Visit/Eat state: reads the same ak-attractions-saved
+// snapshot that saveAttractionLocal() writes and saveAttractionsDB() sends to Firestore, so the
+// restored UI can never drift from what actually gets saved.
+function restoreAttractions() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-attractions-saved'] || '{}');
+  } catch (e) {
+    return;
+  }
+
+  const bucketToType = { attractions: 'visit', restaurants: 'eat' };
+
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach((slide, n) => {
+    const slideSaved = saved[`slide${n + 1}`];
+    if (!slideSaved) return;
+
+    Object.entries(bucketToType).forEach(([bucket, key]) => {
+      const $wrap = slide.querySelector(`[data-ak-type-list="${key}"]`);
+      if (!$wrap) return;
+
+      (slideSaved[bucket] || []).forEach(saveObj => {
+        const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+        addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
+      });
+    });
+  });
+
+  updateActiveChipTags();
+}
+
+// From dd-build-itinerary.js (demo hotel): no fixed hotel, so put back the one saved to the trip.
+function restoreHotel() {
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage['ak-hotel'] || 'null');
+  } catch (e) {
+    return;
+  }
+  if (!saveObj?.location || isLeftoverFixedHotel(saveObj)) return;
+
+  const { displayName, location, editorialSummary, type } = saveObj;
+  const marker = createMarker(displayName, location, editorialSummary, type, hotelMarkerPinUrl, saveObj);
+  if (markerObj['hotel']) markerObj['hotel'].setMap(null);
+  markerObj['hotel'] = marker;
+
+  const $hotelNameEl = document.querySelector('[data-ak="map-hotel-name"] p');
+  setMapHotelName(displayName);
+  showRemoveIcon($hotelNameEl);
+  setHotelNameText(displayName);
+}
+
+function restoreAirports() {
+  AIRPORT_FIELDS.forEach(field => {
+    const { storageKey, prefix, draftKey } = field;
+    let saveObj;
+    try {
+      saveObj = JSON.parse(localStorage[storageKey] || 'null');
+    } catch (e) {
+      saveObj = null;
+    }
+
+    if (!saveObj?.location) {
+      restoreAirportFlightDraft(prefix, draftKey);
+      return;
+    }
+
+    const { location, mode } = saveObj;
+    showAirportPick(field, saveObj);
+
+    AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+      const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
+      if ($field && saveObj[key]) $field.value = saveObj[key];
+    });
+    setTransportMode(prefix, mode);
+    updateTransportSummary(prefix);
+
+    // Places picked before neighborhoods were saved: look it up from the coordinates once, and keep it.
+    if (!('neighborhood' in saveObj)) {
+      extractNeighborhood([], location.lat, location.lng).then(neighborhood => {
+        let current;
+        try {
+          current = JSON.parse(localStorage[storageKey] || 'null');
+        } catch (e) {
+          return;
+        }
+        if (current?.placeId !== saveObj.placeId) return;
+        localStorage[storageKey] = JSON.stringify({ ...current, neighborhood });
+        updateTransportSummary(prefix);
+      });
+    }
+  });
+}
+
+function createAirportMarker(saveObj) {
+  const { displayName, location, editorialSummary, type, mode } = saveObj;
+  return createMarker(displayName, location, editorialSummary, type, getCorrectTransportationPinUrl(type, mode), saveObj);
+}
+
+// Puts a saved arrival/departure place in its "Selected" box, and on the map — with `marker` if it's
+// already there, or a new one.
+function showAirportPick({ markerKey, nameSelector }, saveObj, marker = null) {
+  const { displayName } = saveObj;
+  if (markerObj[markerKey] && markerObj[markerKey] !== marker) markerObj[markerKey].setMap(null);
+  markerObj[markerKey] = marker || createAirportMarker(saveObj);
+
+  const $nameEl = document.querySelector(nameSelector);
+  if ($nameEl) $nameEl.textContent = displayName;
+  showRemoveIcon($nameEl);
+}
+
+// Each mode keeps its own arrival/departure pick: switching from Plane (LaGuardia) to Train shows
+// "Nothing selected yet" (or the station picked earlier under Train), and switching back brings
+// LaGuardia back. The current mode's pick stays under storageKey — the one in the "Selected" box, on
+// the map, and saved with the trip — while the other modes' picks wait in a local stash
+// (ak-arrival-airport-by-mode / ak-departure-airport-by-mode), keyed by mode. Their markers come off
+// the map but are kept in stashedAirportMarkers (keyed "<markerKey>-<mode>"), so switching back just
+// puts the same marker back. Typed details are in separate per-mode inputs (carrier/number) or shared
+// (time), so they're left as they are.
+const stashedAirportMarkers = {};
+
+function getAirportStash(storageKey) {
+  try {
+    return JSON.parse(localStorage[`${storageKey}-by-mode`] || 'null') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function switchAirportMode(field, mode) {
+  const { storageKey, updateKey, draftKey, markerKey, nameSelector, prefix } = field;
+  const stashKey = `${storageKey}-by-mode`;
+  let current;
+  try {
+    current = JSON.parse(localStorage[storageKey] || 'null');
+  } catch (e) {
+    current = null;
+  }
+  const stash = getAirportStash(storageKey);
+
+  if (current?.location) {
+    const currentMode = TRANSPORT_MODES[current.mode] ? current.mode : 'plane';
+    if (currentMode === mode) return;
+    stash[currentMode] = current;
+    if (markerObj[markerKey]) {
+      markerObj[markerKey].map = null;
+      stashedAirportMarkers[`${markerKey}-${currentMode}`] = markerObj[markerKey];
+    }
+    delete markerObj[markerKey];
+  }
+  const next = stash[mode];
+  delete stash[mode];
+  localStorage[stashKey] = JSON.stringify(stash);
+
+  if (next) {
+    localStorage[storageKey] = JSON.stringify(next);
+    const nextMarker = stashedAirportMarkers[`${markerKey}-${mode}`] || null;
+    delete stashedAirportMarkers[`${markerKey}-${mode}`];
+    if (nextMarker) nextMarker.map = map;
+    showAirportPick(field, next, nextMarker);
+  } else {
+    if (current?.location) {
+      localStorage.removeItem(storageKey);
+      const $nameEl = document.querySelector(nameSelector);
+      if ($nameEl) $nameEl.textContent = field.defaultText || '';
+      hideRemoveIcon($nameEl);
+    }
+    // No pick in this mode: the mode is kept with the typed-in details, as before a pick is made.
+    saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, 'mode', mode);
+  }
+  localStorage[updateKey] = true;
+  updateTransportSummary(prefix);
+}
+
+function restoreAirportFlightDraft(prefix, draftKey) {
+  let draft;
+  try {
+    draft = JSON.parse(localStorage[draftKey] || 'null');
+  } catch (e) {
+    return;
+  }
+  if (!draft) return;
+
+  AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+    const $field = document.querySelector(`[data-ak="${prefix}-${suffix}"]`);
+    if ($field && draft[key]) $field.value = draft[key];
+  });
+  setTransportMode(prefix, draft.mode);
+  updateTransportSummary(prefix);
+}
+
+function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value) {
+  let saveObj;
+  try {
+    saveObj = JSON.parse(localStorage[storageKey] || 'null');
+  } catch (e) {
+    saveObj = null;
+  }
+
+  if (saveObj) {
+    saveObj[key] = value;
+    localStorage[storageKey] = JSON.stringify(saveObj);
+    localStorage[updateKey] = true;
+    return;
+  }
+
+  let draft;
+  try {
+    draft = JSON.parse(localStorage[draftKey] || 'null');
+  } catch (e) {
+    draft = null;
+  }
+  draft = draft || {};
+  draft[key] = value;
+  localStorage[draftKey] = JSON.stringify(draft);
+}
+
+function saveTripNotesLocal($notes) {
+  const slideIndex = [...$attractionsSliderMask.querySelectorAll('.w-slide')].indexOf($notes.closest('.w-slide')) + 1;
+  if (!slideIndex) return;
+
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-trip-notes'] || '{}');
+  } catch (e) {
+    saved = {};
+  }
+  saved[`slide${slideIndex}`] = $notes.value;
+  localStorage['ak-trip-notes'] = JSON.stringify(saved);
+}
+
+function restoreTripNotes() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage['ak-trip-notes'] || '{}');
+  } catch (e) {
+    return;
+  }
+
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach((slide, n) => {
+    const value = saved[`slide${n + 1}`];
+    if (value == null) return;
+    const $notes = slide.querySelector('.ak-notes');
+    if ($notes) $notes.value = value;
+  });
+}
+
+// Runs once after restoreAttractions()/restoreTripNotes() have populated the DOM, so a returning
+// user immediately sees any day/section that already has content instead of having to click each
+// header open manually.
+function unwrapSectionsWithContent() {
+  $attractionsSliderMask.querySelectorAll('.w-slide').forEach($slide => {
+    // Only one section per day can be open (data-dd-single), so open the first one with content.
+    const $withContent = [...$slide.querySelectorAll('[data-ak-types]')].find($typeSection => {
+      const type = $typeSection.getAttribute('data-ak-type');
+      return type === 'notes'
+        ? !!$typeSection.querySelector('.ak-notes')?.value.trim()
+        : !!$typeSection.querySelector('[data-ak="attraction-location"]:not([data-ak-hidden])');
+    });
+    openTypeSection($withContent);
+  });
+}
+
+// Mirrors setupTravelDates()/setupSliderDates() in customize-itinerary.js: sizes the day slides to
+// the user's saved trip length before restoreAttractions() populates them, so slide N exists for
+// every day the trip actually spans instead of relying on however many slides the static markup has.
+//
+// Takes a callback instead of just returning, because when a reinit *is* needed (see below) it replays
+// Webflow's own "page load" interactions — including the one that sets every accordion panel back to
+// height:0 — so anything that depends on the DOM being in its final settled state (restoreAttractions(),
+// unwrapSectionsWithContent(), etc.) has to run after that reinit finishes, not before it.
+function restoreTripDaySlides(onSettled) {
+  const settle = () => { if (typeof onSettled === 'function') onSettled(); };
+
+  if (!localStorage['ak-travel-days']) return settle();
+
+  let flatpickrDate;
+  try {
+    ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
+  } catch (e) {
+    return settle();
+  }
+  if (!flatpickrDate) return settle();
+
+  const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
+  const startDate = new Date(startRaw);
+  const endDate = new Date(endRaw || startRaw);
+  if (isNaN(startDate) || isNaN(endDate)) return settle();
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay) + 1;
+  if (totalDays < 1) return settle();
+
+  const daysArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const setDayNDate = ($slide, theDate) => {
+    const $day = $slide.querySelector('[data-ak="types-day"]');
+    const $date = $slide.querySelector('[data-ak="types-date"]');
+    if ($day) $day.textContent = daysArr[theDate.getDay()];
+    if ($date) $date.textContent = `${monthArr[theDate.getMonth()]} ${theDate.getDate()}, ${theDate.getFullYear()}`;
+  };
+
+  const $existingSlides = [...$attractionsSliderMask.querySelectorAll('.w-slide')];
+  const $firstSlide = $existingSlides[0];
+  if (!$firstSlide) return settle();
+
+  let addedSlide = false;
+
+  for (let i = 0; i < totalDays; i++) {
+    const dayDate = new Date(startDate);
+    dayDate.setDate(dayDate.getDate() + i);
+
+    // Slide already present (e.g. the static Jan 1/Jan 2 pair Webflow ships with) — just retarget its date.
+    if ($existingSlides[i]) {
+      setDayNDate($existingSlides[i], dayDate);
+      continue;
+    }
+
+    // Beyond what's already in the DOM — clone the template slide to cover the remaining days.
+    const $newSlide = $firstSlide.cloneNode(true);
+    $newSlide.setAttribute('aria-hidden', 'true');
+    setDayNDate($newSlide, dayDate);
+
+    $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
+      $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
+    });
+    resetClonedDayDropdowns($newSlide);
+    $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
+    const $notes = $newSlide.querySelector('.ak-notes');
+    if ($notes) $notes.value = '';
+
+    $attractionsSliderMask.append($newSlide);
+    syncAllNoItemAdded($newSlide);
+    addedSlide = true;
+  }
+
+  // Newly appended .w-slide nodes aren't picked up by the Webflow slider widget until it's
+  // rebuilt — same reinit handleBulkImport() runs after createNextDaySlide() adds slides.
+  // Deferred a frame so the browser has actually laid out the new clones before Webflow
+  // measures the container for the redraw — measuring mid-mutation is what let the
+  // mask's computed width drift wider as more slides got added in the same tick.
+  if (addedSlide && window.Webflow) {
+    requestAnimationFrame(() => {
+      Webflow.destroy();
+      Webflow.ready();
+      Webflow.require('ix2').init();
+      Webflow.require('slider').redraw();
+      settle();
+    });
+  } else {
+    settle();
+  }
+}
+
+// Split into two halves so each can run at module start (see the top of the file) instead of
+// waiting on 'load' or the Firebase auth round-trip, then re-run after syncWithDB().
+// Both return true only if they actually filled in a value.
+// A fixed hotel's typed-in city wins (it's there on first paint). Otherwise it's the city Google gave
+// for the saved hotel (ak-hotel's city, set when the hotel is picked/looked up) -- for a fixed hotel,
+// only once ak-hotel is actually that hotel, so a previous trip's hotel doesn't flash in first.
+function getTripCity() {
+  if (fixedHotel?.city) return fixedHotel.city;
+  let hotel;
+  try { hotel = JSON.parse(localStorage['ak-hotel'] || 'null'); } catch (e) { hotel = null; }
+  if (!hotel?.city) return '';
+  if (fixedHotel ? !isNearFixedHotel(hotel.location) : isLeftoverFixedHotel(hotel)) return '';
+  return hotel.city;
+}
+
+function isNearFixedHotel(location, hotel = fixedHotel) {
+  if (!location) return false;
+  const { lat, lng } = hotel.center;
+  return Math.abs(location.lat - lat) < 0.005 && Math.abs(location.lng - lng) < 0.005;
+}
+
+// On the demo flow (no fixed hotel), a saved hotel that was put there by a Carlton Arms/Compton visit
+// (autoSetFixedHotel() marks it `fixedHotel`) belongs to that hotel, not this trip, so it isn't
+// restored or used for the heading. Hotels saved before that mark existed are recognized by being at
+// a fixed hotel's coords -- unless the guest picked it themselves (`guestPicked`).
+function isLeftoverFixedHotel(hotel) {
+  if (!hotel) return false;
+  if (hotel.fixedHotel) return true;
+  if (hotel.guestPicked) return false;
+  return Object.values(FIXED_HOTELS).some(entry => isNearFixedHotel(hotel.location, entry));
+}
+
+// The hotel's city from its Place address, or '' for New York City (the heading's default, N.Y.C).
+// NYC addresses often have no locality, just a borough as sublocality, so those count as NYC too.
+function getCityFromAddress(addressComponents = []) {
+  const find = type => addressComponents.find(c => c.types.includes(type))?.longText || '';
+  const city = find('locality') || find('postal_town');
+  const state = addressComponents.find(c => c.types.includes('administrative_area_level_1'))?.shortText;
+  const NYC_NAMES = ['New York', 'Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'The Bronx', 'Staten Island'];
+  if (state === 'NY' && (NYC_NAMES.includes(city) || (!city && NYC_NAMES.includes(find('sublocality_level_1'))))) return '';
+  return city;
+}
+
+function restoreTripHeadingName() {
+  if (!$headingH2 || !headingTemplateText) return false;
+  // The destination after "to" is Webflow's (N.Y.C) unless the hotel is somewhere else, e.g. Compton → Bentonville.
+  const city = getTripCity();
+  let headingText = city ? headingTemplateText.replace(/(\bto\s+).+$/i, `$1${city}`) : headingTemplateText;
+  let tripName = localStorage['ak-user-name'] || auth.currentUser?.displayName?.split(/\s+/)[0] || auth.currentUser?.email?.split('@')[0] || '';
+  if (tripName) {
+    tripName = tripName.charAt(0).toUpperCase() + tripName.slice(1).toLowerCase();
+    headingText = headingText.replace(/^\S+/, `${tripName}'s`);
+  }
+  $headingH2.textContent = headingText;
+  return !!tripName;
+}
+
+function restoreTripDateLine() {
+  const $dateWrap = document.querySelector('[data-ak="trip-heading-date"]');
+  if (!$dateWrap || !localStorage['ak-travel-days']) return false;
+
+  let flatpickrDate;
+  try {
+    ({ flatpickrDate } = JSON.parse(localStorage['ak-travel-days']));
+  } catch (e) {
+    return false;
+  }
+  if (!flatpickrDate) return false;
+
+  const [startRaw, endRaw] = flatpickrDate.split(/\s+to\s+/);
+  const monthArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fmt = d => `${monthArr[d.getMonth()]} ${d.getDate()}`;
+
+  const $children = $dateWrap.children;
+  if ($children.length < 2) return false;
+
+  // hotel-next has the dates straight in the <p> (no <em> like Carlton Arms).
+  const $firstEm = $children[0].querySelector('p em') || $children[0].querySelector('p');
+  const $lastEm = $children[$children.length - 1].querySelector('p em') || $children[$children.length - 1].querySelector('p');
+  if ($firstEm) $firstEm.textContent = fmt(new Date(startRaw));
+  if ($lastEm) $lastEm.textContent = fmt(new Date(endRaw || startRaw));
+  return true;
+}
+
+function updateAttractionsCount(sign) {
+  addedAttractions = sign === '+' ? addedAttractions + 1 : addedAttractions - 1;
+  localStorage['ak-addedAttractions-count'] = addedAttractions;
+}
+
+function saveAttractionLocal() {
+  localStorage['ak-attractions-saved'] = getCurrentUserAttractions();
+  localStorage['ak-update-attractions'] = true;
+  updateActiveChipTags();
+}
+
+// Recomputes ak-activity-chips (e.g. ["Gluten Free"]) from the attractions actually in the
+// itinerary, rather than incrementing/decrementing a counter — that way a chip's tag can never
+// linger after the last activity added through it is removed, no matter which code path removed it.
+function updateActiveChipTags() {
+  const tags = new Set();
+  $attractionsSlider.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($attraction => {
+    const tag = $attraction.saveObj?._chipTag;
+    if (tag) tags.add(tag);
+  });
+  localStorage['ak-activity-chips'] = JSON.stringify([...tags]);
+  return tags;
+}
+
+function getCurrentUserAttractions() {
+  const savedAttractions = {};
+
+  $attractionsSlider.querySelectorAll('.w-slide').forEach((slide, n) => {
+    savedAttractions[`slide${n + 1}`] = {};
+    const slideObj = savedAttractions[`slide${n + 1}`];
+
+    slide.querySelectorAll('[data-ak-types]').forEach($typeSection => {
+      const type = typeKeyMap[$typeSection.getAttribute('data-ak-type')];
+      if (!type) return;
+      slideObj[type] = [];
+
+      $typeSection.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach(attraction => {
+        slideObj[type].push(attraction.saveObj);
+      });
+
+      if (type === 'notes') {
+        const $notes = $typeSection.querySelector('textarea');
+        slideObj.dayNotes = $notes ? $notes.value : '';
+      }
+    });
+  });
+
+  return JSON.stringify(savedAttractions);
+}
+
+function setUnsavedChangesFlag() {
+  $unsavedChanges.removeAttribute('data-ak-hidden');
+  localStorage['ak-unsaved-changes'] = true;
+}
+
+function removeUnsavedChangesFlag() {
+  $unsavedChanges.setAttribute('data-ak-hidden', 'true');
+  localStorage.removeItem('ak-unsaved-changes');
+}
+
+async function retrieveDBData(userMail) {
+  const { db, doc, getDoc } = await getDb();
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+  const docSnap = await getDoc(userRef);
+  return docSnap.exists() ? docSnap.data() : null;
+}
+
+// Combines a DB-saved attractions blob with whatever's in ak-attractions-saved, de-duping each
+// slide's buckets by displayName (mirrors customize-itinerary.js's mergelocalNDBAttractions, but
+// covers every slide instead of just slide1/slide2, since a trip here can run longer than 2 days).
+function mergeAttractions(dbSavedAttractionsJSON, localSavedAttractionsJSON) {
+  let dbAttractions, localAttractions;
+  try { dbAttractions = dbSavedAttractionsJSON ? JSON.parse(dbSavedAttractionsJSON) : {}; } catch (e) { dbAttractions = {}; }
+  try { localAttractions = localSavedAttractionsJSON ? JSON.parse(localSavedAttractionsJSON) : {}; } catch (e) { localAttractions = {}; }
+
+  const combineArrays = (dbArr = [], localArr = []) =>
+    [...new Map([...dbArr, ...localArr].map(obj => [obj.displayName, obj])).values()];
+
+  const merged = {};
+  for (const slide of new Set([...Object.keys(dbAttractions), ...Object.keys(localAttractions)])) {
+    const dbSlide = dbAttractions[slide] || {};
+    const localSlide = localAttractions[slide] || {};
+
+    merged[slide] = {
+      attractions: combineArrays(dbSlide.attractions, localSlide.attractions),
+      restaurants: combineArrays(dbSlide.restaurants, localSlide.restaurants),
+      notes: combineArrays(dbSlide.notes, localSlide.notes),
+    };
+    if (localSlide.dayNotes || dbSlide.dayNotes) merged[slide].dayNotes = localSlide.dayNotes || dbSlide.dayNotes || '';
+  }
+
+  return JSON.stringify(merged);
+}
+
+// Restores whatever this user last saved to Firestore into localStorage, before restoreTripDaySlides()/
+// restoreAttractions()/restoreAirports()/restoreTripNotes() read those same keys — those functions
+// only ever look at localStorage, so without this a fresh login on an empty browser (nothing cached
+// locally yet) would show nothing despite the trip already being saved server-side. With a fixed
+// hotel, ak-hotel is still synced here (below) for round-tripping to Firestore, even though the
+// hotel marker/name then comes from autoSetFixedHotel() rather than being restored from this key.
+//
+// Anything the user already touched locally in *this* session (ak-update-hotel/arrival-airport/
+// departure-airport, or the ak-update-merge-local flag set when a guest adds attractions pre-login)
+// wins over the DB copy instead of being silently overwritten by it.
+async function syncWithDB() {
+  if (!auth.currentUser) return;
+
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  if (!userMail) return;
+
+  const dbData = await retrieveDBData(userMail);
+  if (!dbData) return;
+
+  // Travel dates and headcounts are never edited on this page (only picked upstream), so a value
+  // already sitting in localStorage is always the guest's freshest pick — keep it over the DB copy.
+  if (!localStorage['ak-travel-days'] && dbData.travelDates) localStorage['ak-travel-days'] = dbData.travelDates;
+  if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
+  if (localStorage['ak-adult-num'] == null && dbData.adultNum != null) localStorage['ak-adult-num'] = dbData.adultNum;
+  if (localStorage['ak-children-num'] == null && dbData.childrenNum != null) localStorage['ak-children-num'] = dbData.childrenNum;
+
+  if (!localStorage['ak-update-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
+  if (!localStorage['ak-update-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
+  if (!localStorage['ak-update-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
+
+  if (dbData.savedAttractions) {
+    if (localStorage['ak-update-merge-local']) {
+      // Guest added attractions before logging in — combine with what's already saved to the DB
+      // instead of either side clobbering the other.
+      localStorage['ak-attractions-saved'] = mergeAttractions(dbData.savedAttractions, localStorage['ak-attractions-saved']);
+      localStorage.removeItem('ak-update-merge-local');
+    } else if (!localStorage['ak-update-attractions']) {
+      // No local edits this session — DB is authoritative.
+      localStorage['ak-attractions-saved'] = dbData.savedAttractions;
+    }
+  }
+}
+
+async function saveAttractionsDB() {
+  if (!localStorage['ak-userMail']) return;
+  const userMail = localStorage['ak-referrer-mail'] || localStorage['ak-userMail'];
+  const { db, doc, setDoc, serverTimestamp } = await getDb();
+  const userRef = doc(db, 'locationsData', `user-${userMail}`);
+
+  const saveObj = {
+    hotel: localStorage['ak-hotel'] || '',
+    arrivalAirport: localStorage['ak-arrival-airport'] || '',
+    departureAirport: localStorage['ak-departure-airport'] || '',
+    tripName: localStorage['ak-user-name'] || '',
+    travelDates: localStorage['ak-travel-days'] || '',
+    savedAttractions: getCurrentUserAttractions(),
+    activityChips: localStorage['ak-activity-chips'] || '[]',
+    // ak-flow-trial-reservation: the reservation number from the look-up form (lookup-form.js).
+    confirmationNum: localStorage['ak-hotel-conf'] || localStorage['ak-flow-trial-reservation'] || '',
+  };
+
+  saveObj.adultNum = localStorage['ak-adult-num'] ?? null;
+  saveObj.childrenNum = localStorage['ak-children-num'] ?? null;
+  saveObj.ModifiedAt = serverTimestamp();
+
+  await setDoc(userRef, saveObj, { merge: true });
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('ak-update')) continue;
+    localStorage.removeItem(key);
+  }
+
+  removeUnsavedChangesFlag();
+}
+
+function format(str) {
+  if (!str) return;
+  return str.trim().split(/\s+/).map(capitalize).join(' ');
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function showImageWithSpinner($img, src) {
+  if (!document.getElementById('ak-spinner-style')) {
+    const s = document.createElement('style');
+    s.id = 'ak-spinner-style';
+    s.textContent = '@keyframes ak-spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+  const $container = $img.parentElement;
+  $container.querySelector('.ak-img-spinner')?.remove();
+  if (getComputedStyle($container).position === 'static') $container.style.position = 'relative';
+  const $spinner = document.createElement('div');
+  $spinner.className = 'ak-img-spinner';
+  $spinner.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#ece9e4;gap:10px;z-index:1;';
+  $spinner.innerHTML = '<div style="width:32px;height:32px;border:3px solid #ddd;border-top-color:#888;border-radius:50%;animation:ak-spin 0.7s linear infinite;"></div><span style="font-size:11px;color:#999;letter-spacing:0.08em;">Loading image...</span>';
+  $container.appendChild($spinner);
+  $img.style.opacity = '0';
+  const cleanup = () => { $spinner.remove(); $img.style.opacity = ''; };
+  $img.onload = cleanup;
+  $img.onerror = () => { $img.src = noPhotoPlaceholder; $img.srcset = ''; cleanup(); };
+  $img.src = src;
+  $img.srcset = '';
+}
+
+function getTodayHours(openingHours) {
+  if (!openingHours?.weekdayDescriptions?.length) return '';
+  // JS getDay(): 0=Sun…6=Sat; Google weekdayDescriptions: 0=Mon…6=Sun
+  const dayIndex = (new Date().getDay() + 6) % 7;
+  const desc = openingHours.weekdayDescriptions[dayIndex] || '';
+  const colon = desc.indexOf(':');
+  return colon >= 0 ? desc.slice(colon + 1).trim() : desc;
+}
+
+function isCurrentlyOpen(openingHours) {
+  if (!openingHours?.periods?.length) return null;
+  const now = new Date();
+  const day = now.getDay();
+  const time = now.getHours() * 100 + now.getMinutes();
+  for (const period of openingHours.periods) {
+    if (!period.close) return true; // open 24/7
+    const openDay = period.open.day;
+    const closeDay = period.close.day;
+    const openTime = period.open.hour * 100 + (period.open.minute || 0);
+    const closeTime = period.close.hour * 100 + (period.close.minute || 0);
+    if (openDay === closeDay) {
+      if (day === openDay && time >= openTime && time < closeTime) return true;
+    } else {
+      // period spans midnight
+      if (day === openDay && time >= openTime) return true;
+      if (day === closeDay && time < closeTime) return true;
+    }
+  }
+  return false;
+}
+
+function formatPriceRange(priceRange) {
+  if (!priceRange) return '';
+  const fmt = money => {
+    if (!money) return '';
+    const units = money.units ?? money.value ?? '';
+    return units !== '' ? `$${units}` : '';
+  };
+  const start = fmt(priceRange.startPrice);
+  const end = fmt(priceRange.endPrice);
+  if (start && end) return `${start} - ${end}`;
+  return start || end;
+}
+
+async function loadInsiderTips() {
+  try {
+    const res = await fetch(insiderTipsUrl);
+    insiderTipsData = await res.json();
+  } catch (e) {
+    console.warn('Could not load insider tips:', e);
+  }
+}
+
+function parseInsiderTip(raw) {
+  if (!raw) return { title: '', desc: '' };
+  return { title: '', desc: raw.trim() };
+}
+
+function detachFromChipCache(marker) {
+  for (const cache of ALL_CHIP_MARKER_CACHES) {
+    for (const slug in cache) {
+      const arr = cache[slug];
+      const idx = arr.indexOf(marker);
+      if (idx !== -1) arr.splice(idx, 1);
+    }
+  }
+}
+
+// ===== Cuisine/vibe chips: minimal-data search + lazy popup enrichment =====
+
+const chipRequestSeq = {};
+const chipFetchInFlight = new Set();
+const chipDebounceTimers = {};
+const chipAbortControllers = {};
+
+// Only one chip may be active at a time across both the cuisine and attraction wraps.
+let activeChip = null; // { $chip, slug, markerCache }
+
+function deactivateChip() {
+  if (!activeChip) return;
+  const { $chip, slug, markerCache } = activeChip;
+  $chip.removeAttribute('data-ak-active');
+  chipAbortControllers[slug]?.abort();
+  (markerCache[slug] || []).forEach(marker => marker.setMap(null));
+  activeChip = null;
+}
+
+// Collapses a burst of calls for the same slug into one: each call resets the timer, so only the
+// last call within `delay` ms actually runs fn(). Earlier calls' promises are left pending forever
+// (harmless — nothing awaits them past their own caller, which never proceeds).
+function debounced(slug, delay, fn) {
+  return new Promise(resolve => {
+    if (chipDebounceTimers[slug]) clearTimeout(chipDebounceTimers[slug]);
+    chipDebounceTimers[slug] = setTimeout(() => {
+      delete chipDebounceTimers[slug];
+      resolve(fn());
+    }, delay);
+  });
+}
+
+// Cancels any in-flight network request still running for a slug's previous trigger, so a slow
+// superseded request stops costing bandwidth instead of just having its result discarded later.
+function nextAbortSignal(slug) {
+  chipAbortControllers[slug]?.abort();
+  const controller = new AbortController();
+  chipAbortControllers[slug] = controller;
+  return controller.signal;
+}
+
+// Briefly flags a chip as errored so Webflow can show a visible failure state instead of a silent
+// console-only warning.
+function flashChipError($chip) {
+  $chip.setAttribute('data-ak-error', 'true');
+  setTimeout(() => $chip.removeAttribute('data-ak-error'), 2500);
+}
+
+function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
+  $wrap?.querySelectorAll('[data-ak-chip][data-ak-active="true"]').forEach(async $chip => {
+    const slug = $chip.getAttribute('data-ak-chip');
+    const config = configMap[slug];
+    if (!config?.viewportAware) return;
+    if (config._curatedResolved) return; // already resolved from the sheet — not viewport-bound, nothing to refresh
+
+    const seq = (chipRequestSeq[slug] = (chipRequestSeq[slug] || 0) + 1);
+    const signal = nextAbortSignal(slug);
+    $chip.setAttribute('data-ak-loading', 'true');
+
+    try {
+      const results = config.debounceMs
+        ? await debounced(slug, config.debounceMs, () => config.search(signal))
+        : await config.search(signal);
+
+      // A later pan/zoom may have started a fresher request while this one was in flight — drop stale results.
+      if (chipRequestSeq[slug] !== seq) return;
+
+      (markerCache[slug] || []).forEach(marker => marker.setMap(null));
+      // Same reasoning as the initial activation fetch: don't recreate a dim marker over a spot
+      // that's already been added, or the dense marker there gets covered by this fresh dim one.
+      markerCache[slug] = results
+        .filter(({ saveObj }) => !findItineraryMatch(saveObj))
+        .map(({ title, position, saveObj }) => {
+          saveObj._chipSlug = slug;
+          saveObj._chipTag = config.curatedTag;
+          return createSearchMarker(title, position, saveObj, pinUrl);
+        });
+    } catch (e) {
+      if (e.name === 'AbortError') return; // superseded by a newer viewport — not a real failure
+      console.warn(`Viewport refresh failed for "${slug}":`, e);
+      // Leave whatever markers are already on the map from the last successful refresh in place.
+      flashChipError($chip);
+    } finally {
+      if (chipRequestSeq[slug] === seq) $chip.removeAttribute('data-ak-loading');
+    }
+  });
+}
+
+function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
+  $wrap?.addEventListener('click', async e => {
+    const $chip = e.target.closest('[data-ak-chip]');
+    if (!$chip) return;
+
+    const slug = $chip.getAttribute('data-ak-chip');
+    const config = configMap[slug];
+    if (!config) return;
+
+    if ($chip.getAttribute('data-ak-active') === 'true') {
+      deactivateChip();
+      return;
+    }
+
+    // Activating a new chip always supersedes whatever else was active, in either wrap.
+    deactivateChip();
+    $chip.setAttribute('data-ak-active', 'true');
+    activeChip = { $chip, slug, markerCache };
+
+    if (markerCache[slug]?.length && !config.refetchOnActivate) {
+      markerCache[slug].forEach(marker => marker.setMap(map));
+      return;
+    }
+
+    // Ignore a repeat click while a fetch for this slug is already in flight, rather than firing a
+    // second overlapping request that could resolve out of order and overwrite the newer one.
+    if (chipFetchInFlight.has(slug)) return;
+    chipFetchInFlight.add(slug);
+
+    const signal = nextAbortSignal(slug);
+    $chip.setAttribute('data-ak-loading', 'true');
+
+    try {
+      const results = await config.search(signal);
+      // refetchOnActivate chips drop any stale cache from a previous viewport before showing fresh results.
+      (markerCache[slug] || []).forEach(marker => marker.setMap(null));
+      // Skip anything already added to the itinerary — otherwise this drops a dim preselect marker
+      // directly on top of the already-added dense one, which looks like the dense marker "reverted"
+      // once the chip is later deactivated and this fresh dim marker is the one that gets removed.
+      markerCache[slug] = results
+        .filter(({ saveObj }) => !findItineraryMatch(saveObj))
+        .map(({ title, position, saveObj }) => {
+          saveObj._chipSlug = slug;
+          saveObj._chipTag = config.curatedTag;
+          return createSearchMarker(title, position, saveObj, pinUrl);
+        });
+    } catch (e) {
+      if (e.name === 'AbortError') return; // superseded — not a real failure, leave UI as the newer trigger left it
+      console.warn(`Chip search failed for "${slug}":`, e);
+      flashChipError($chip);
+      if (markerCache[slug]?.length) {
+        // Fall back to the last-good results instead of going blank on a transient failure.
+        markerCache[slug].forEach(marker => marker.setMap(map));
+      } else {
+        $chip.removeAttribute('data-ak-active');
+        if (activeChip?.slug === slug) activeChip = null;
+      }
+    } finally {
+      chipFetchInFlight.delete(slug);
+      $chip.removeAttribute('data-ak-loading');
+    }
+  });
+}
+
+function createSearchMarker(title, position, saveObj = {}, pinUrl = restaurantPreselectPinUrl) {
+  saveObj.location = saveObj.location || position;
+
+  const markerPinImg = document.createElement('img');
+  markerPinImg.src = pinUrl;
+  markerPinImg.className = 'ak-marker-pin';
+
+  const marker = new google.maps.marker.AdvancedMarkerElement({
+    map,
+    position,
+    title,
+    content: markerPinImg,
+    gmpClickable: true,
+  });
+
+  marker.addListener('gmp-click', async () => {
+    if (!saveObj._detailsLoaded) {
+      await enrichPlaceDetails(saveObj);
+    }
+    openMapPopup(saveObj.displayName || title, saveObj.editorialSummary, saveObj, marker);
+  });
+
+  return marker;
+}
+
+async function enrichPlaceDetails(saveObj) {
+  if (!saveObj.placeId) return;
+  try {
+    const place = new google.maps.places.Place({ id: saveObj.placeId });
+    await place.fetchFields({ fields: ['displayName', 'editorialSummary', 'formattedAddress', 'addressComponents', 'rating', 'websiteURI', 'nationalPhoneNumber', 'userRatingCount', 'photos', 'regularOpeningHours', 'priceRange', 'businessStatus'] });
+    const placeObj = place.toJSON();
+
+    saveObj.displayName = saveObj.displayName || placeObj.displayName;
+    saveObj.neighborhood = saveObj.neighborhood || await extractNeighborhood(placeObj.addressComponents || [], saveObj.location?.lat, saveObj.location?.lng);
+    saveObj.editorialSummary = placeObj.editorialSummary;
+    saveObj.address = placeObj.formattedAddress || '';
+    saveObj.rating = placeObj.rating ?? saveObj.rating ?? null;
+    saveObj.website = placeObj.websiteURI || placeObj.websiteUri || '';
+    saveObj.phone = placeObj.nationalPhoneNumber || '';
+    saveObj.reviewCount = placeObj.userRatingCount ?? saveObj.reviewCount ?? null;
+    saveObj.photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
+    saveObj.openingHours = placeObj.regularOpeningHours || null;
+    saveObj.priceRange = placeObj.priceRange || null;
+    saveObj.businessStatus = placeObj.businessStatus || null;
+    saveObj._detailsLoaded = true;
+  } catch (e) {
+    console.warn('Could not load place details for', saveObj.displayName, e);
+  }
+}
+
+function getCuratedByTag(tagLabel, expectedType) {
+  if (!insiderTipsData) return [];
+  const wanted = tagLabel.toLowerCase();
+  return Object.entries(insiderTipsData)
+    .filter(([, entry]) => entry.tags?.some(t => t.toLowerCase() === wanted))
+    .filter(([, entry]) => !expectedType || entry.type === expectedType)
+    .map(([placeId, entry]) => ({
+      placeId,
+      displayName: entry.placeName || '',
+      type: entry.type === 'EAT' ? ['restaurant'] : [],
+      location: (entry.lat != null && entry.lng != null) ? { lat: entry.lat, lng: entry.lng } : null,
+    }));
+}
+
+// Retries once on failure — a burst of these fired concurrently (one per curated place in a tag)
+// occasionally flakes with a transient transport error on the first attempt; a lone retry almost
+// always succeeds since it's no longer racing its siblings.
+async function resolveCuratedLocation(place) {
+  if (place.location) return place.location;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const p = new google.maps.places.Place({ id: place.placeId });
+      await p.fetchFields({ fields: ['location'] });
+      place.location = p.location ? { lat: p.location.lat(), lng: p.location.lng() } : null;
+      return place.location;
+    } catch (e) {
+      if (attempt === 2) console.warn('Could not resolve location for', place.displayName, e);
+    }
+  }
+  return place.location;
+}
+
+// Rounded to ~11m precision so float jitter between two functionally-identical bounds doesn't
+// read as a real viewport change.
+function boundsKey(bounds) {
+  if (!bounds) return '';
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  return `${ne.lat().toFixed(4)},${ne.lng().toFixed(4)},${sw.lat().toFixed(4)},${sw.lng().toFixed(4)}`;
+}
+
+function boundsToRect(bounds) {
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  return {
+    low: { latitude: sw.lat(), longitude: sw.lng() },
+    high: { latitude: ne.lat(), longitude: ne.lng() },
+  };
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Retries once on failure -- same transient-transport-error flakiness seen on Place Details
+// fetches (see resolveCuratedLocation): a lone retry almost always succeeds. Never retry an
+// intentional cancellation (AbortError) -- that just means a newer request superseded this one.
+async function fetchPlacesApi(url, fields, body, signal) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': placesApiKey,
+          'X-Goog-FieldMask': fields.join(','),
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+      return await res.json();
+    } catch (e) {
+      if (e.name === 'AbortError' || attempt === 2) throw e;
+    }
+  }
+}
+
+async function textSearchPlaces({ textQuery, includedType, priceLevels, fieldsExtra = [], pageToken, signal }) {
+  const fields = ['places.id', 'places.displayName', 'places.location', 'nextPageToken', ...fieldsExtra];
+  const payload = {
+    textQuery,
+    locationRestriction: { rectangle: boundsToRect(map.getBounds()) },
+    ...(includedType ? { includedType } : {}),
+    ...(priceLevels?.length ? { priceLevels } : {}),
+    ...(pageToken ? { pageToken } : {}),
+  };
+
+  const { places = [], nextPageToken } = await fetchPlacesApi('https://places.googleapis.com/v1/places:searchText', fields, payload, signal);
+  return { places, nextPageToken };
+}
+
+async function nearbySearchPlaces({ includedTypes, fieldsExtra = [], signal }) {
+  const fields = ['places.id', 'places.displayName', 'places.location', ...fieldsExtra];
+  const bounds = map.getBounds();
+  const center = bounds.getCenter();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  // Nearby Search only accepts a circle (no rectangle like Text Search), so approximate the
+  // viewport with a circle of half its diagonal, capped at the API's 50km max radius.
+  const radius = Math.min(distanceMeters(sw.lat(), sw.lng(), ne.lat(), ne.lng()) / 2, 50000);
+
+  const { places = [] } = await fetchPlacesApi('https://places.googleapis.com/v1/places:searchNearby', fields, {
+    includedTypes,
+    maxResultCount: 20,
+    locationRestriction: { circle: { center: { latitude: center.lat(), longitude: center.lng() }, radius } },
+  }, signal);
+  return places;
+}
+
+async function runNearbyTypeChip(config, signal) {
+  const needsScore = config.sortBy === 'score';
+  const fieldsExtra = (config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : [];
+  const places = await nearbySearchPlaces({ includedTypes: config.includedTypes, fieldsExtra, signal });
+  const results = places.map(place => toMarkerInput(place, config.markerType || []));
+  return applyChipPostProcessing(config, results);
+}
+
+function toMarkerInput(place, type = ['restaurant'], extraFields = []) {
+  const saveObj = {
+    placeId: place.id,
+    displayName: place.displayName?.text || '',
+    type,
+    rating: place.rating ?? null,
+    reviewCount: place.userRatingCount ?? null,
+    _isSearchResult: true,
+  };
+  extraFields.forEach(f => {
+    const key = f.replace(/^places\./, '');
+    saveObj[key] = place[key] ?? null;
+  });
+  return {
+    title: place.displayName?.text || '',
+    position: { lat: place.location.latitude, lng: place.location.longitude },
+    saveObj,
+  };
+}
+
+function applyChipPostProcessing(config, results) {
+  if (config.bannedWords?.length) {
+    results = results.filter(r => {
+      const placeName = (r.title || '').toLowerCase();
+      return !config.bannedWords.some(word => placeName.includes(word.toLowerCase()));
+    });
+  }
+  if (config.minRating) {
+    results = results.filter(r => (r.saveObj.rating ?? 0) >= config.minRating);
+  }
+  if (config.minReviewCount) {
+    results = results.filter(r => (r.saveObj.reviewCount ?? 0) > config.minReviewCount);
+  }
+  if (config.maxReviewCount) {
+    results = results.filter(r => (r.saveObj.reviewCount ?? Infinity) <= config.maxReviewCount);
+  }
+
+  if (config.sortBy === 'score') {
+    const boostFactor = config.scoreBoostField ? (config.scoreBoostFactor ?? 1.25) : 1;
+    const score = r => (r.saveObj.reviewCount || 0) * (r.saveObj.rating || 0) * (config.scoreBoostField && r.saveObj[config.scoreBoostField] ? boostFactor : 1);
+    results.sort((a, b) => score(b) - score(a));
+  } else if (config.sortBy === 'proximity') {
+    const center = map.getCenter();
+    const distSq = pos => (pos.lat - center.lat()) ** 2 + (pos.lng - center.lng()) ** 2;
+    results.sort((a, b) => distSq(a.position) - distSq(b.position));
+  }
+
+  return results.slice(0, config.resultCap ?? 20);
+}
+
+async function runTextSearchChip(config, signal) {
+  const needsScore = config.sortBy === 'score';
+  const fieldsExtra = [
+    ...((config.minRating || config.minReviewCount || needsScore) ? ['places.rating', 'places.userRatingCount'] : []),
+    ...(config.fetchExtraFields || []),
+  ];
+
+  const bounds = map.getBounds();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  const viewportSpan = distanceMeters(sw.lat(), sw.lng(), ne.lat(), ne.lng());
+  // A viewport this small (corner-to-corner) is unlikely to hold 20+ qualifying places beyond page 1 —
+  // skip paying for extra pages regardless of allowPagination when the area itself is this tight.
+  const shouldPaginate = config.allowPagination && viewportSpan > 1000;
+
+  let allPlaces = [];
+  let pageToken;
+  do {
+    const page = await textSearchPlaces({ textQuery: config.textQuery, includedType: config.includedType, priceLevels: config.priceLevels, fieldsExtra, pageToken, signal });
+    allPlaces = allPlaces.concat(page.places);
+    pageToken = page.nextPageToken;
+    // Always exhaust pagination (when allowed) before scoring — Text Search ranks page 1 by keyword
+    // relevance, not popularity, so the true top-scoring place can land on a later page. Stopping early
+    // once we merely had "enough" results risked missing it entirely.
+  } while (shouldPaginate && pageToken && allPlaces.length < 60);
+
+  const results = allPlaces.map(place => toMarkerInput(place, config.markerType || ['restaurant'], config.fetchExtraFields));
+  return applyChipPostProcessing(config, results);
+}
+
+async function runCuratedThenGoogle(config, signal) {
+  const entries = getCuratedByTag(config.curatedTag, config.curatedType);
+  const [curatedResolved, googleResults] = await Promise.all([
+    Promise.all(entries.map(async place => {
+      const location = await resolveCuratedLocation(place);
+      if (!location) return null;
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
+    })),
+    runTextSearchChip(config, signal),
+  ]);
+  const curated = curatedResolved.filter(Boolean);
+  const curatedIds = new Set(curated.map(r => r.saveObj.placeId));
+  const fresh = googleResults.filter(r => !curatedIds.has(r.saveObj.placeId));
+  // Sheet results lead; Google fills in the rest up to the cap.
+  return [...curated, ...fresh].slice(0, config.resultCap ?? 20);
+}
+
+async function runCuratedOrNearbyFallback(config, signal) {
+  const curated = getCuratedByTag(config.curatedTag, config.curatedType);
+  if (curated.length) {
+    // Mark resolved early — before the async location lookups — so any map-idle that fires
+    // during resolution doesn't see a falsy flag and race us to Google.
+    config._curatedResolved = true;
+    const resolved = await Promise.all(curated.map(async place => {
+      const location = await resolveCuratedLocation(place);
+      if (!location) return null;
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
+    }));
+    const valid = resolved.filter(Boolean);
+    if (valid.length) return valid;
+    // All locations failed to resolve — fall through to nearby search.
+    config._curatedResolved = false;
+  } else if (insiderTipsData) {
+    // Sheet is loaded but genuinely has no entry for this tag — safe to mark false permanently.
+    config._curatedResolved = false;
+  }
+  // insiderTipsData still null: leave _curatedResolved unset so the next call retries the sheet.
+  return runNearbyTypeChip(config, signal);
+}
+
+async function runCuratedOrFallback(config, signal) {
+  const curated = getCuratedByTag(config.curatedTag, config.curatedType);
+  if (curated.length) {
+    // Mark resolved early — before the async location lookups — so any map-idle that fires
+    // during resolution doesn't see a falsy flag and race us to Google.
+    config._curatedResolved = true;
+    const resolved = await Promise.all(curated.map(async place => {
+      const location = await resolveCuratedLocation(place);
+      if (!location) return null;
+      return { title: place.displayName, position: location, saveObj: { placeId: place.placeId, displayName: place.displayName, type: place.type, _isSearchResult: true } };
+    }));
+    const valid = resolved.filter(Boolean);
+    if (valid.length) return valid;
+    // All locations failed to resolve — fall through to text search.
+    config._curatedResolved = false;
+  } else if (insiderTipsData) {
+    // Sheet is loaded but genuinely has no entry for this tag — safe to mark false permanently.
+    config._curatedResolved = false;
+  }
+  // insiderTipsData still null: leave _curatedResolved unset so the next call retries the sheet.
+  return runTextSearchChip(config, signal);
+}
+
+// All chips share the same live-search logic: viewport-aware refetch on map idle, debounce,
+// abort-on-supersede, exhaustive pagination, and a rating/review-count quality gate. Curated chips
+// (curatedTag set) keep that same config for their live fallback path — only the sheet lookup
+// short-circuits it.
+const CHIP_CONFIG = {
+  'gluten-free': { curatedTag: 'Gluten Free', curatedType: 'EAT', textQuery: 'restaurant gluten free menu OR gluten free options', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'jewish': { curatedTag: 'Jewish', curatedType: 'EAT', textQuery: 'kosher restaurant OR jewish deli OR kosher bakery', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'classic-ny': { curatedTag: 'Classic NY', curatedType: 'EAT', textQuery: 'iconic classic new york restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 10000, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'solo-dining': { curatedTag: 'Solo Dining', curatedType: 'EAT', textQuery: 'restaurant cafe bar seating OR eat at the bar OR solo dining OR counter stools', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'big-groups': { curatedTag: 'Big Groups', curatedType: 'EAT', textQuery: 'restaurants good for groups OR large party dining', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'pre-theater': { curatedTag: 'Pre-Theater', curatedType: 'EAT', textQuery: 'pre-theater menu OR prix fixe dinner', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'EAT', textQuery: 'kid friendly restaurant OR great for kids', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'pizza': { curatedTag: 'Pizza', curatedType: 'EAT', textQuery: 'best pizza slice OR pizzeria', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'italian': { curatedTag: 'Italian', curatedType: 'EAT', textQuery: 'italian restaurant', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'proximity', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'cheap-eats': { curatedTag: 'Lunch Under 15', curatedType: 'EAT', textQuery: 'cheap eats OR budget restaurant OR street food', priceLevels: ['PRICE_LEVEL_INEXPENSIVE'], viewportAware: true, debounceMs: 600, sortBy: 'score', resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'lgbtq': { curatedTag: 'LGBTQ', curatedType: 'EAT', textQuery: 'lgbtq bar OR gay bar OR queer owned restaurant', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'desserts': { curatedTag: 'Desserts', curatedType: 'EAT', textQuery: 'desserts OR cake OR pastry OR sweet shop OR ice cream OR gelateria', fetchExtraFields: ['places.servesDessert'], scoreBoostField: 'servesDessert', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'coffee': { curatedTag: 'Coffee', curatedType: 'EAT', textQuery: 'coffee shop cafe', includedType: 'cafe', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.3, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'steak': { curatedTag: 'Steak', curatedType: 'EAT', textQuery: 'steakhouse OR chophouse', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'meatless': { curatedTag: 'Meatless', curatedType: 'EAT', textQuery: 'vegan restaurant OR vegetarian options OR plant-based menu', includedType: 'restaurant', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'live-music': { curatedTag: 'Live Music', curatedType: 'EAT', textQuery: 'live music OR jazz club OR live band', includedType: 'bar', viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+};
+
+const ATTRACTION_CHIP_CONFIG = {
+  'tours': { curatedTag: 'Tours', curatedType: 'SEE', textQuery: 'guided tours OR walking tours OR sightseeing tours', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'kid-friendly': { curatedTag: 'Kid Friendly', curatedType: 'SEE', textQuery: 'kid friendly attractions OR family friendly things to do', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedThenGoogle(this, signal); } },
+  'museums': { curatedTag: 'Museums', curatedType: 'SEE', textQuery: 'museum', includedType: 'museum', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'historic': { curatedTag: 'Historic', curatedType: 'SEE', textQuery: 'historic landmark OR historic site OR historical monument', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'hidden-gems': { curatedTag: 'Hidden Gems', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'historical_place', 'cultural_landmark'], textQuery: 'hidden gem OR unusual attraction OR secret spot OR off the beaten path', minRating: 4.2, markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minReviewCount: 30, maxReviewCount: 1500, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'observation-decks': { curatedTag: 'Observation Decks', curatedType: 'SEE', textQuery: 'observation deck OR rooftop view OR sky deck OR viewpoint', includedType: 'tourist_attraction', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'free': { curatedTag: 'Free', curatedType: 'SEE', textQuery: 'free admission attractions OR free entry things to do', bannedWords: ['pass', 'deck', 'sightseeing', 'card', 'ticket', 'admission fee'], markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'retail-stores': { curatedTag: 'Retail Stores', curatedType: 'SEE', textQuery: 'shopping OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'popular': { curatedTag: 'Popular', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'amusement_center'], markerType: [], viewportAware: true, debounceMs: 600, minRating: 4.0, minReviewCount: 150, sortBy: 'score', resultCap: 20, search(signal) { return runCuratedOrNearbyFallback(this, signal); } },
+  'vintage-shopping': { curatedTag: 'Vintage Shopping', curatedType: 'SEE', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+};
