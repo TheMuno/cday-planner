@@ -70,7 +70,15 @@ const PURCHASE_EVENT       = 'ak:purchase-status';
 // Functions, which skip their hasPurchasedPlan check for it. Keep in sync with
 // FREE_GUIDE_HOTELS in functions/index.js.
 const FREE_GUIDE_HOTELS = ['carlton-arms', 'compton', 'demo-hotel'];
-const currentHotel = FREE_GUIDE_HOTELS.find(h => window.location.pathname.includes(h)) || null;
+// /stay/ pages have no hotel in their URL -- the guest's hotel is in ak-stay-hotel (set by
+// lookup-form.js: 'carlton-arms' | 'compton' | 'demo'). Every /stay/ guest came through a hotel,
+// so anything else falls back to the demo hotel, same as lookup-form.js.
+function getStayHotel() {
+  const key = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'] || '';
+  return FREE_GUIDE_HOTELS.includes(key) ? key : 'demo-hotel';
+}
+const currentHotel = FREE_GUIDE_HOTELS.find(h => window.location.pathname.includes(h))
+  || (window.location.pathname.startsWith('/stay/') ? getStayHotel() : null);
 
 // Lets other scripts on the same page (e.g. calculate-pass-savings.js) react to purchase
 // status without running their own Firestore read: localStorage for the cached value on
