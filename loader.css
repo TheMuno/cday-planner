@@ -87,7 +87,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, #d9d6cf 25%, #e8e6e1 50%, #d9d6cf 75%);
+  background: linear-gradient(90deg, #EDEDE9 25%, #f7f7f5 50%, #EDEDE9 75%);
   background-size: 200% 100%;
   animation: akSkeletonShimmer 1.5s infinite, akHeroFallbackHide 0s 12s forwards;
   pointer-events: none;
@@ -99,4 +99,19 @@
 
 @keyframes akHeroFallbackHide {
   to { opacity: 0; }
+}
+
+/* "Welcome to [Hotel Name]": no shimmer bar -- just hidden (so Webflow's default text never shows)
+   until hotel-next-itinerary.js removes data-ak-skeleton-pulse once both the text and the hero
+   image are ready, then it fades in. */
+[data-ak="welcome-msg"] {
+  transition: opacity 0.4s ease;
+}
+
+[data-ak="welcome-msg"][data-ak-skeleton-pulse] {
+  opacity: 0;
+}
+
+[data-ak="welcome-msg"][data-ak-skeleton-pulse]::after {
+  content: none;
 }

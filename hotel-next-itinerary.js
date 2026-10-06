@@ -262,14 +262,21 @@ function setWelcomeHasHotel(hasHotel) {
   else $welcomeHotelName?.setAttribute('data-ak-hidden', 'true');
 }
 
-// "Welcome to [Hotel Name]" shimmers (data-ak-skeleton-pulse, set in Webflow) until the hotel name is
-// in: straight away for a fixed hotel, otherwise once the saved trip is restored (see tripRestored
-// below) -- with or without a saved hotel, so it never gets stuck. With no hotel by then it's just
-// "Welcome".
+// "Welcome to [Hotel Name]" stays hidden (data-ak-skeleton-pulse, set in Webflow; loader.css hides it
+// with no shimmer of its own) until both its text and the hero image are ready, so Webflow's default
+// text never shows. The text is ready straight away for a fixed hotel, otherwise once the saved trip
+// is restored (see tripRestored below) -- with or without a saved hotel, so it never gets stuck. With
+// no hotel by then it's just "Welcome".
+let welcomeTextReady = false;
+let heroImageReady = !document.querySelector('[data-ak="hero-img"]');
 function finishWelcomeMsg() {
   if (!$welcomeMsg) return;
   if (!fixedHotel && !welcomeHasHotel) setWelcomeHasHotel(false);
-  $welcomeMsg.removeAttribute('data-ak-skeleton-pulse');
+  welcomeTextReady = true;
+  showWelcomeIfReady();
+}
+function showWelcomeIfReady() {
+  if (welcomeTextReady && heroImageReady) $welcomeMsg?.removeAttribute('data-ak-skeleton-pulse');
 }
 if (fixedHotel) setHotelNameText(fixedHotel.name);
 
@@ -278,10 +285,12 @@ if (fixedHotel) setHotelNameText(fixedHotel.name);
 // data-ak-hero-ready is set here, so Webflow's image never flashes up before the swap. The new image
 // is preloaded first; srcset/sizes are cleared, or the browser keeps picking Webflow's responsive
 // versions of the old one. If it fails to load, Webflow's image is shown instead. After 10s the
-// image is shown regardless, so the shimmer never gets stuck.
+// image is shown regardless, so the shimmer never gets stuck. The welcome text waits on this too.
 const $heroImg = document.querySelector('[data-ak="hero-img"]');
 function revealHeroImage() {
   $heroImg?.setAttribute('data-ak-hero-ready', 'true');
+  heroImageReady = true;
+  showWelcomeIfReady();
 }
 function whenImageLoaded($img, callback) {
   if ($img.complete && $img.naturalWidth) return callback();
