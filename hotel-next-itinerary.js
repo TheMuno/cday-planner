@@ -613,6 +613,9 @@ window.addEventListener('load', async () => {
   document.body.addEventListener('click', handlePopupOpen);
   document.body.addEventListener('click', handleFieldMapPopup);
   document.body.addEventListener('click', handleSectionActivate);
+  document.addEventListener('click', noteSliderDropdownState, true);
+  document.body.addEventListener('click', toggleUnboundSliderDropdown);
+  document.body.addEventListener('keydown', handleSliderDropdownKey);
   document.body.addEventListener('click', handleTypeSectionToggle);
   document.body.addEventListener('click', handleSectionDeactivateOnClickAway);
 
@@ -677,9 +680,9 @@ window.addEventListener('load', async () => {
 function goToSignIn() {
   const signInHref = getSignInBtn()?.getAttribute('href') || '/log-in';
   // firebase-auth.js sends the user back to ak-login-redirect after signing in. Always set it to this
-  // page here, so neither a missing value (its /smart-guide/itinerary fallback) nor another tab that
-  // overwrote it sends them elsewhere.
-  localStorage['ak-login-redirect'] = '/hotel-next/itinerary';
+  // page here (its current path, so a page rename can't leave it pointing at a dead URL), so neither a
+  // missing value (its /smart-guide/itinerary fallback) nor another tab that overwrote it sends them elsewhere.
+  localStorage['ak-login-redirect'] = window.location.pathname;
   window.location.href = signInHref;
 }
 
@@ -1555,12 +1558,7 @@ function createNextDaySlide() {
   $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
     $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
   });
-  // The "visit" section starts open by default in the static template slides (no inline height at
-  // all) — only eat/notes ship pre-closed — so leave it alone here to match.
-  $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => {
-    if ($panel.closest('[data-ak-types]')?.getAttribute('data-ak-type') === 'visit') return;
-    $panel.style.height = '0px';
-  });
+  resetClonedDayDropdowns($newSlide);
   $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
   const $notes = $newSlide.querySelector('.ak-notes');
   if ($notes) $notes.value = '';
@@ -1692,6 +1690,73 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
 
 // Attractions/Restaurants dropdowns: the dropdown component marks each section's state on
 // data-dd-item ("open"/"closed") and on its trigger's aria-expanded.
+//
+// That component (the page's own <script>) binds each [data-dd-trigger] once, on DOMContentLoaded.
+// Day slides cloned after that (restoreTripDaySlides(), createNextDaySlide()) carry no listeners, so
+// the handlers below toggle any slider dropdown the page script didn't: the capture listener notes the
+// section's state before the click, and the bubble listener toggles it only if it's still unchanged.
+// Sections the page script did bind are left to it, so nothing is toggled twice.
+function setSliderDropdownState($item, open) {
+  $item.setAttribute('data-dd-item', open ? 'open' : 'closed');
+  $item.querySelector('[data-dd-trigger]')?.setAttribute('aria-expanded', open);
+  const $content = $item.querySelector('[data-dd-content]');
+  if ($content) $content.inert = !open;
+}
+
+function toggleSliderDropdown($item) {
+  const willOpen = $item.getAttribute('data-dd-item') !== 'open';
+  const $wrap = $item.closest('[data-dd-group]');
+  if (willOpen && $wrap?.hasAttribute('data-dd-single')) {
+    $wrap.querySelectorAll('[data-dd-item]').forEach($other => {
+      if ($other !== $item) setSliderDropdownState($other, false);
+    });
+  }
+  setSliderDropdownState($item, willOpen);
+}
+
+function getSliderDropdownItem(e) {
+  const $trigger = e.target.closest('[data-dd-trigger]');
+  return $trigger && isInAttractionsSlider($trigger) ? $trigger.closest('[data-dd-item]') : null;
+}
+
+let sliderDropdownBeforeClick = null;
+function noteSliderDropdownState(e) {
+  const $item = getSliderDropdownItem(e);
+  sliderDropdownBeforeClick = $item ? { $item, state: $item.getAttribute('data-dd-item') } : null;
+}
+
+function toggleUnboundSliderDropdown() {
+  const before = sliderDropdownBeforeClick;
+  sliderDropdownBeforeClick = null;
+  if (!before || before.$item.getAttribute('data-dd-item') !== before.state) return;
+  toggleSliderDropdown(before.$item);
+}
+
+// The page script handles Enter/Space on the triggers it bound and calls preventDefault().
+function handleSliderDropdownKey(e) {
+  if ((e.key !== 'Enter' && e.key !== ' ') || e.defaultPrevented) return;
+  const $item = getSliderDropdownItem(e);
+  if (!$item) return;
+  e.preventDefault();
+  toggleSliderDropdown($item);
+  syncNoItemAdded($item.closest('[data-ak-types]'));
+}
+
+// A cloned day starts like the template: Attractions open, Restaurants/Notes closed. Its panels get
+// new ids so they don't duplicate the template's (aria-controls points at them).
+let clonedDropdownCount = 0;
+function resetClonedDayDropdowns($slide) {
+  $slide.querySelectorAll('[data-ak-types][data-dd-item]').forEach($section => {
+    setSliderDropdownState($section, $section.getAttribute('data-ak-type') === 'visit');
+  });
+  $slide.querySelectorAll('[data-dd-item]').forEach($item => {
+    const $content = $item.querySelector('[data-dd-content]');
+    if (!$content) return;
+    $content.id = `ak-dd-clone-${++clonedDropdownCount}`;
+    $item.querySelector('[data-dd-trigger]')?.setAttribute('aria-controls', $content.id);
+  });
+}
+
 function getTypeSectionTrigger($typeSection) {
   return $typeSection?.querySelector('[data-dd-trigger], [data-ak-type-title]');
 }
@@ -2198,22 +2263,14 @@ function restoreTripNotes() {
 // header open manually.
 function unwrapSectionsWithContent() {
   $attractionsSliderMask.querySelectorAll('.w-slide').forEach($slide => {
-    $slide.querySelectorAll('[data-ak-types]').forEach($typeSection => {
+    // Only one section per day can be open (data-dd-single), so open the first one with content.
+    const $withContent = [...$slide.querySelectorAll('[data-ak-types]')].find($typeSection => {
       const type = $typeSection.getAttribute('data-ak-type');
-      const hasContent = type === 'notes'
+      return type === 'notes'
         ? !!$typeSection.querySelector('.ak-notes')?.value.trim()
         : !!$typeSection.querySelector('[data-ak="attraction-location"]:not([data-ak-hidden])');
-      if (!hasContent) return;
-
-      const $content = $typeSection.querySelector('[data-ak-type-panel]');
-      if ($content?.style.height === '0px') {
-        // Goes through Webflow's own click-interaction (rather than setting height directly) so its
-        // internal open/closed state for this element stays in sync — setting the DOM ourselves left
-        // Webflow's IX2 still thinking the section was closed, so the next real click was a no-op
-        // sync-up instead of actually closing it.
-        $typeSection.querySelector('[data-ak-type-title]')?.click();
-      }
     });
+    openTypeSection($withContent);
   });
 }
 
@@ -2281,12 +2338,7 @@ function restoreTripDaySlides(onSettled) {
     $newSlide.querySelectorAll('[data-ak-type-dropzone]').forEach($zone => {
       $zone.querySelectorAll('[data-ak="attraction-location"]:not([data-ak-hidden])').forEach($el => $el.remove());
     });
-    // The "visit" section starts open by default in the static template slides (no inline height at
-    // all) — only eat/notes ship pre-closed — so leave it alone here to match.
-    $newSlide.querySelectorAll('[data-ak-type-panel]').forEach($panel => {
-      if ($panel.closest('[data-ak-types]')?.getAttribute('data-ak-type') === 'visit') return;
-      $panel.style.height = '0px';
-    });
+    resetClonedDayDropdowns($newSlide);
     $newSlide.querySelectorAll('[data-ak-types]').forEach($section => $section.classList.remove('active'));
     const $notes = $newSlide.querySelector('.ak-notes');
     if ($notes) $notes.value = '';
