@@ -115,3 +115,31 @@
 [data-ak="welcome-msg"][data-ak-skeleton-pulse]::after {
   content: none;
 }
+
+/* Nav logo: hidden until hotel-next-itinerary.js sets data-ak-logo-ready (after swapping in the
+   hotel's own logo, if it has one), so the default logo never flashes up first. Shown after 12s
+   regardless, in case the script never runs. */
+[data-ak="nav-logo"] {
+  transition: opacity 0.3s ease;
+}
+
+[data-ak="nav-logo"]:not([data-ak-logo-ready]) {
+  opacity: 0;
+  animation: akHeroFallbackShow 0s 12s forwards;
+}
+
+/* Webflow fixes .naviti_logo at 2.5rem wide (for the square Khonsu icon); a hotel logo sets its
+   own size instead -- a fixed height, width from its proportions, capped so it fits on phones. */
+[data-ak="nav-logo"]:has(> .ak-nav-logo-img) {
+  width: auto;
+}
+
+.ak-nav-logo-img {
+  display: block;
+  height: 1.25rem;
+  width: auto;
+  max-width: 60vw;
+  object-fit: contain;
+  /* The logo PNGs are dark on transparent; this turns every visible pixel white for the dark nav. */
+  filter: brightness(0) invert(1);
+}
