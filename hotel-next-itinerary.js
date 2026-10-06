@@ -548,6 +548,7 @@ window.addEventListener('load', async () => {
     try {
       await mapReady;
       restoreAttractions();
+      syncAllNoItemAdded();
       // A fixed hotel comes from autoSetFixedHotel() (already kicked off in parallel above, as soon
       // as mapReady resolved), not from localStorage — restoring from localStorage here would race
       // it and could clobber the fixed hotel with a stale saved value.
@@ -612,6 +613,7 @@ window.addEventListener('load', async () => {
   document.body.addEventListener('click', handlePopupOpen);
   document.body.addEventListener('click', handleFieldMapPopup);
   document.body.addEventListener('click', handleSectionActivate);
+  document.body.addEventListener('click', handleTypeSectionToggle);
   document.body.addEventListener('click', handleSectionDeactivateOnClickAway);
 
   document.body.addEventListener('dragstart', handleDragStart);
@@ -1431,13 +1433,12 @@ function addSearchResultToItinerary(saveObj, marker, { silent = false, slide = n
   markerObj[`slide${slideIndex}`] = markerObj[`slide${slideIndex}`] || [];
   markerObj[`slide${slideIndex}`].push(marker);
 
-  const $content = $typeSection.querySelector('[data-ak-type-panel]');
-  if ($content && $content.style.height === '0px') {
-    $typeSection.querySelector('[data-ak-type-title]').click();
-  }
-
   addAttractionToList(displayName, $typeWrap, marker, saveObj);
   saveAttractionLocal();
+
+  syncNoItemAdded($typeSection);
+  // If the Attractions/Restaurants dropdown is closed, open it so the new item can be seen.
+  openTypeSection($typeSection);
 
   $currentSlide.querySelector('[data-ak-types].active')?.classList.remove('active');
   $typeSection.classList.add('active');
@@ -1565,6 +1566,7 @@ function createNextDaySlide() {
   if ($notes) $notes.value = '';
 
   $attractionsSliderMask.append($newSlide);
+  syncAllNoItemAdded($newSlide);
 
   return { $currentSlide: $newSlide, slideIndex: $slides.length + 1, label };
 }
@@ -1688,6 +1690,43 @@ function addAttractionToList(name, $listName, marker = null, saveObj = {}) {
   $listName.append($location);
 }
 
+// Attractions/Restaurants dropdowns: the dropdown component marks each section's state on
+// data-dd-item ("open"/"closed") and on its trigger's aria-expanded.
+function getTypeSectionTrigger($typeSection) {
+  return $typeSection?.querySelector('[data-dd-trigger], [data-ak-type-title]');
+}
+
+function isTypeSectionClosed($typeSection) {
+  return $typeSection?.getAttribute('data-dd-item') === 'closed'
+    || getTypeSectionTrigger($typeSection)?.getAttribute('aria-expanded') === 'false';
+}
+
+function openTypeSection($typeSection) {
+  if (isTypeSectionClosed($typeSection)) getTypeSectionTrigger($typeSection)?.click();
+}
+
+// Each section's "No attractions/restaurants selected yet" row ([data-ak="no-item-added"]): shown
+// while the section has no items, hidden (data-ak-hidden) once it has one.
+function syncNoItemAdded($typeSection) {
+  const $noItem = $typeSection?.querySelector('[data-ak="no-item-added"]');
+  if (!$noItem) return;
+  const hasItems = !!$typeSection.querySelector('[data-ak="attraction-location"]:not([data-ak-hidden])');
+  if (hasItems) $noItem.setAttribute('data-ak-hidden', 'true');
+  else $noItem.removeAttribute('data-ak-hidden');
+}
+
+// On load (once saved items are restored) and for new day slides: every section in the slider.
+function syncAllNoItemAdded($root = $attractionsSliderMask) {
+  $root?.querySelectorAll('[data-ak-types]').forEach(syncNoItemAdded);
+}
+
+// When a section is opened (or closed), bring its empty-state row up to date.
+function handleTypeSectionToggle(e) {
+  const $trigger = e.target.closest('[data-dd-trigger], [data-ak-type-title]');
+  if (!$trigger || !isInAttractionsSlider($trigger)) return;
+  syncNoItemAdded($trigger.closest('[data-ak-types]'));
+}
+
 function getCurrentSlideInfo() {
   const $currentSlide = $attractionsSliderMask.querySelector('.w-slide:not([aria-hidden="true"])');
   const slideIndex = [...$attractionsSliderMask.querySelectorAll('.w-slide')].indexOf($currentSlide) + 1;
@@ -1808,8 +1847,10 @@ function removeAttractionLocation($attraction) {
   }
 
   const $slide = $attraction.closest('.w-slide');
+  const $typeSection = $attraction.closest('[data-ak-types]');
 
   $attraction.remove();
+  syncNoItemAdded($typeSection);
 
   if ($slide) saveAttractionLocal();
   if (!auth.currentUser) updateAttractionsCount('-');
@@ -1878,9 +1919,7 @@ function handleDragOver(e) {
 function expandContentWrapOnDrag(e) {
   const $title = e.target.closest('[data-ak-type-title]');
   if (!$title || !isInAttractionsSlider($title)) return;
-  const $contentWrap = $title.closest('[data-ak-types]')?.querySelector('[data-ak-type-panel]');
-  if (!$contentWrap || $contentWrap.style.height !== '0px') return;
-  $title.click();
+  openTypeSection($title.closest('[data-ak-types]'));
 }
 
 function handleDrop(e) {
@@ -1891,12 +1930,15 @@ function handleDrop(e) {
   if (!$draggedAttraction) return;
 
   const $fromSlide = $draggedAttraction.closest('.w-slide');
+  const $fromSection = $draggedAttraction.closest('[data-ak-types]');
 
   const target = getDropTarget($dropZone, e.clientY);
   if (target) target.$item.insertAdjacentElement(target.position === 'before' ? 'beforebegin' : 'afterend', $draggedAttraction);
   else $dropZone.appendChild($draggedAttraction);
   $draggedAttraction = null;
   clearDropMarker();
+  syncNoItemAdded($fromSection);
+  syncNoItemAdded($dropZone.closest('[data-ak-types]'));
 
   const $toSlide = $dropZone.closest('.w-slide');
 
@@ -2250,6 +2292,7 @@ function restoreTripDaySlides(onSettled) {
     if ($notes) $notes.value = '';
 
     $attractionsSliderMask.append($newSlide);
+    syncAllNoItemAdded($newSlide);
     addedSlide = true;
   }
 
