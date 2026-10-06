@@ -70,3 +70,33 @@
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* Hero image: hidden behind a full-size shimmer until hotel-next-itinerary.js sets
+   data-ak-hero-ready (once the right image -- e.g. a fixed hotel's own -- has loaded), so Webflow's
+   original never flashes up first. If the script never runs, both reveal on their own after 12s. */
+[data-ak="hero-img"] {
+  transition: opacity 0.4s ease;
+}
+
+[data-ak="hero-img"]:not([data-ak-hero-ready]) {
+  opacity: 0;
+  animation: akHeroFallbackShow 0s 12s forwards;
+}
+
+:has(> [data-ak="hero-img"]:not([data-ak-hero-ready]))::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #d9d6cf 25%, #e8e6e1 50%, #d9d6cf 75%);
+  background-size: 200% 100%;
+  animation: akSkeletonShimmer 1.5s infinite, akHeroFallbackHide 0s 12s forwards;
+  pointer-events: none;
+}
+
+@keyframes akHeroFallbackShow {
+  to { opacity: 1; }
+}
+
+@keyframes akHeroFallbackHide {
+  to { opacity: 0; }
+}
