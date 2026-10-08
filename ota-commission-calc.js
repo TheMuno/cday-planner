@@ -18,7 +18,7 @@
     return inputs;
   }
 
-  const SUBMITTED_TEXT = '✓ Submitted!';
+  const SUBMITTED_TEXT = '✓ Submitted - Check your email';
   const SUBMITTED_MS = 3000;
 
   // Works for Webflow's <input type="submit"> as well as a <button>.
@@ -33,7 +33,12 @@
     restoreTimer = setTimeout(() => setLabel(btn, originalLabel), SUBMITTED_MS);
   }
 
-  let lastSent = null;
+  function clearUserFields() {
+    ['[data-ak="name"]', '[data-ak="email"]'].forEach(sel => {
+      const input = $(sel);
+      if (input) input.value = '';
+    });
+  }
 
   // Returns true when the name/email are valid (i.e. the form is actually submitting).
   function sendReport() {
@@ -47,22 +52,16 @@
     if (!name || !email || !nameInput.checkValidity() || !emailInput.checkValidity()) return false;
 
     const payload = { name, email, inputs: getCalcInputs() };
-    const key = JSON.stringify(payload);
-    if (key === lastSent) return true; // double-click / Enter + click
-    lastSent = key;
 
     // keepalive so the request survives if Webflow redirects after submit.
     fetch(REPORT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: key,
+      body: JSON.stringify(payload),
       keepalive: true,
     })
       .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); })
-      .catch(err => {
-        lastSent = null; // allow a retry
-        console.error('OTA report request failed:', err);
-      });
+      .catch(err => console.error('OTA report request failed:', err));
     return true;
   }
 
@@ -76,7 +75,11 @@
     submitBtn.removeAttribute('data-wait');
 
     submitBtn.addEventListener('click', () => {
-      if (sendReport()) showSubmitted(submitBtn, originalLabel);
+      if (!sendReport()) return;
+      showSubmitted(submitBtn, originalLabel);
+      // Deferred: the click fires before the browser validates the (required) fields and before
+      // Webflow serializes them in its submit handler -- clearing now would cancel the submit.
+      setTimeout(clearUserFields, 0);
     });
 
     keepFormVisibleOnSuccess(submitBtn);
