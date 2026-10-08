@@ -78,6 +78,23 @@
     submitBtn.addEventListener('click', () => {
       if (sendReport()) showSubmitted(submitBtn, originalLabel);
     });
+
+    keepFormVisibleOnSuccess(submitBtn);
+  }
+
+  // On success Webflow hides the form and shows its "Thank you! Your submission has been
+  // received!" block (.w-form-done). Undo that as soon as it happens so the button's
+  // "Submitted!" state is what the visitor sees instead.
+  function keepFormVisibleOnSuccess(submitBtn) {
+    const form = submitBtn.closest('form');
+    const done = form && form.parentElement.querySelector('.w-form-done');
+    if (!done) return;
+
+    new MutationObserver(() => {
+      if (done.style.display === 'none') return;
+      done.style.display = 'none';
+      form.style.display = '';
+    }).observe(done, { attributes: true, attributeFilter: ['style'] });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
