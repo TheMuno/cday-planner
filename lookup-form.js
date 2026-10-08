@@ -1,5 +1,5 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// travel dates, hotel, reservation number, guest last name and phone number are all filled in; each empty
+// travel dates, hotel, reservation number, guest last name, phone number and arrival/departure date & time are all filled in; each empty
 // one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
 // red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
@@ -48,7 +48,45 @@ const lookupFields = $lookupForm ? [
   $lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'),
   $lookupForm.querySelector('[data-ak="last-name"]') || findFieldByLabel('Guest last name'),
   $lookupForm.querySelector('[data-ak="phone-number"]') || findFieldByLabel('Phone number'),
+  $lookupForm.querySelector('[data-ak="arrival-time"]') || findFieldByLabel('Arrival date & time'),
+  $lookupForm.querySelector('[data-ak="departure-time"]') || findFieldByLabel('Departure date & time'),
 ].filter(Boolean) : [];
+
+// Arrival / departure date & time pickers. The value is "01/01/2026 01:30 PM" (same as the Webflow
+// placeholders), and that's what gets sent to the sheet. Set up on window load: flatpickr itself
+// and the site-wide travel-dates code may not have run yet when this script does.
+// The site-wide updateFlatpickrInputs() writes the travel dates into every input.flatpickr-input,
+// and flatpickr adds that class to these two as well, so it's taken off again right after.
+// disableMobile keeps flatpickr's own calendar on phones rather than swapping in a native input
+// (which would leave the validated field hidden).
+function initArrivalDeparturePickers() {
+  if (!$lookupForm || typeof window.flatpickr !== 'function') return;
+  const $arrival = $lookupForm.querySelector('[data-ak="arrival-time"]');
+  const $departure = $lookupForm.querySelector('[data-ak="departure-time"]');
+  const pickerOptions = {
+    enableTime: true,
+    dateFormat: 'm/d/Y h:i K',
+    minDate: 'today',
+    minuteIncrement: 15,
+    disableMobile: true,
+  };
+  let departurePicker = null;
+  if ($departure) {
+    departurePicker = flatpickr($departure, { ...pickerOptions, defaultHour: 11 });
+    $departure.classList.remove('flatpickr-input');
+  }
+  if ($arrival) {
+    flatpickr($arrival, {
+      ...pickerOptions,
+      defaultHour: 15,
+      // Departure can't be set before the arrival day.
+      onChange: ([arrivalDate]) => departurePicker?.set('minDate', arrivalDate ? new Date(arrivalDate).setHours(0, 0, 0, 0) : 'today'),
+    });
+    $arrival.classList.remove('flatpickr-input');
+  }
+}
+if (document.readyState === 'complete') initArrivalDeparturePickers();
+else window.addEventListener('load', initArrivalDeparturePickers);
 
 // The red hint under each field (a [data-ak-hidden] block holding .u-text-color-red), if it has one.
 // Looked up once here while every hint still has data-ak-hidden -- showing a hint removes that
@@ -139,15 +177,17 @@ function storeFlowTrialKeys() {
 }
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
-// Guests" tab. The server finds each value by its key (last+name, travel+date, reservation; phone-number needs a Phone column),
+// Guests" tab. The server finds each value by its key (last+name, travel+date, phone, arrival, departure, reservation),
 // so the keys below are those fields' data-ak names. Travel dates are sent from the hidden
 // flatpickr input ("2026-10-06 to 2026-10-08"), which the server reformats.
 const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
-const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
+const [$hotelField, $reservationField, $lastNameField, $phoneField, $arrivalField, $departureField] = [
   ['hotel-name', 'Hotel'],
   ['reservation-num', 'Reservation number'],
   ['last-name', 'Guest last name'],
   ['phone-number', 'Phone number'],
+  ['arrival-time', 'Arrival date & time'],
+  ['departure-time', 'Departure date & time'],
 ].map(([ak, label]) => $lookupForm && ($lookupForm.querySelector(`[data-ak="${ak}"]`) || findFieldByLabel(label)));
 
 function saveLookupSubmission() {
@@ -157,6 +197,8 @@ function saveLookupSubmission() {
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     'phone-number': value($phoneField),
+    'arrival-time': value($arrivalField),
+    'departure-time': value($departureField),
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
