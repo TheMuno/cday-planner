@@ -1,7 +1,7 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// arrival/departure date & time, hotel, reservation number, guest last name and phone number are all filled in; each empty
+// travel dates, hotel, reservation number, guest last name and phone number are all filled in; each empty
 // one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
-// red hint shown (arrival/departure: the one dates hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
+// red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
 // "Customize now" button's href (never /log-in).
 
@@ -34,91 +34,15 @@ function findFieldByLabel(labelText) {
   return $label?.closest('.u-width-full')?.querySelector('input:not(.hide), select') || null;
 }
 
-// Arrival / departure date & time ([data-ak-arrival] / [data-ak-departure]). If they also carry
-// data-ak="user-travel-dates", the site-wide code (b.html) first sets each up as a date-range picker
-// and writes the saved travel dates into it. On window load (after that code and flatpickr itself
-// have run) each one gets a single date + time picker instead. The visible input (flatpickr's altInput, right after the hidden one)
-// reads "Fri, Apr 3rd · 01:30 PM" (J = day with st/nd/rd/th, G = zero-padded 12-hour); the hidden
-// one holds "10/29/2026 01:30 PM", which is what goes to the sheet. flatpickr-input is taken off the
-// hidden inputs again so the site-wide updateFlatpickrInputs() doesn't overwrite them with the range.
-// disableMobile keeps flatpickr's own calendar on phones rather than a native input.
-const $arrivalSource = $lookupForm?.querySelector('[data-ak-arrival]') || null;
-const $departureSource = $lookupForm?.querySelector('[data-ak-departure]') || null;
-// The visible input once flatpickr has added it, else the source input itself.
-function visibleInput($source) {
-  return $source?.nextElementSibling?.tagName === 'INPUT' ? $source.nextElementSibling : $source;
+// Travel dates -- for guests who land here directly rather than via the homepage. flatpickr
+// (altInput: true, site-wide code) hides [data-ak="user-travel-dates"] and puts the visible input
+// right after it; that visible one is what gets focused. flatpickr only adds it after this script
+// has run, so it's looked up at click time rather than here. The site-wide code also saves the
+// picked dates to localStorage itself, for the /stay pages.
+const $datesSource = $lookupForm?.querySelector('[data-ak="user-travel-dates"]') || null;
+function getDatesField() {
+  return $datesSource?.nextElementSibling?.tagName === 'INPUT' ? $datesSource.nextElementSibling : $datesSource;
 }
-// The saved travel dates' start/end (if any), only for opening each calendar on that month.
-function storedTravelDays() {
-  try {
-    const { flatpickrDate } = JSON.parse(localStorage['ak-travel-days']);
-    return flatpickrDate.split(/\s+to\s+/).map(date => new Date(date));
-  } catch {
-    return [];
-  }
-}
-
-// Makes $input ignore any value written to it that isn't empty and doesn't match `allowed`.
-const inputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-function keepOnly($input, allowed) {
-  if (!$input) return;
-  Object.defineProperty($input, 'value', {
-    configurable: true,
-    get() { return inputValue.get.call(this); },
-    set(value) {
-      if (value === '' || allowed.test(String(value))) inputValue.set.call(this, value);
-    },
-  });
-}
-
-function initArrivalDeparturePickers() {
-  if (!$lookupForm || typeof window.flatpickr !== 'function') return;
-  const [storedStart, storedEnd] = storedTravelDays();
-  const pickerOptions = {
-    enableTime: true,
-    altInput: true,
-    altFormat: 'D, M J · G:i K',
-    dateFormat: 'm/d/Y G:i K',
-    minDate: 'today',
-    minuteIncrement: 15,
-    disableMobile: true,
-  };
-  const setUp = ($source, options, jumpTo) => {
-    if (!$source) return null;
-    $source._flatpickr?.destroy();
-    $source.value = '';
-    const picker = flatpickr($source, {
-      ...pickerOptions,
-      ...options,
-      onOpen: (selectedDates, dateStr, instance) => {
-        if (!selectedDates.length && jumpTo && !isNaN(jumpTo)) instance.jumpToDate(jumpTo);
-      },
-    });
-    $source.classList.remove('flatpickr-input');
-    // The site-wide code can still write the saved travel-date range (or a single "Thu Oct 29")
-    // into these later, e.g. via its MutationObserver, so only flatpickr's own formats are let in.
-    keepOnly($source, /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2} [AP]M$/);
-    keepOnly(picker.altInput, /·/);
-    // Clear the dates hint once both are picked (validation is wired up further down).
-    $source.addEventListener('change', clearDatesHintIfFilled);
-    return picker;
-  };
-  const departurePicker = setUp($departureSource, { defaultHour: 11 }, storedEnd);
-  setUp($arrivalSource, {
-    defaultHour: 13,
-    defaultMinute: 30,
-    // Departure can't be before the arrival day; one already picked that is gets cleared.
-    onChange: ([arrivalDate]) => {
-      if (!departurePicker) return;
-      const minDay = arrivalDate ? new Date(arrivalDate).setHours(0, 0, 0, 0) : 'today';
-      departurePicker.set('minDate', minDay);
-      const [departureDate] = departurePicker.selectedDates;
-      if (arrivalDate && departureDate && departureDate < arrivalDate) departurePicker.clear();
-    },
-  }, storedStart);
-}
-if (document.readyState === 'complete') initArrivalDeparturePickers();
-else window.addEventListener('load', initArrivalDeparturePickers);
 
 const lookupFields = $lookupForm ? [
   $lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'),
@@ -136,36 +60,15 @@ const errorHints = new Map(lookupFields.map($field => [
     .find($el => $el.querySelector('.u-text-color-red')) || null,
 ]));
 
-// The dates hint ([data-ak-dates], "Select the travel dates & time") sits just after the last date
-// block ([data-ak="travel-dates-form"]) rather than inside a .u-width-full wrapper, so it's found
+// The dates hint ([data-ak-dates], "Select the travel dates") sits just after the dates block
+// ([data-ak="travel-dates-form"]) rather than inside a .u-width-full wrapper, so it's found
 // separately -- by data-ak-dates, else as that block's next sibling.
-// It's shown when arrival or departure is missing; those two get the hint only, no outline.
-const $datesItem = [...($lookupForm?.querySelectorAll('[data-ak="travel-dates-form"]') || [])].pop();
+const $datesItem = $datesSource?.closest('[data-ak="travel-dates-form"]');
 const $datesHint = $lookupForm?.querySelector('[data-ak-dates]') || [$datesItem?.nextElementSibling]
   .find($el => $el?.hasAttribute('data-ak-hidden') && $el.querySelector('.u-text-color-red')) || null;
-const dateSources = [$arrivalSource, $departureSource].filter(Boolean);
-// The hint names whichever of the two is still empty; with both empty it keeps its Webflow text
-// ("Select the travel dates & time").
-const $datesHintText = $datesHint?.querySelector('.u-text-color-red p') || $datesHint?.querySelector('.u-text-color-red');
-const datesHintDefault = $datesHintText?.textContent || '';
-// Shows the hint for the date field(s) still empty, or hides it once both are picked.
-function updateDatesHint() {
-  const arrivalEmpty = !!$arrivalSource && !$arrivalSource.value.trim();
-  const departureEmpty = !!$departureSource && !$departureSource.value.trim();
-  if (!arrivalEmpty && !departureEmpty) {
-    $datesHint?.setAttribute('data-ak-hidden', 'true');
-    return;
-  }
-  if ($datesHintText) {
-    $datesHintText.textContent = arrivalEmpty && departureEmpty ? datesHintDefault
-      : arrivalEmpty ? 'Select the arrival date & time'
-      : 'Select the departure date & time';
-  }
-  $datesHint?.removeAttribute('data-ak-hidden');
-}
-// After a pick: the hint only changes if it's already showing (so it never appears early).
-function clearDatesHintIfFilled() {
-  if ($datesHint && !$datesHint.hasAttribute('data-ak-hidden')) updateDatesHint();
+function setDatesHint(show) {
+  if (show) $datesHint?.removeAttribute('data-ak-hidden');
+  else $datesHint?.setAttribute('data-ak-hidden', 'true');
 }
 
 // The red outline only shows for 2s (a repeat click restarts the 2s rather than stacking timers);
@@ -186,11 +89,11 @@ function setFieldInvalid($field, invalid) {
 function validateLookupForm() {
   const emptyFields = lookupFields.filter($field => !$field.value.trim());
   lookupFields.forEach($field => setFieldInvalid($field, emptyFields.includes($field)));
-  const emptyDate = dateSources.find($source => !$source.value.trim());
-  updateDatesHint();
-  // Focusing the visible date input opens its calendar.
-  (emptyDate ? visibleInput(emptyDate) : emptyFields[0])?.focus();
-  return !emptyDate && emptyFields.length === 0;
+  const datesEmpty = !!$datesSource && !$datesSource.value.trim();
+  setDatesHint(datesEmpty);
+  // Focusing the visible dates input opens its calendar.
+  (datesEmpty ? getDatesField() : emptyFields[0])?.focus();
+  return !datesEmpty && emptyFields.length === 0;
 }
 
 lookupFields.forEach($field => {
@@ -199,6 +102,12 @@ lookupFields.forEach($field => {
   };
   $field.addEventListener('input', clearIfFilled);
   $field.addEventListener('change', clearIfFilled);
+});
+
+// The visible dates input is readonly and flatpickr fires change on the hidden one, so the dates
+// hint is cleared from there.
+$datesSource?.addEventListener('change', () => {
+  if ($datesSource.value.trim()) setDatesHint(false);
 });
 
 // Where "Customize now" goes, by the hotel picked -- mirrors hotelMap/resolveHotel() in
@@ -230,40 +139,12 @@ function storeFlowTrialKeys() {
   // one, which nothing clears (stay-itinerary.js also saves it with the trip as stayHotel).
   localStorage.setItem('ak-stay-hotel', referral);
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
-  saveTravelDays();
-}
-
-// Arrival and departure as Dates (null if not picked), from their flatpickr instances.
-function pickedDates() {
-  return [$arrivalSource, $departureSource].map($source => $source?._flatpickr?.selectedDates[0] || null);
-}
-
-// "2026-10-29" from a Date, in local time.
-function ymd(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-// The arrival and departure days become the trip's travel dates, saved under the same localStorage
-// keys and in the same shapes as the site-wide travel-dates picker (formatNSaveDates() in b.html),
-// which the /stay pages read.
-function saveTravelDays() {
-  const [arrival, departure] = pickedDates();
-  if (!arrival || !departure) return;
-  const days = [arrival, departure].map(date => new Date(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dateStr = `${ymd(days[0])} to ${ymd(days[1])}`;
-  const flatpickrDate = `${ymd(days[0])}T00:00:00 to ${ymd(days[1])}T00:00:00`;
-  const usrInpDate = `${days[0].toDateString().substring(0, 10)} to ${days[1].toDateString().substring(0, 10)}`;
-  localStorage['ak-travel-days'] = JSON.stringify({ flatpickrDate, usrInpDate, dateStr });
-  localStorage['ak-flatpickrDateObj'] = JSON.stringify({ selectedDates: days, dateStr });
-  localStorage['ak-update-travel-days'] = true;
-  localStorage['ak-unsaved-changes'] = true;
-  localStorage['ak-numberOfWeeks'] = Math.round(Math.ceil((days[0].getTime() - Date.now()) / (1000 * 60 * 60 * 24)) / 7);
 }
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
-// Guests" tab. The server finds each value by its key (last+name, phone, arrival, departure, reservation),
-// so the keys below are those fields' data-ak names. arrival-time / departure-time are the hidden
-// inputs' "10/06/2026 01:30 PM". No travel dates: the sheets have no column for them any more.
+// Guests" tab. The server finds each value by its key (last+name, travel+date, phone, reservation),
+// so the keys below are those fields' data-ak names. Travel dates are sent from the hidden
+// flatpickr input ("2026-10-06 to 2026-10-08"), which the server reformats.
 const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
 const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
   ['hotel-name', 'Hotel'],
@@ -276,10 +157,9 @@ function saveLookupSubmission() {
   const value = $field => $field?.value.trim() || '';
   const fields = {
     hotel: value($hotelField),
+    'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     'phone-number': value($phoneField),
-    'arrival-time': value($arrivalSource),
-    'departure-time': value($departureSource),
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
