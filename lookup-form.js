@@ -1,5 +1,6 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// travel dates, hotel, reservation number, guest last name and phone number are all filled in; each empty
+// travel dates, hotel, reservation number, guest last name and phone number are all filled in (and the
+// phone number is a real one for its country); each empty or invalid
 // one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
 // red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
@@ -86,22 +87,75 @@ function setFieldInvalid($field, invalid) {
   }
 }
 
+// Phone number -- intl-tel-input (from jsDelivr, so Webflow needs no extra embed) puts a country
+// dropdown in front of the field, the guest types the rest of the number, and it checks the number
+// is a real one for that country (right length, real area code). Until it has loaded, or if it
+// fails to, the phone field only has to be filled in, as before.
+const ITI_URL = 'https://cdn.jsdelivr.net/npm/intl-tel-input@29.5.3/dist';
+const $phoneInput = $lookupForm && ($lookupForm.querySelector('[data-ak="phone-number"]') || findFieldByLabel('Phone number'));
+let phoneIti = null;
+
+if ($phoneInput) {
+  document.head.insertAdjacentHTML('beforeend', `<link rel="stylesheet" href="${ITI_URL}/css/intlTelInput.min.css">
+    <style>#wf-form-Form-Look-up .iti { display: block; width: 100%; }</style>`);
+  const $itiScript = document.createElement('script');
+  $itiScript.src = `${ITI_URL}/js/intlTelInput.min.js`;
+  $itiScript.onload = () => {
+    $phoneInput.type = 'tel';
+    phoneIti = window.intlTelInput($phoneInput, {
+      initialCountry: 'us',
+      countryOrder: ['us', 'ca', 'gb'],
+      separateDialCode: true,
+      strictMode: true,
+      // On the body, so the form's wrappers can't clip the open list.
+      dropdownParent: document.body,
+      loadUtils: () => import(`${ITI_URL}/js/utils.js`),
+    });
+  };
+  $itiScript.onerror = () => console.error('Failed to load intl-tel-input; the phone number is only checked for being filled in.');
+  document.head.appendChild($itiScript);
+}
+
+// 'empty', 'invalid' (not a real number for the picked country), or '' when fine. isValidNumber()
+// is null until the number checker has loaded, which counts as fine.
+function phoneProblem() {
+  if (!$phoneInput.value.trim()) return 'empty';
+  return phoneIti?.isValidNumber() === false ? 'invalid' : '';
+}
+
+// The phone hint says "Enter a valid phone number" for a wrong number, and its own Webflow text
+// when the field is empty.
+const $phoneHintText = errorHints.get($phoneInput)?.querySelector('.u-text-color-red') || null;
+const phoneHintHtml = $phoneHintText?.innerHTML;
+function setPhoneHintText(problem) {
+  if (!$phoneHintText) return;
+  if (problem === 'invalid') $phoneHintText.textContent = 'Enter a valid phone number';
+  else $phoneHintText.innerHTML = phoneHintHtml;
+}
+
+function fieldOk($field) {
+  return $field === $phoneInput ? !phoneProblem() : !!$field.value.trim();
+}
+
 function validateLookupForm() {
-  const emptyFields = lookupFields.filter($field => !$field.value.trim());
-  lookupFields.forEach($field => setFieldInvalid($field, emptyFields.includes($field)));
+  const badFields = lookupFields.filter($field => !fieldOk($field));
+  if ($phoneInput) setPhoneHintText(phoneProblem());
+  lookupFields.forEach($field => setFieldInvalid($field, badFields.includes($field)));
   const datesEmpty = !!$datesSource && !$datesSource.value.trim();
   setDatesHint(datesEmpty);
   // Focusing the visible dates input opens its calendar.
-  (datesEmpty ? getDatesField() : emptyFields[0])?.focus();
-  return !datesEmpty && emptyFields.length === 0;
+  (datesEmpty ? getDatesField() : badFields[0])?.focus();
+  return !datesEmpty && badFields.length === 0;
 }
 
+// The phone's hint goes once the number is a real one (or the country picked makes it one).
 lookupFields.forEach($field => {
-  const clearIfFilled = () => {
-    if ($field.value.trim()) setFieldInvalid($field, false);
+  const clearIfOk = () => {
+    if (fieldOk($field)) setFieldInvalid($field, false);
   };
-  $field.addEventListener('input', clearIfFilled);
-  $field.addEventListener('change', clearIfFilled);
+  $field.addEventListener('input', clearIfOk);
+  $field.addEventListener('change', clearIfOk);
+  if ($field === $phoneInput) $field.addEventListener('countrychange', clearIfOk);
 });
 
 // The visible dates input is readonly and flatpickr fires change on the hidden one, so the dates
@@ -159,7 +213,8 @@ function saveLookupSubmission() {
     hotel: value($hotelField),
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
-    'phone-number': value($phoneField),
+    // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
+    'phone-number': phoneIti?.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || value($phoneField),
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
