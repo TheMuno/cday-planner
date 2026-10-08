@@ -1,5 +1,5 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// travel dates, hotel, reservation number, guest last name and number of guests are all filled in; each empty
+// travel dates, hotel, reservation number, guest last name and phone number are all filled in; each empty
 // one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
 // red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
@@ -26,8 +26,8 @@ if ($lookupForm) {
   </style>`);
 }
 
-// Reservation number and number of guests share the same id/name in Webflow, so fields are looked
-// up by a data-ak attribute when present, and otherwise by the label text above them.
+// Fields are looked up by a data-ak attribute when present, and otherwise by the label text above
+// them (Webflow ids/names aren't reliable here).
 function findFieldByLabel(labelText) {
   const $label = [...$lookupForm.querySelectorAll('.u-width-full p')]
     .find($p => $p.textContent.trim().toLowerCase() === labelText.toLowerCase());
@@ -47,20 +47,8 @@ const lookupFields = $lookupForm ? [
   $lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'),
   $lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'),
   $lookupForm.querySelector('[data-ak="last-name"]') || findFieldByLabel('Guest last name'),
-  $lookupForm.querySelector('[data-ak="guest-count"]') || findFieldByLabel('Number of guests'),
+  $lookupForm.querySelector('[data-ak="phone-number"]') || findFieldByLabel('Phone number'),
 ].filter(Boolean) : [];
-
-// Prefill number of guests from the adults/children picked earlier (ak-adult-num /
-// ak-children-num), when either is stored and the guest hasn't typed a number already.
-!function prefillGuestCount() {
-  const $guests = $lookupForm && ($lookupForm.querySelector('[data-ak="guest-count"]') || findFieldByLabel('Number of guests'));
-  if (!$guests || $guests.value.trim()) return;
-  const adults = parseInt(localStorage['ak-adult-num'], 10);
-  const children = parseInt(localStorage['ak-children-num'], 10);
-  if (Number.isNaN(adults) && Number.isNaN(children)) return;
-  const total = (Number.isNaN(adults) ? 0 : adults) + (Number.isNaN(children) ? 0 : children);
-  if (total > 0) $guests.value = total;
-}();
 
 // The red hint under each field (a [data-ak-hidden] block holding .u-text-color-red), if it has one.
 // Looked up once here while every hint still has data-ak-hidden -- showing a hint removes that
@@ -151,15 +139,15 @@ function storeFlowTrialKeys() {
 }
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
-// Guests" tab. The server finds each value by its key (last+name, travel+date, guest, reservation),
+// Guests" tab. The server finds each value by its key (last+name, travel+date, reservation; phone-number needs a Phone column),
 // so the keys below are those fields' data-ak names. Travel dates are sent from the hidden
 // flatpickr input ("2026-10-06 to 2026-10-08"), which the server reformats.
 const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
-const [$hotelField, $reservationField, $lastNameField, $guestCountField] = [
+const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
   ['hotel-name', 'Hotel'],
   ['reservation-num', 'Reservation number'],
   ['last-name', 'Guest last name'],
-  ['guest-count', 'Number of guests'],
+  ['phone-number', 'Phone number'],
 ].map(([ak, label]) => $lookupForm && ($lookupForm.querySelector(`[data-ak="${ak}"]`) || findFieldByLabel(label)));
 
 function saveLookupSubmission() {
@@ -168,7 +156,7 @@ function saveLookupSubmission() {
     hotel: value($hotelField),
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
-    'guest-count': value($guestCountField),
+    'phone-number': value($phoneField),
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
