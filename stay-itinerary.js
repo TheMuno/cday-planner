@@ -188,6 +188,11 @@ const FIXED_HOTELS = {
 // syncWithDB(). The old keys still count for anyone who picked a hotel before ak-stay-hotel existed.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
+// Same for the look-up form's reservation number: ak-flow-trial-reservation is cleared on sign-in too,
+// so it's kept in ak-stay-reservation (also set by lookup-form.js), and saved with the trip as
+// confirmationNum. The old key only exists between a form submit and the next sign-in, so it's
+// always the freshest one when it's there.
+if (localStorage['ak-flow-trial-reservation']) localStorage['ak-stay-reservation'] = localStorage['ak-flow-trial-reservation'];
 const fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 const $tripHeadingLine = document.querySelector('[data-ak="trip-heading"]');
 const $tripDateLine = document.querySelector('[data-ak="trip-heading-date"]');
@@ -742,10 +747,41 @@ function injectStep2SpinnerStyle() {
   document.head.appendChild(style);
 }
 
+// Arrival & departure times -> the hotel's "Upcoming Guests" sheet, on the row the look-up form
+// added for this reservation number (saveFlowTrialLogistics, functions/index.js). Sent on every save
+// (save-itinerary, continue-to-step2, the step links), fire-and-forget with keepalive so navigating
+// away can't cancel it. Nothing is sent without a reservation number or with both times blank, nor
+// when the same times already went through for this reservation. A blank time is left out on the
+// server, so it never wipes a time already on the sheet. It never blocks or fails the trip save.
+const SAVE_FLOW_TRIAL_LOGISTICS_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialLogistics';
+
+function sendLogisticsTimes() {
+  const time = prefix => document.querySelector(`[data-ak="${prefix}-time"]`)?.value.trim() || '';
+  const payload = {
+    hotel: localStorage['ak-stay-hotel'] || '',
+    reservationNum: (localStorage['ak-stay-reservation'] || '').trim(),
+    arrivalTime: time('arrival'),
+    departureTime: time('departure'),
+  };
+  if (!payload.reservationNum || (!payload.arrivalTime && !payload.departureTime)) return;
+  const body = JSON.stringify(payload);
+  if (localStorage['ak-stay-times-sent'] === body) return;
+  fetch(SAVE_FLOW_TRIAL_LOGISTICS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).then(res => {
+    if (!res.ok) throw new Error(`saveFlowTrialLogistics responded ${res.status}`);
+    localStorage['ak-stay-times-sent'] = body;
+  }).catch(err => console.error('Failed to send arrival/departure times:', err));
+}
+
 // Waits out the page load + trip restore first; the 10s save timeout starts only after that, so a
 // slow page load isn't mistaken for a failed save.
 async function saveTripAfterRestore() {
   await tripRestored;
+  sendLogisticsTimes(); // after the restore, so a reservation number from the DB is in place
   const saveTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000));
   await Promise.race([Promise.all([saveAttractionsDB(), ensureShareToken()]), saveTimeout]);
 }
@@ -844,7 +880,10 @@ $saveBtns.forEach($saveBtn => $saveBtn.addEventListener('click', async e => {
   e.preventDefault();
   // Signed out (only reachable via the data-ak-show-signed-out button): there's no account to save
   // to, so send them to sign in. Their edits are already in localStorage and come back after login.
-  if (!auth.currentUser) return goToSignIn();
+  if (!auth.currentUser) {
+    sendLogisticsTimes();
+    return goToSignIn();
+  }
   const $btn = e.currentTarget;
   // Either button mid-save blocks both, so the trip isn't saved twice at once.
   if ($saveBtns.some($b => $b.classList.contains('ak-saving'))) return;
@@ -2590,6 +2629,9 @@ async function syncWithDB() {
   if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
   if (localStorage['ak-adult-num'] == null && dbData.adultNum != null) localStorage['ak-adult-num'] = dbData.adultNum;
   if (localStorage['ak-children-num'] == null && dbData.childrenNum != null) localStorage['ak-children-num'] = dbData.childrenNum;
+  // Another device / cleared storage: the reservation number the arrival & departure times are
+  // matched on in the hotel's sheet (sendLogisticsTimes).
+  if (!localStorage['ak-stay-reservation'] && dbData.confirmationNum) localStorage['ak-stay-reservation'] = dbData.confirmationNum;
 
   if (!localStorage['ak-update-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
   if (!localStorage['ak-update-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
@@ -2639,8 +2681,8 @@ async function saveAttractionsDB() {
     travelDates: localStorage['ak-travel-days'] || '',
     savedAttractions: getCurrentUserAttractions(),
     activityChips: localStorage['ak-activity-chips'] || '[]',
-    // ak-flow-trial-reservation: the reservation number from the look-up form (lookup-form.js).
-    confirmationNum: localStorage['ak-hotel-conf'] || localStorage['ak-flow-trial-reservation'] || '',
+    // ak-stay-reservation: the reservation number from the look-up form (lookup-form.js).
+    confirmationNum: localStorage['ak-hotel-conf'] || localStorage['ak-stay-reservation'] || '',
   };
   // Which hotel this trip is for ('carlton-arms' / 'compton' / 'demo'), so other devices know it too.
   if (localStorage['ak-stay-hotel']) saveObj.stayHotel = localStorage['ak-stay-hotel'];

@@ -193,6 +193,9 @@ function storeFlowTrialKeys() {
   // one, which nothing clears (stay-itinerary.js also saves it with the trip as stayHotel).
   localStorage.setItem('ak-stay-hotel', referral);
   localStorage.setItem('ak-flow-trial-reservation', $reservationNum?.value.trim() || '');
+  // Same for the reservation number: the key above is cleared on sign-in, this one isn't.
+  // stay-itinerary.js matches the arrival & departure times to this row in the sheet by it.
+  localStorage.setItem('ak-stay-reservation', $reservationNum?.value.trim() || '');
 }
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
