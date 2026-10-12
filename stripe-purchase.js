@@ -465,6 +465,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           URL.revokeObjectURL(url);
         } catch (err) {
           console.error('Download error:', err);
+          showDownloadError(err);
         } finally {
           isLoading = false;
           $downloadBtns.forEach((b, i) => { b.disabled = false; getLabelEl(b).innerHTML = originals[i]; });
@@ -473,6 +474,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       });
     });
+  }
+
+  // Callable errors arrive as 'functions/<code>'. Only failed-precondition messages are written
+  // for guests (empty/missing itinerary) and shown verbatim; every other code gets copy written
+  // here, since the server's text for those is developer-facing ("Cannot access another user's data").
+  function showDownloadError(err) {
+    const SUPPORT = 'If this keeps happening, email hello@askkhonsu.com.';
+    const code = (err?.code || '').replace(/^functions\//, '');
+    let message;
+    if (!navigator.onLine) {
+      message = "You're offline — please check your internet connection and try again.";
+    } else if (code === 'failed-precondition' && err.message) {
+      message = err.message;
+    } else if (code === 'permission-denied') {
+      message = `We couldn't confirm your Smart Guide purchase. Please refresh the page and try again. ${SUPPORT}`;
+    } else if (code === 'unauthenticated') {
+      message = 'Your session has expired. Please log in again to download your guide.';
+    } else if (code === 'deadline-exceeded' || code === 'unavailable') {
+      message = 'Your guide took too long to build. Please try again in a moment.';
+    } else {
+      message = `Something went wrong creating your guide. Please try again. ${SUPPORT}`;
+    }
+    // alertify is a classic <script> on the page; fall back to alert() if it didn't load.
+    if (window.alertify?.alert) window.alertify.alert(message);
+    else alert(message);
   }
 
   function wireGoogleMapsButton($downloadMapsBtns) {
