@@ -323,6 +323,84 @@ function citypass5EligibilityCheck(cityPassAttractions) {
   return excluded === 0 && required >= 2;
 }
 
+// ── HOW PASS SAVINGS ARE CALCULATED (read before changing any pass figure) ─────────────────
+//
+// Same maths as the Flagship Smart Guide PDF's pass page (pdfFlagshipPassTiers in the Firebase
+// functions' index.js) so a guest sees the same savings here and in their PDF. Keep them in sync.
+//
+// Every pass figure answers ONE question: "if the guest buys this option, what does the WHOLE
+// trip's sightseeing cost?"
+//
+//   Individual total = sum of every matched attraction's ticket
+//   Pass trip total  = pass price + tickets for every attraction the pass does NOT cover
+//   Saves            = Individual total - pass trip total   (can be negative)
+//
+// A pass covers an attraction only if (a) the sheet marks it as on that pass AND (b) the tier
+// still has room -- each tier admits at most attraction_count attractions (C3 = 3, Explorer
+// 10 = 10, ...). With more eligible attractions than that, the guest is assumed to use the pass
+// on the most expensive ones, except that a tier's required attractions (sheet column
+// required_attractions_id; today only CityPASS C5: Empire State + Natural History) take their
+// slots first. C5's excluded attractions need no handling: C5 is only offered when none are on
+// the trip (citypass5EligibilityCheck).
+//
+// Worked example (12 attractions, $510 individually):
+//   CityPASS C3 ($109) covers 3 of the 7 CityPass attractions -> the priciest, $44 + $42 + $38.
+//   Trip total = $109 + ($510 - $124) = $495 -> saves $15.
+//   The old figure here was "$510 - $109 = saves $401", i.e. it pretended the $109 pass got the
+//   guest into all 12 attractions. Don't reintroduce "individual total - pass price".
+//
+// When the best fit is a range (two tiers, e.g. C3 and CAll), both are costed and the savings
+// line names whichever gives the lower trip total.
+//
+// Deliberate choices: Go City All-Inclusive day passes are never recommended (only Explorer);
+// a Go City pass and a CityPass are never combined.
+//
+// One known difference from the PDF: here the Individual total also includes paid attractions
+// that aren't on any pass (this page's table lists every matched attraction), while the PDF only
+// lists pass attractions. Those tickets are paid under every option, so SAVINGS are identical;
+// only the trip totals differ, by exactly those tickets.
+
+// The sheet's numeric individual_price column; `cost` is display text that can read
+// "$2000 per group" or "Varies / Contact provider", so it's only a fallback.
+function ticketPrice(attr) {
+  return Number(String(attr?.individual_price ?? '').trim())
+    || parseFloat(String(attr?.cost ?? '').replace(/[^0-9.]/g, ''))
+    || 0;
+}
+
+function passTripCost(pass, eligible, individualTotal) {
+  const count = Number(pass.attraction_count);
+  const limit = Math.min(Number.isFinite(count) ? count : Infinity, eligible.length);
+  const requiredIds = String(pass.required_attractions_id || '').split(',').map(s => s.trim()).filter(Boolean);
+  const isRequired = a => requiredIds.some(id => a.place_id?.includes(id));
+  const byPrice = [...eligible].sort((a, b) => ticketPrice(b) - ticketPrice(a));
+  const required = byPrice.filter(isRequired).slice(0, limit);
+  const covered = [...required, ...byPrice.filter(a => !isRequired(a)).slice(0, limit - required.length)];
+  const coveredValue = covered.reduce((sum, a) => sum + ticketPrice(a), 0);
+  const tripTotal = (Number(pass.pass_price) || 0) + individualTotal - coveredValue;
+  return { pass, tripTotal, savings: individualTotal - tripTotal };
+}
+
+// Adds `best` (the tier with the lowest whole-trip cost) to a resolveBestPass() result.
+function costPassResult(result, eligible, individualTotal) {
+  if (!result) return null;
+  const tiers = result.shape === 'single' ? [result.pass] : [result.lower, result.upper];
+  const best = tiers
+    .map(pass => passTripCost(pass, eligible, individualTotal))
+    .reduce((a, b) => (b.tripTotal < a.tripTotal ? b : a));
+  return { ...result, best };
+}
+
+// "Saves $155 vs Individual · trip total $355" (prefixed with the tier name in range shape).
+function savingsText(best, withName) {
+  const name = withName ? (best.pass.pass_name || '').trim() : '';
+  const savings = Math.round(best.savings);
+  const total = `trip total $${Math.round(best.tripTotal)}`;
+  if (savings > 0) return `${name ? `${name} saves` : 'Saves'} $${savings} vs Individual · ${total}`;
+  if (savings < 0) return `${name ? `${name} costs` : 'Costs'} $${-savings} more than Individual · ${total}`;
+  return `${name ? `${name}: no` : 'No'} savings vs Individual · ${total}`;
+}
+
 // lowerLabel/upperLabel are pass_name values from the internal pricing spreadsheet — escaped
 // before going into innerHTML so a stray '<'/'>' in a sheet cell can't be interpreted as markup.
 function escapeHtml(str) {
@@ -358,9 +436,10 @@ function updateBoxContent($box, labelText, savingsText) {
 
 // Renders one calc_packages_box_wrap (GoCity or CityPass): single price shape (like GoCity's
 // current markup) when one pass matches exactly, or the two-tier range shape (like CityPass's
-// current markup) when the best fit falls between two passes. Savings is always figured against
-// the Individual column's summed total, using the cheaper tier's price when in range shape.
-function updatePassBox($box, $purchaseBtn, result, individualTotal) {
+// current markup) when the best fit falls between two passes. `result` comes from
+// costPassResult(); the savings line uses result.best's whole-trip cost (see "HOW PASS SAVINGS
+// ARE CALCULATED" above), not "individual total - pass price".
+function updatePassBox($box, $purchaseBtn, result) {
   const $contain = $box.querySelector('.calc_packages_box_contain');
   if (!$contain) return;
 
@@ -383,15 +462,13 @@ function updatePassBox($box, $purchaseBtn, result, individualTotal) {
 
   if (result.shape === 'single') {
     const price = Number(result.pass.pass_price) || 0;
-    const savings = Math.max(individualTotal - price, 0);
     renderSinglePriceShape($contain, `$${price}`);
-    updateBoxContent($box, result.pass.pass_name || '', `Saves $${savings} vs Individual`);
+    updateBoxContent($box, result.pass.pass_name || '', savingsText(result.best, false));
   } else {
     const lowerPrice = Number(result.lower.pass_price) || 0;
     const upperPrice = Number(result.upper.pass_price) || 0;
-    const savings = Math.max(individualTotal - lowerPrice, 0);
     renderRangePriceShape($contain, `$${lowerPrice}`, result.lower.pass_name || '', `$${upperPrice}`, result.upper.pass_name || '');
-    updateBoxContent($box, 'Chose your level', `${result.lower.pass_name || ''} saves $${savings} vs Individual`);
+    updateBoxContent($box, 'Chose your level', savingsText(result.best, true));
   }
 }
 
@@ -403,15 +480,15 @@ function passCodeName(pass) {
   return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-// How a pass result should read outside its own box (e.g. in the attractions table's TOTAL
-// row): just the price when single, or "$price - code" (the cheaper tier's code) when a range.
+// How a pass result reads in the attractions table's TOTAL row: the whole-trip cost on that
+// pass (so all three TOTAL columns compare like with like), plus "- code" of the tier it's
+// based on when the box shows a range.
 function resultDisplayText(result) {
   if (!result) return '$0';
-  const pass = result.shape === 'single' ? result.pass : result.lower;
-  const price = Number(pass.pass_price) || 0;
-  const code = passCodeName(pass);
-  if (result.shape === 'single' || !code) return `$${price}`;
-  return `$${price} - ${code}`;
+  const total = `$${Math.round(result.best.tripTotal)}`;
+  const code = passCodeName(result.best.pass);
+  if (result.shape === 'single' || !code) return total;
+  return `${total} - ${code}`;
 }
 
 // Rebuilds .calc_table_wrap's per-attraction rows from the existing template row (cloned before
@@ -456,7 +533,7 @@ function populateAttractionsTable(matched, goCitySet, cityPassSet, totals) {
     const $title = $row.querySelector('.calc_table_title_column .u-body');
     if ($title) $title.textContent = attr.attraction_name || '';
 
-    const cost = Number(attr.cost?.replace(/[^0-9.]/g, '')) || 0;
+    const cost = ticketPrice(attr);
     const [$goCityCol, $individualCol, $cityPassCol] = $row.querySelectorAll('.calc_table_column');
 
     if ($goCityCol) setPassCell($goCityCol, goCitySet.has(attr));
@@ -478,17 +555,19 @@ function populatePackagesGrid(matched, Passes) {
   if (!matched.length || !Passes) return;
 
   const passData = Object.entries(Passes);
-  const individualTotal = matched.reduce((sum, a) => sum + (Number(a.cost?.replace(/[^0-9.]/g, '')) || 0), 0);
+  const individualTotal = matched.reduce((sum, a) => sum + ticketPrice(a), 0);
 
   const goCityMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('go city'));
-  const goCityResult = goCityMatched.length ? resolveBestPass(passData, 'gocity_explorer', goCityMatched.length) : null;
+  const goCityResult = costPassResult(
+    goCityMatched.length ? resolveBestPass(passData, 'gocity_explorer', goCityMatched.length) : null,
+    goCityMatched, individualTotal);
 
   const cityPassMatched = matched.filter(a => a.on_pass?.trim().toLowerCase() === 'true' && a.passes?.toLowerCase().includes('citypass'));
   let cityPassResult = null;
   if (cityPassMatched.length) {
     const c5Eligible = citypass5EligibilityCheck(cityPassMatched);
     const filter = c5Eligible ? undefined : ([, p]) => !p.pass_name?.toLowerCase().includes('c5');
-    cityPassResult = resolveBestPass(passData, 'citypass', cityPassMatched.length, filter);
+    cityPassResult = costPassResult(resolveBestPass(passData, 'citypass', cityPassMatched.length, filter), cityPassMatched, individualTotal);
   }
 
   const $grid = document.querySelector('[data-ak-post-purchase="true"] .calc_packages_grid');
@@ -501,8 +580,8 @@ function populatePackagesGrid(matched, Passes) {
       const $contain = $individualBox.querySelector('.calc_packages_box_contain');
       if ($contain) renderSinglePriceShape($contain, `$${individualTotal}`);
     }
-    if ($goCityBox) updatePassBox($goCityBox, document.querySelector('[data-ak="purchase-go-city"]'), goCityResult, individualTotal);
-    if ($cityPassBox) updatePassBox($cityPassBox, document.querySelector('[data-ak="purchase-city-pass"]'), cityPassResult, individualTotal);
+    if ($goCityBox) updatePassBox($goCityBox, document.querySelector('[data-ak="purchase-go-city"]'), goCityResult);
+    if ($cityPassBox) updatePassBox($cityPassBox, document.querySelector('[data-ak="purchase-city-pass"]'), cityPassResult);
   }
 
   populateAttractionsTable(matched, new Set(goCityMatched), new Set(cityPassMatched), {
