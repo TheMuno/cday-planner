@@ -188,6 +188,12 @@ const FIXED_HOTELS = {
 // syncWithDB(). The old keys still count for anyone who picked a hotel before ak-stay-hotel existed.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
+// Colours: Carlton Arms and Compton each have their own Webflow variable mode, applied as a combo
+// class on .page_main.is-hotel (isCarlton / isCompton, published lowercased). Any other hotel gets
+// neither, so the page keeps its default colours.
+const HOTEL_THEME_CLASSES = { 'carlton-arms': 'iscarlton', compton: 'iscompton' };
+const $hotelThemed = document.querySelector('.page_main');
+Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
 // Same for the look-up form's reservation number: ak-flow-trial-reservation is cleared on sign-in too,
 // so it's kept in ak-stay-reservation (also set by lookup-form.js), and saved with the trip as
 // confirmationNum. The old key only exists between a form submit and the next sign-in, so it's
