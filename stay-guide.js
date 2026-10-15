@@ -73,10 +73,10 @@ const FIXED_HOTELS = {
 // for other devices -- see syncWithDB(). The old keys still count for anyone who picked a hotel before.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
-// Colours: Carlton Arms and Compton each have their own Webflow variable mode, applied as a combo
-// class on .page_main.is-hotel (isCarlton / isCompton, published lowercased). Any other hotel gets
-// neither, so the page keeps its default colours.
-const HOTEL_THEME_CLASSES = { 'carlton-arms': 'iscarlton', compton: 'iscompton' };
+// Colours: Carlton Arms and Compton each have a combo class on .page_main.is-hotel (is-carlton /
+// is-compton) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
+// hotel gets neither, so the page keeps .page_main.is-hotel's default colours.
+const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton' };
 const $hotelThemed = document.querySelector('.page_main');
 Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
 let fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
