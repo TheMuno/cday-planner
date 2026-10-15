@@ -80,8 +80,8 @@ const typeKeyMap = { visit: 'attractions', eat: 'restaurants', notes: 'notes' };
 const attractionslimit = 5;
 
 const AIRPORT_FIELDS = [
-  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft' },
-  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft' },
+  { dataAk: 'arrival-airport-autocomplete', markerKey: 'airport-arrival', storageKey: 'ak-arrival-airport', updateKey: 'ak-update-arrival-airport', nameSelector: '[data-ak="map-arrival-name"] p', placeholder: 'Add arrival...', prefix: 'arrival', draftKey: 'ak-arrival-flight-draft', dbKey: 'arrivalAirport' },
+  { dataAk: 'departure-airport-autocomplete', markerKey: 'airport-departure', storageKey: 'ak-departure-airport', updateKey: 'ak-update-departure-airport', nameSelector: '[data-ak="map-departure-name"] p', placeholder: 'Add departure...', prefix: 'departure', draftKey: 'ak-departure-flight-draft', dbKey: 'departureAirport' },
 ];
 
 const placeAutocompleteEls = {};
@@ -1474,6 +1474,24 @@ function restoreAirportFlightDraft(prefix, draftKey) {
   });
 }
 
+// What's saved to the trip for an arrival/departure: the picked place (typed details included), or
+// with nothing picked, the typed details on their own, so the guide still shows the time. The
+// inputs are read too, so a value still waiting on its 500ms local save isn't missed.
+function getAirportSaveValue({ storageKey, prefix, draftKey }) {
+  if (localStorage[storageKey]) return localStorage[storageKey];
+  let draft;
+  try {
+    draft = JSON.parse(localStorage[draftKey] || 'null') || {};
+  } catch (e) {
+    draft = {};
+  }
+  AIRPORT_FLIGHT_FIELDS.forEach(({ suffix, key }) => {
+    const value = document.querySelector(`[data-ak="${prefix}-${suffix}"]`)?.value.trim();
+    if (value) draft[key] = value;
+  });
+  return AIRPORT_FLIGHT_FIELDS.some(({ key }) => draft[key]) ? JSON.stringify(draft) : '';
+}
+
 function saveAirportFlightFieldLocal(storageKey, updateKey, draftKey, key, value) {
   let saveObj;
   try {
@@ -1805,8 +1823,18 @@ async function syncWithDB() {
   if (localStorage['ak-children-num'] == null && dbData.childrenNum != null) localStorage['ak-children-num'] = dbData.childrenNum;
 
   if (!localStorage['ak-update-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
-  if (!localStorage['ak-update-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
-  if (!localStorage['ak-update-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
+  // An arrival/departure saved with no place picked is just the typed details: that goes
+  // back in as the draft (restoreAirportFlightDraft()), unless this browser already has a pick or draft.
+  AIRPORT_FIELDS.forEach(({ storageKey, updateKey, draftKey, dbKey }) => {
+    const dbValue = dbData[dbKey];
+    if (localStorage[updateKey] || !dbValue) return;
+    let saved = null;
+    try {
+      saved = JSON.parse(dbValue);
+    } catch (e) {}
+    if (saved?.location) localStorage[storageKey] = dbValue;
+    else if (saved && !localStorage[storageKey] && !localStorage[draftKey]) localStorage[draftKey] = dbValue;
+  });
 
   if (dbData.savedAttractions) {
     if (localStorage['ak-update-merge-local']) {
@@ -1829,8 +1857,8 @@ async function saveAttractionsDB() {
 
   const saveObj = {
     hotel: localStorage['ak-hotel'] || '',
-    arrivalAirport: localStorage['ak-arrival-airport'] || '',
-    departureAirport: localStorage['ak-departure-airport'] || '',
+    arrivalAirport: getAirportSaveValue(AIRPORT_FIELDS[0]),
+    departureAirport: getAirportSaveValue(AIRPORT_FIELDS[1]),
     tripName: localStorage['ak-user-name'] || '',
     travelDates: localStorage['ak-travel-days'] || '',
     savedAttractions: getCurrentUserAttractions(),
