@@ -1438,6 +1438,16 @@ function restoreAirports() {
     }
 
     if (!saveObj?.location) {
+      // A trip saved with no place picked, if another page copies it back under storageKey: it's the
+      // draft, and the newer one, so it wins over the local draft.
+      if (saveObj) {
+        let draft = null;
+        try {
+          draft = JSON.parse(localStorage[draftKey] || 'null');
+        } catch (e) {}
+        localStorage[draftKey] = JSON.stringify({ ...draft, ...saveObj });
+        localStorage.removeItem(storageKey);
+      }
       restoreAirportFlightDraft(prefix, draftKey);
       return;
     }

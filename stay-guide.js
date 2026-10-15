@@ -219,8 +219,17 @@ async function syncWithDB() {
   if (!localStorage['ak-user-name'] && dbData.tripName) localStorage['ak-user-name'] = dbData.tripName;
   if (!localStorage['ak-attractions-saved'] && dbData.savedAttractions) localStorage['ak-attractions-saved'] = dbData.savedAttractions;
   if (!localStorage['ak-hotel'] && dbData.hotel) localStorage['ak-hotel'] = dbData.hotel;
-  if (!localStorage['ak-arrival-airport'] && dbData.arrivalAirport) localStorage['ak-arrival-airport'] = dbData.arrivalAirport;
-  if (!localStorage['ak-departure-airport'] && dbData.departureAirport) localStorage['ak-departure-airport'] = dbData.departureAirport;
+  // Only a picked place goes under ak-arrival-airport / ak-departure-airport. An arrival/departure
+  // saved with no place (just the mode and typed details) is the itinerary page's draft, and putting
+  // it here would make that page take it for a pick and keep a stale draft's mode.
+  for (const [storageKey, dbKey] of [['ak-arrival-airport', 'arrivalAirport'], ['ak-departure-airport', 'departureAirport']]) {
+    if (localStorage[storageKey] || !dbData[dbKey]) continue;
+    let saved = null;
+    try {
+      saved = JSON.parse(dbData[dbKey]);
+    } catch (e) {}
+    if (saved?.location) localStorage[storageKey] = dbData[dbKey];
+  }
 
   // This browser doesn't know the trip's hotel (another device, cleared storage): take it from the
   // trip -- stayHotel, or for trips saved before that, the key stay-itinerary.js put on the saved hotel.
