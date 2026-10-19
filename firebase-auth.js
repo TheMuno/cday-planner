@@ -60,6 +60,12 @@ const SAVE_FLOW_TRIAL_OPT_IN_URL = 'https://us-central1-askkhonsu-map.cloudfunct
 // the flow-trial sheets, never the original HOTEL_CONF ones (see recordHotelConfSave).
 const IS_FLOW_TRIAL_SIGN_IN = !!localStorage.getItem('ak-flow-trial-hotel');
 
+// ── 2e. HOTEL WIDGET SERVER (fires on sign-ins after the /welcome widget) ────
+// The widget no longer asks for an email: signing in sends the token from the widget's
+// link (ak-stay-token) to this server, which puts the signed-in email on that guest's details.
+// Same address as the widget's <script src>; update both when the server moves.
+const WIDGET_CLAIM_URL = 'https://highway-perfectly-inspections-concept.trycloudflare.com/v1/claim';
+
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
 // Mirrors planner.js's detectHotelSheetTag() — kept independent (not read from
@@ -638,12 +644,18 @@ function latestDeclinedHotel(hotelReferrals) {
 async function promptHotelReferralOptIn(email) {
   if (!email) return;
 
+  // Proves to the servers below that this email is the signed-in account's own.
+  // Straight after sign-in it's already cached, so this doesn't wait on the network.
+  const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+
+  claimWidgetStay(idToken);
+
   const flowTrialHotel = localStorage.getItem("ak-flow-trial-hotel");
   if (flowTrialHotel) {
     const reservationNum = localStorage.getItem("ak-flow-trial-reservation");
     localStorage.removeItem("ak-flow-trial-hotel");
     localStorage.removeItem("ak-flow-trial-reservation");
-    sendFlowTrialOptIn(email, flowTrialHotel, reservationNum); // before the DB read below, so nothing can delay or block it
+    sendFlowTrialOptIn(email, flowTrialHotel, reservationNum, idToken); // before the DB read below, so nothing can delay or block it
   }
 
   let hotelReferrals;
@@ -685,7 +697,7 @@ async function promptHotelReferralOptIn(email) {
   //   showLoader();
   //   if (accepted) sendFlowTrialOptIn(email, hotel);
   // }
-  if (!flowTrialHotel) sendFlowTrialOptIn(email, hotel); // flow-trial already sent above
+  if (!flowTrialHotel) sendFlowTrialOptIn(email, hotel, undefined, idToken); // flow-trial already sent above
   const accepted = true;
   try {
     await saveHotelReferral(email, hotel, accepted, existing);
@@ -698,13 +710,32 @@ async function promptHotelReferralOptIn(email) {
 // the modal sleeps (on Accept when it's awake). Fire-and-forget with
 // keepalive like sendToMake, so the redirect right after sign-in can't cancel it.
 // reservationNum (flow-trial only) also puts the email on that submission's Views row.
-function sendFlowTrialOptIn(email, hotel, reservationNum) {
+// The function takes the email from idToken (the verified sign-in); `email` is only
+// used for Facebook accounts that came without one.
+function sendFlowTrialOptIn(email, hotel, reservationNum, idToken) {
   fetch(SAVE_FLOW_TRIAL_OPT_IN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     keepalive: true,
-    body: JSON.stringify({ email, hotel, reservationNum }),
+    body: JSON.stringify({ email, hotel, reservationNum, idToken }),
   }).catch(err => console.error('Failed to record flow-trial opt-in:', err));
+}
+
+// After the /welcome widget, adds the signed-in email to the guest's details on
+// the widget server (see WIDGET_CLAIM_URL). The token is used once and removed
+// first, so a later sign-in on a shared device can't claim this guest's stay.
+// text/plain keeps it a "simple" request (no CORS preflight), so with keepalive
+// it still goes out as the page redirects. Fire-and-forget, like the sends above.
+function claimWidgetStay(idToken) {
+  const token = localStorage.getItem('ak-stay-token');
+  if (!token || !idToken) return;
+  localStorage.removeItem('ak-stay-token');
+  fetch(WIDGET_CLAIM_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    keepalive: true,
+    body: JSON.stringify({ token, id_token: idToken }),
+  }).catch(err => console.error('Failed to add email to widget stay:', err));
 }
 
 function setMode(signUp) {
