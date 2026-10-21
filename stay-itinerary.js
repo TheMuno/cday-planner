@@ -2080,6 +2080,17 @@ function handleDrop(e) {
 // Single source of truth for per-day Visit/Eat state: reads the same ak-attractions-saved
 // snapshot that saveAttractionLocal() writes and saveAttractionsDB() sends to Firestore, so the
 // restored UI can never drift from what actually gets saved.
+// { lat, lng } as finite numbers, or null. Accepts number strings, a google.maps.LatLng and
+// Firestore-style { latitude, longitude } too, since saved trips come back from localStorage and the DB.
+function toLatLngLiteral(location) {
+  if (!location || typeof location !== 'object') return null;
+  const num = v => (typeof v === 'function' ? v.call(location) : v == null || v === '' ? NaN : Number(v));
+  const lat = num(location.lat ?? location.latitude);
+  const lng = num(location.lng ?? location.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
 function restoreAttractions() {
   let saved;
   try {
@@ -2099,7 +2110,19 @@ function restoreAttractions() {
       if (!$wrap) return;
 
       (slideSaved[bucket] || []).forEach(saveObj => {
-        const marker = createMarker(saveObj.displayName, saveObj.location, saveObj.editorialSummary, saveObj.type, cameraPinUrl, saveObj);
+        // A saved place whose location the map can't use still goes back in the list (and is saved
+        // again), just without a pin, instead of throwing and leaving the whole trip unrestored.
+        let marker = null;
+        const position = toLatLngLiteral(saveObj.location);
+        if (position) {
+          try {
+            marker = createMarker(saveObj.displayName, position, saveObj.editorialSummary, saveObj.type || [], cameraPinUrl, saveObj);
+          } catch (err) {
+            console.error('restoreAttractions: no map pin for', saveObj.displayName, saveObj.location, err);
+          }
+        } else {
+          console.warn('restoreAttractions: saved place has no usable location:', saveObj.displayName, saveObj.location);
+        }
         addAttractionToList(saveObj.displayName, $wrap, marker, saveObj);
       });
     });
