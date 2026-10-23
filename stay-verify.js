@@ -39,17 +39,17 @@ function getDb() {
 const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
-  'king-frederik-inn': { name: 'King Frederik Inn', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb5ff95ebea7fda2ef2898_kfi-logo.png' },
+  'king-frederik-inn': { name: 'King Frederik Inn', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb649a66e0d9459a865763_kfi-logo-words.png' },
 };
 // firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
 // ak-stay-hotel (set by the look-up form and stay-itinerary.js), and saved with the trip as stayHotel
 // for other devices -- see syncWithDB(). The old keys still count for anyone who picked a hotel before.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
-// Colours: Carlton Arms and Compton each have a combo class on .page_main.is-hotel (is-carlton /
-// is-compton) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
-// hotel gets neither, so the page keeps .page_main.is-hotel's default colours.
-const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton' };
+// Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
+// is-compton / is-kfi) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
+// hotel gets none of them, so the page keeps .page_main.is-hotel's default colours.
+const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi' };
 const $hotelThemed = document.querySelector('.page_main');
 Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
 let fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
