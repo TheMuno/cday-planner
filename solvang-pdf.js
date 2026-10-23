@@ -4,7 +4,11 @@
  * page settings → Before </body>.
  *
  * Webflow attributes used:
- *   data-ak="solvang-pdf"       — button(s) that download the guest's Solvang Smart Guide PDF
+ *   data-ak="solvang-pdf"       — button(s) that download the guest's Solvang Smart Guide PDF; shown
+ *                                  on load even if Webflow has them hidden (the guide is free).
+ *                                  Use a button of its own: data-ak holds one value, so putting this
+ *                                  on another script's button (e.g. download-google-maps-btn)
+ *                                  replaces that one's value and unhooks it from that script.
  *   data-ak="popup-action-label" — optional text label inside the button; only it is swapped for
  *                                  the spinner, so the button's own styling stays intact
  *
@@ -41,6 +45,14 @@ onAuthStateChanged(auth, user => { currentUser = user; });
 window.addEventListener("load", () => {
   const $buttons = document.querySelectorAll('[data-ak="solvang-pdf"]');
   if (!$buttons.length) return;
+
+  // Download buttons start hidden in Webflow (data-ak-hidden or an inline display:none) and
+  // stripe-purchase.js only reveals the ones it knows by their own data-ak value. This guide is
+  // free, so its buttons are always shown.
+  $buttons.forEach(btn => {
+    btn.removeAttribute('data-ak-hidden');
+    btn.style.display = '';
+  });
 
   const getLabelEl = btn => btn.querySelector('[data-ak="popup-action-label"]') || btn;
   let isLoading = false;
