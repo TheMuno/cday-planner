@@ -182,6 +182,7 @@ function isInAttractionsSlider($el) {
 const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
+  'king-frederik-inn': { name: 'King Frederik Inn', textQuery: 'King Frederik Inn Solvang', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 } },
 };
 // firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
 // ak-stay-hotel, which nothing clears, and saved with the trip (stayHotel) for other devices -- see
