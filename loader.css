@@ -101,6 +101,18 @@
   to { opacity: 0; }
 }
 
+/* Hotel colours: the brand colour (buttons, the active step, the map card top, brand text and icons)
+   stays transparent until hotel-next-itinerary.js sets data-ak-theme-ready on .page_main, once the
+   hotel is known, so Webflow's authored colour mode never flashes up before the hotel's. Done as an
+   animation so it beats any mode class and simply ends after 12s if the script never runs. */
+.page_main.is-hotel:not([data-ak-theme-ready]) {
+  animation: akBrandHold 12s;
+}
+
+@keyframes akBrandHold {
+  from, to { --_hotel---brand: transparent; }
+}
+
 /* "Welcome to [Hotel Name]": no shimmer bar -- just hidden (so Webflow's default text never shows)
    until hotel-next-itinerary.js removes data-ak-skeleton-pulse once both the text and the hero
    image are ready, then it fades in. */

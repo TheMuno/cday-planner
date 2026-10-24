@@ -246,6 +246,15 @@ if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel
 const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi' };
 const $hotelThemed = document.querySelector('.page_main');
 Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
+// The modes only differ in --_hotel---brand, and loader.css keeps it transparent until
+// data-ak-theme-ready is set here, so neither Webflow's authored mode nor the default one flashes
+// before the hotel's. With no hotel in this browser yet that waits for hotelKnown (see the hero
+// below), as the trip may have one and the page then reloads into it. Shown after 10s regardless.
+function revealHotelTheme() {
+  $hotelThemed?.setAttribute('data-ak-theme-ready', 'true');
+}
+if (FIXED_HOTELS[fixedHotelKey]) revealHotelTheme();
+else setTimeout(revealHotelTheme, 10000);
 // Same for the look-up form's reservation number: ak-flow-trial-reservation is cleared on sign-in too,
 // so it's kept in ak-stay-reservation (also set by lookup-form.js), and saved with the trip as
 // confirmationNum. The old key only exists between a form submit and the next sign-in, so it's
@@ -353,6 +362,11 @@ if (fixedHotel) setHotelNameText(fixedHotel.name);
 // is preloaded first; srcset/sizes are cleared, or the browser keeps picking Webflow's responsive
 // versions of the old one. If it fails to load, Webflow's image is shown instead. After 10s the
 // image is shown regardless, so the shimmer never gets stuck. The welcome text waits on this too.
+// With no hotel in this browser yet, the hero and nav logo wait for hotelKnown (the DB sync, see
+// dbSyncReady): the trip may have a hotel saved, and then the page reloads into it, so showing
+// Webflow's image first would flash it before the hotel's.
+let resolveHotelKnown;
+const hotelKnown = new Promise(resolve => { resolveHotelKnown = resolve; });
 const $heroImg = document.querySelector('[data-ak="hero-img"]');
 function revealHeroImage() {
   $heroImg?.setAttribute('data-ak-hero-ready', 'true');
@@ -376,8 +390,10 @@ if ($heroImg) {
     };
     preload.onerror = () => whenImageLoaded($heroImg, revealHeroImage);
     preload.src = heroUrl;
-  } else {
+  } else if (fixedHotel) {
     whenImageLoaded($heroImg, revealHeroImage);
+  } else {
+    hotelKnown.then(() => whenImageLoaded($heroImg, revealHeroImage));
   }
   setTimeout(revealHeroImage, 10000);
 }
@@ -402,8 +418,10 @@ if ($navLogo) {
     };
     $logoImg.onerror = revealNavLogo;
     $logoImg.src = logoUrl;
-  } else {
+  } else if (fixedHotel) {
     revealNavLogo();
+  } else {
+    hotelKnown.then(revealNavLogo);
   }
   setTimeout(revealNavLogo, 10000);
 }
@@ -586,8 +604,11 @@ const dbSyncReady = (async () => {
   try {
     await syncWithDB();
   } finally {
-    // Runs on a failed DB read too, so the skeletons can't get stuck up.
+    // Runs on a failed DB read too, so the skeletons can't get stuck up. Never reached when
+    // syncWithDB() reloads into the trip's hotel, so the hero shimmer stays up until then.
     finishTripHeading();
+    resolveHotelKnown();
+    revealHotelTheme();
   }
 })();
 
