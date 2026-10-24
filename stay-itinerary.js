@@ -179,10 +179,54 @@ function isInAttractionsSlider($el) {
 // (demo, or landing here directly) works like the demo-hotel pages: no fixed hotel, a general NYC
 // view, and the saved hotel restored by restoreHotel(). A hotel's city (when not NYC) also goes in the
 // trip heading -- see restoreTripHeadingName(). Declared up here because that runs straight away.
+// King Frederik Inn (Solvang) renames the NYC chips and points them at small-town searches. The
+// Webflow chips keep their NYC slugs (data-ak-chip); only the text and search change:
+//
+//   See (attraction-chips)                       Eat (cuisine-chips)
+//   Old                  New                     Old            New
+//   Kid Friendly      -> Family Friendly         Gluten Free -> Bakeries & Treats
+//   Museums           -> Museums                 Classic NY  -> Danish Fare
+//   Historic          -> Historic Sites          Big Groups  -> Wine & Bars
+//   Hidden Gems       -> Parks & Nature          Pre-Theater -> Fine Dining
+//   Popular           -> Top Attractions         Kid Friendly-> Casual Dining
+//   Vintage Shopping  -> Danish Village Shops    Pizza       -> Pizza
+//   Observation Decks -> Scenic Spots            Italian     -> Italian
+//                                                Cheap Eats  -> Cheap Eats
+//                                                LGBTQ       -> Nightlife
+//                                                Desserts    -> Desserts
+//                                                Coffee      -> Coffee & Cafe
+//                                                Steakhouse  -> Steakhouse
+//                                                Meatless    -> Vegetarian
+//                                                Live Music  -> Live Music
+//
+// Text Search reads "OR" as plain words, so each query is one short phrase. includedType: undefined
+// lifts the NYC chip's place-type filter; curatedTag is the tag saved with an added place.
+const KFI_CHIP_OVERRIDES = {
+  see: {
+    'kid-friendly': { label: 'Family Friendly', curatedTag: 'Family Friendly', textQuery: 'family friendly things to do', includedType: undefined },
+    'historic': { label: 'Historic Sites', curatedTag: 'Historic Sites', textQuery: 'historic sites' },
+    'hidden-gems': { label: 'Parks & Nature', curatedTag: 'Parks & Nature', textQuery: 'parks and nature', maxReviewCount: undefined },
+    'popular': { label: 'Top Attractions', curatedTag: 'Top Attractions' },
+    'shopping': { label: 'Danish Village Shops', curatedTag: 'Danish Village Shops', textQuery: 'Danish shops', includedType: 'store' },
+    'vintage-shopping': { label: 'Danish Village Shops', curatedTag: 'Danish Village Shops', textQuery: 'Danish shops', includedType: 'store' },
+    'observation-decks': { label: 'Scenic Spots', curatedTag: 'Scenic Spots', textQuery: 'scenic spots', includedType: undefined },
+    'scenic-spots': { label: 'Scenic Spots' },
+  },
+  eat: {
+    'gluten-free': { label: 'Bakeries & Treats', curatedTag: 'Bakeries & Treats', textQuery: 'bakery', includedType: undefined },
+    'classic-ny': { label: 'Danish Fare', curatedTag: 'Danish Fare', textQuery: 'Danish restaurant', includedType: 'restaurant' },
+    'big-groups': { label: 'Wine & Bars', curatedTag: 'Wine & Bars', textQuery: 'wine tasting room and bars' },
+    'pre-theater': { label: 'Fine Dining', curatedTag: 'Fine Dining', textQuery: 'fine dining restaurant', includedType: 'restaurant' },
+    'kid-friendly': { label: 'Casual Dining', curatedTag: 'Casual Dining', textQuery: 'casual restaurant', includedType: 'restaurant' },
+    'lgbtq': { label: 'Nightlife', curatedTag: 'Nightlife', textQuery: 'bars and nightlife', includedType: undefined },
+    'coffee': { label: 'Coffee & Cafe', curatedTag: 'Coffee & Cafe' },
+    'meatless': { label: 'Vegetarian', curatedTag: 'Vegetarian', textQuery: 'vegetarian restaurant' },
+  },
+};
 const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
-  'king-frederik-inn': { name: 'King Frederik Inn', textQuery: 'King Frederik Inn Solvang', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, googleOnlyChips: true, chipMinRating: 4.0, chipMinReviewCount: 10, hiddenChips: ['classic-ny', 'pre-theater'], chipOverrides: { 'observation-decks': { label: 'Scenic Spots', curatedTag: 'Scenic Spots', textQuery: 'scenic spots', includedType: undefined }, 'scenic-spots': { label: 'Scenic Spots' }, 'shopping': { label: 'Shopping' } }, heroImage: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb60abbf105356f0b27192_KFI%20Fire%20Pit.jpg', logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb649a66e0d9459a865763_kfi-logo-words.png' },
+  'king-frederik-inn': { name: 'King Frederik Inn', textQuery: 'King Frederik Inn Solvang', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, googleOnlyChips: true, chipMinRating: 4.0, chipMinReviewCount: 10, chipOverrides: KFI_CHIP_OVERRIDES, heroImage: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb60abbf105356f0b27192_KFI%20Fire%20Pit.jpg', logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb649a66e0d9459a865763_kfi-logo-words.png' },
 };
 // firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
 // ak-stay-hotel, which nothing clears, and saved with the trip (stayHotel) for other devices -- see
@@ -191,8 +235,9 @@ const FIXED_HOTELS = {
 // sheet, whose places are all in NYC (see getCuratedByTag()). chipMinRating / chipMinReviewCount
 // lower every chip's quality bar to at most these (the defaults are set for Manhattan; a small town
 // has far fewer reviews), and hiddenChips are chip slugs hidden for the hotel (NYC-only chips).
-// chipOverrides: { slug: { label, ...config fields } } renames a chip on the page and replaces those
-// fields of its search config (e.g. KFI's Observation Decks becomes Scenic Spots).
+// chipOverrides: { eat|see: { slug: { label, ...config fields } } } renames a chip on the page and
+// replaces those fields of its search config (see KFI_CHIP_OVERRIDES). Split by wrap because both
+// wraps have a 'kid-friendly' chip.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
 // Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
@@ -619,9 +664,11 @@ window.addEventListener('load', async () => {
       $wrap?.querySelectorAll(`[data-ak-chip="${slug}"]`).forEach($chip => $chip.setAttribute('data-ak-hidden', 'true'));
     });
   });
-  Object.entries(fixedHotel?.chipOverrides || {}).forEach(([slug, { label, ...fields }]) => {
-    [[$cuisineChipWrap, CHIP_CONFIG], [$attractionChipWrap, ATTRACTION_CHIP_CONFIG]].forEach(([$wrap, configMap]) => {
-      if (!configMap[slug]) return;
+  const chipWraps = { eat: [$cuisineChipWrap, CHIP_CONFIG], see: [$attractionChipWrap, ATTRACTION_CHIP_CONFIG] };
+  Object.entries(fixedHotel?.chipOverrides || {}).forEach(([group, overrides]) => {
+    const [$wrap, configMap] = chipWraps[group] || [];
+    Object.entries(overrides).forEach(([slug, { label, ...fields }]) => {
+      if (!configMap?.[slug]) return;
       Object.assign(configMap[slug], fields);
       if (!label) return;
       // The chip's text is its innermost element with text (an icon, if any, has none).
