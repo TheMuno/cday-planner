@@ -182,7 +182,7 @@ function isInAttractionsSlider($el) {
 const FIXED_HOTELS = {
   'carlton-arms': { name: 'Carlton Arms Hotel', textQuery: 'Carlton Arms Hotel', center: { lat: 40.7401607, lng: -73.9852042 }, heroImage: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6ac3a1c6ff8e66e3e3afa174_carlton-arms-hero-image%201.png', logo: 'https://cdn.prod.website-files.com/671ae7755af1656d8b2ea93c/6a85ac90d9eca4697038d8f9_carlton-arms-hotel-logo1.png' },
   'compton': { name: 'The Compton Bentonville', textQuery: 'The Compton Bentonville', city: 'Bentonville', center: { lat: 36.3720385, lng: -94.2075697 } },
-  'king-frederik-inn': { name: 'King Frederik Inn', textQuery: 'King Frederik Inn Solvang', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, googleOnlyChips: true, chipMinRating: 4.0, chipMinReviewCount: 10, hiddenChips: ['classic-ny', 'pre-theater'], chipOverrides: { 'observation-decks': { label: 'Scenic Spots', curatedTag: 'Scenic Spots', textQuery: 'scenic viewpoint OR scenic overlook OR vista point OR lookout OR scenic view', includedType: undefined }, 'scenic-spots': { label: 'Scenic Spots' } }, heroImage: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb60abbf105356f0b27192_KFI%20Fire%20Pit.jpg', logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb649a66e0d9459a865763_kfi-logo-words.png' },
+  'king-frederik-inn': { name: 'King Frederik Inn', textQuery: 'King Frederik Inn Solvang', city: 'Solvang', center: { lat: 34.5957374, lng: -120.1410645 }, googleOnlyChips: true, chipMinRating: 4.0, chipMinReviewCount: 10, hiddenChips: ['classic-ny', 'pre-theater'], chipOverrides: { 'observation-decks': { label: 'Scenic Spots', curatedTag: 'Scenic Spots', textQuery: 'scenic spots', includedType: undefined }, 'scenic-spots': { label: 'Scenic Spots' }, 'shopping': { label: 'Shopping' } }, heroImage: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb60abbf105356f0b27192_KFI%20Fire%20Pit.jpg', logo: 'https://cdn.prod.website-files.com/6acce3a194a75f2b8b61b509/6adb649a66e0d9459a865763_kfi-logo-words.png' },
 };
 // firebase-auth.js clears ak-flow-trial-hotel/ak-hotel-referral on sign-in, so the hotel is kept in
 // ak-stay-hotel, which nothing clears, and saved with the trip (stayHotel) for other devices -- see
@@ -2919,6 +2919,73 @@ function deactivateChip() {
   activeChip = null;
 }
 
+// Google's bounds cover the whole map element, but parts of it can be hidden from the user: scrolled
+// past the window edge, or under the place popup panel / the fixed bottom bar. Chip results can land
+// there, so when most of a freshly shown chip's markers aren't actually visible, re-fit the map so they
+// (and the hotel) sit in the clear part. Only called on chip activation, never from the idle refresh,
+// so it can't fight the user's own panning.
+function fitChipMarkersIfHidden(markers) {
+  const bounds = map?.getBounds();
+  const $map = map?.getDiv();
+  if (!bounds || !$map || !markers?.length) return;
+
+  const rect = $map.getBoundingClientRect();
+  const winTop = Math.max(rect.top, 0);
+  const winBottom = Math.min(rect.bottom, window.innerHeight);
+  const winLeft = Math.max(rect.left, 0);
+  const winRight = Math.min(rect.right, window.innerWidth);
+  if (winBottom <= winTop || winRight <= winLeft) return; // map not on screen at all
+
+  const showsMap = (x, y) => x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight && $map.contains(document.elementFromPoint(x, y));
+  // Longest uncovered run along one line through the map, sampled every 8px.
+  const clearRun = (from, to, hit) => {
+    let best = [from, from], start = null;
+    for (let p = from; p <= to; p += 8) {
+      if (hit(p)) { if (start === null) start = p; if (p - start > best[1] - best[0]) best = [start, p]; }
+      else start = null;
+    }
+    return best;
+  };
+  const [visLeft, visRight] = clearRun(winLeft, winRight - 1, x => showsMap(x, (winTop + winBottom) / 2));
+  const [visTop, visBottom] = clearRun(winTop, winBottom - 1, y => showsMap((visLeft + visRight) / 2, y));
+  if (visRight - visLeft < 80 || visBottom - visTop < 80) return; // too little map showing to fit into
+
+  const mercY = lat => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  const spanLng = ((ne.lng() - sw.lng()) + 360) % 360 || 360;
+  const toScreen = pos => ({
+    x: rect.left + (((pos.lng - sw.lng()) + 360) % 360) / spanLng * rect.width,
+    y: rect.top + (mercY(ne.lat()) - mercY(pos.lat)) / (mercY(ne.lat()) - mercY(sw.lat())) * rect.height,
+  });
+  const positions = markers.map(m => {
+    const p = m.position;
+    return { lat: typeof p.lat === 'function' ? p.lat() : p.lat, lng: typeof p.lng === 'function' ? p.lng() : p.lng };
+  });
+  const inView = positions.filter(pos => {
+    const { x, y } = toScreen(pos);
+    return x >= visLeft && x <= visRight && y >= visTop && y <= visBottom && showsMap(x, y);
+  }).length;
+  if (inView >= positions.length / 2) return;
+
+  const fit = new google.maps.LatLngBounds();
+  positions.forEach(pos => fit.extend(pos));
+  if (fixedHotel?.center) fit.extend(fixedHotel.center);
+  // Pad by the hidden strips so the fit lands inside the part of the map that's actually visible.
+  const pad = 48;
+  const zoomBefore = map.getZoom();
+  map.fitBounds(fit, {
+    top: visTop - rect.top + pad,
+    bottom: rect.bottom - visBottom + pad,
+    left: visLeft - rect.left + pad,
+    right: rect.right - visRight + pad,
+  });
+  // A tight cluster would otherwise zoom the map in past where the guest had it; only ever pan or zoom out.
+  google.maps.event.addListenerOnce(map, 'idle', () => {
+    if (map.getZoom() > zoomBefore) map.setZoom(zoomBefore);
+  });
+}
+
 // Collapses a burst of calls for the same slug into one: each call resets the timer, so only the
 // last call within `delay` ms actually runs fn(). Earlier calls' promises are left pending forever
 // (harmless — nothing awaits them past their own caller, which never proceeds).
@@ -3009,6 +3076,7 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
 
     if (markerCache[slug]?.length && !config.refetchOnActivate) {
       markerCache[slug].forEach(marker => marker.setMap(map));
+      fitChipMarkersIfHidden(markerCache[slug]);
       return;
     }
 
@@ -3034,6 +3102,7 @@ function wireChipWrap($wrap, configMap, markerCache, pinUrl) {
           saveObj._chipTag = config.curatedTag;
           return createSearchMarker(title, position, saveObj, pinUrl);
         });
+      fitChipMarkersIfHidden(markerCache[slug]);
     } catch (e) {
       if (e.name === 'AbortError') return; // superseded — not a real failure, leave UI as the newer trigger left it
       console.warn(`Chip search failed for "${slug}":`, e);
@@ -3407,5 +3476,5 @@ const ATTRACTION_CHIP_CONFIG = {
   'popular': { curatedTag: 'Popular', curatedType: 'SEE', includedTypes: ['tourist_attraction', 'museum', 'park', 'amusement_center'], markerType: [], viewportAware: true, debounceMs: 600, minRating: 4.0, minReviewCount: 150, sortBy: 'score', resultCap: 20, search(signal) { return runCuratedOrNearbyFallback(this, signal); } },
   'vintage-shopping': { curatedTag: 'Vintage Shopping', curatedType: 'SEE', textQuery: 'vintage shop OR thrift store OR vintage clothing', includedType: 'clothing_store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
   'shopping': { curatedTag: 'Shopping', curatedType: 'SEE', textQuery: 'shopping OR boutique OR gift shop OR retail store', includedType: 'store', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
-  'scenic-spots': { curatedTag: 'Scenic Spots', curatedType: 'SEE', textQuery: 'scenic viewpoint OR scenic overlook OR vista point OR lookout OR scenic view', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
+  'scenic-spots': { curatedTag: 'Scenic Spots', curatedType: 'SEE', textQuery: 'scenic spots', markerType: [], viewportAware: true, debounceMs: 600, sortBy: 'score', minRating: 4.2, minReviewCount: 50, resultCap: 20, allowPagination: true, search(signal) { return runCuratedOrFallback(this, signal); } },
 };
