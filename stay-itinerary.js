@@ -205,7 +205,7 @@ const KFI_CHIP_OVERRIDES = {
   see: {
     'kid-friendly': { label: 'Family Friendly', curatedTag: 'Family Friendly', textQuery: 'family friendly things to do', includedType: undefined },
     'historic': { label: 'Historic Sites', curatedTag: 'Historic Sites', textQuery: 'historic sites' },
-    'hidden-gems': { label: 'Parks & Nature', curatedTag: 'Parks & Nature', textQuery: 'parks and nature', maxReviewCount: undefined },
+    'hidden-gems': { label: 'Parks & Nature', curatedTag: 'Parks & Nature', textQuery: 'parks and nature', includedType: 'park', maxReviewCount: undefined },
     'popular': { label: 'Top Attractions', curatedTag: 'Top Attractions' },
     'shopping': { label: 'Danish Village Shops', curatedTag: 'Danish Village Shops', textQuery: 'Danish shops', includedType: 'store' },
     'vintage-shopping': { label: 'Danish Village Shops', curatedTag: 'Danish Village Shops', textQuery: 'Danish shops', includedType: 'store' },
