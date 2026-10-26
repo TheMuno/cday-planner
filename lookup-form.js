@@ -1,12 +1,15 @@
 // Validation for the reservation look-up form (wf-form-Form-Look-up). "Customize now" checks that
-// travel dates, hotel, reservation number, guest last name and phone number are all filled in (and the
-// phone number is a real one for its country); each empty or invalid
+// travel dates, hotel and guest last name are filled in (reservation number and phone number are
+// optional, but a phone number given must be a real one for its country); each empty or invalid
 // one gets data-ak-invalid (styled by the page's <head> CSS) for 2s, same as homepage.js, and its
 // red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
 // "Customize now" button's href (never /log-in).
 
-const $lookupForm = document.querySelector('#wf-form-Form-Look-up');
+// /welcome has two copies of the form under the same id (an older one sits in a hidden section), so
+// the one actually showing is used, else the first.
+const $lookupForm = [...document.querySelectorAll('[id="wf-form-Form-Look-up"]')]
+  .find($form => $form.getClientRects().length) || document.querySelector('#wf-form-Form-Look-up');
 
 // The page's [data-ak-invalid] CSS only reddens the bottom border, which on the hotel select (border
 // is on its wrapper) shows as just a line, so the wrapper's border goes red instead. The travel
@@ -133,7 +136,15 @@ function setPhoneHintText(problem) {
   else $phoneHintText.innerHTML = phoneHintHtml;
 }
 
+// Reservation number and phone number are optional: empty is fine, but a phone number that is
+// filled in still has to be a real one. Webflow's own `required` is taken off them too, or Enter
+// would stop at the browser's "Please fill out this field".
+const $reservationInput = $lookupForm && ($lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'));
+const optionalFields = [$reservationInput, $phoneInput].filter(Boolean);
+optionalFields.forEach($field => $field.removeAttribute('required'));
+
 function fieldOk($field) {
+  if (optionalFields.includes($field) && !$field.value.trim()) return true;
   return $field === $phoneInput ? !phoneProblem() : !!$field.value.trim();
 }
 
@@ -173,6 +184,8 @@ const hotelMap = {
   'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms', referral: 'carlton-arms' },
   'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville', referral: 'compton' },
   'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo', referral: 'demo' },
+  // No sheet of its own in FLOW_TRIAL_HOTELS yet, so its rows go to the demo sheet.
+  'kfi': { redirect: '/stay/itinerary', tag: 'king-frederik-inn', referral: 'king-frederik-inn' },
 };
 
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
@@ -182,6 +195,7 @@ function resolveHotel() {
   const val = ($hotelSelect?.value || '').trim().toLowerCase();
   if (val.includes('carlton')) return hotelMap['carlton'];
   if (val.includes('compton')) return hotelMap['compton'];
+  if (val.includes('frederik')) return hotelMap['kfi'];
   return hotelMap['demo'];
 }
 
@@ -212,12 +226,18 @@ const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
 
 function saveLookupSubmission() {
   const value = $field => $field?.value.trim() || '';
+  // getNumber() throws until the number checker has loaded (and there's nothing to format when the
+  // optional phone is empty), so the typed value is sent as-is then.
+  let phone = value($phoneField);
+  try {
+    if (phone && phoneIti) phone = phoneIti.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || phone;
+  } catch {}
   const fields = {
     hotel: value($hotelField),
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
-    'phone-number': phoneIti?.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || value($phoneField),
+    'phone-number': phone,
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
@@ -234,15 +254,16 @@ function saveLookupSubmission() {
 // Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
 const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 
-// For now, goes to the "Customize now" button's own href (set in Webflow) -- no sign-in check, so
-// never /log-in. The by-hotel redirect is switched off below; uncomment it to go back to that.
+// For now, goes to the "Customize now" button's own href (set in Webflow), or /stay/itinerary when
+// it has none ("#") -- no sign-in check, so never /log-in. The by-hotel redirect is switched off
+// below; uncomment it to go back to that.
 function continueToHotel() {
   if (!validateLookupForm()) return;
   storeFlowTrialKeys();
   saveLookupSubmission();
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
-  if (href && href !== '#') window.location.href = href;
+  window.location.href = href && href !== '#' ? href : '/stay/itinerary';
 }
 
 $customizeBtn?.addEventListener('click', e => {
