@@ -145,6 +145,8 @@ optionalFields.forEach($field => $field.removeAttribute('required'));
 
 function fieldOk($field) {
   if (optionalFields.includes($field) && !$field.value.trim()) return true;
+  // A hotel's own page (e.g. /kfi-welcome) hides the hotel select; the hotel then comes from the URL.
+  if ($field === $hotelSelect && !hotelSelectShown()) return true;
   return $field === $phoneInput ? !phoneProblem() : !!$field.value.trim();
 }
 
@@ -191,11 +193,18 @@ const hotelMap = {
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
 const $reservationNum = $lookupForm && ($lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'));
 
+// Checked at click time, since Webflow can hide it at some breakpoints only.
+function hotelSelectShown() {
+  return !!$hotelSelect && $hotelSelect.getClientRects().length > 0;
+}
+
+// The picked hotel, or -- when the select is hidden, on a hotel's own page -- the page's URL
+// (/kfi-welcome -> KFI).
 function resolveHotel() {
-  const val = ($hotelSelect?.value || '').trim().toLowerCase();
+  const val = (hotelSelectShown() ? $hotelSelect.value : window.location.pathname).trim().toLowerCase();
   if (val.includes('carlton')) return hotelMap['carlton'];
   if (val.includes('compton')) return hotelMap['compton'];
-  if (val.includes('frederik')) return hotelMap['kfi'];
+  if (val.includes('frederik') || val.includes('kfi')) return hotelMap['kfi'];
   return hotelMap['demo'];
 }
 
@@ -233,7 +242,7 @@ function saveLookupSubmission() {
     if (phone && phoneIti) phone = phoneIti.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || phone;
   } catch {}
   const fields = {
-    hotel: value($hotelField),
+    hotel: hotelSelectShown() ? value($hotelField) : resolveHotel().referral,
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
