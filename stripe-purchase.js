@@ -127,6 +127,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // /stay/ pages: the Google Maps export runs off localStorage, not the purchase check, and a
+  // signed-out guest is sent back to /stay/itinerary by stay-guide.js anyway (setUI(false) below
+  // still hides these for them). So its buttons are shown and wired now rather than once Firebase
+  // has answered -- otherwise they appear well after the Smart Guide buttons beside them, which
+  // solvang-pdf.js shows as soon as the page is parsed. Wired once only (mapsBtnsWired): the auth
+  // check below wires them again, and a second click handler would export the map twice.
+  let mapsBtnsWired = false;
+  if (window.location.pathname.startsWith('/stay/')) {
+    $downloadMapsBtns.forEach(el => {
+      el.removeAttribute('data-ak-hidden');
+      el.style.display = '';
+    });
+    wireGoogleMapsButton($downloadMapsBtns);
+  }
+
   // Show spinners immediately while auth + Firestore check runs
   showSpinners($buyButtons);
 
@@ -502,8 +517,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function wireGoogleMapsButton($downloadMapsBtns) {
-    if (!$downloadMapsBtns.length) return;
-    window.akWireGoogleMapsBtn?.($downloadMapsBtns);
+    if (!$downloadMapsBtns.length || mapsBtnsWired || !window.akWireGoogleMapsBtn) return;
+    mapsBtnsWired = true;
+    window.akWireGoogleMapsBtn($downloadMapsBtns);
   }
 
   function showSpinners($postPurchaseEls) {
