@@ -40,9 +40,16 @@ const FUNCTION_NAME    = "generateSolvangSmartGuidePdf";
 const DEFAULT_FILENAME = "solvang-smart-guide.pdf";
 
 let currentUser = null;
-onAuthStateChanged(auth, user => { currentUser = user; });
+// Resolves on Firebase's first sign-in check, so a click that comes before it (the buttons now show
+// as soon as the page is parsed) waits for it rather than telling a signed-in guest to sign in.
+let resolveAuthChecked;
+const authChecked = new Promise(resolve => { resolveAuthChecked = resolve; });
+onAuthStateChanged(auth, user => { currentUser = user; resolveAuthChecked(); });
 
-window.addEventListener("load", () => {
+// Set up straight away rather than on window "load": a module script runs once the HTML is parsed,
+// so the buttons already exist, while "load" waits on every image and font (about 10s on the
+// download page), leaving the buttons hidden and dead until then.
+(() => {
   const $buttons = document.querySelectorAll('[data-ak="solvang-pdf"]');
   if (!$buttons.length) return;
 
@@ -60,6 +67,8 @@ window.addEventListener("load", () => {
   $buttons.forEach(btn => {
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
+      // Awaited first, so two quick clicks can't both pass the isLoading check below.
+      await authChecked;
       if (isLoading) return;
       if (!currentUser) {
         showMessage("Please sign in to download your Solvang guide.");
@@ -95,7 +104,7 @@ window.addEventListener("load", () => {
       }
     });
   });
-});
+})();
 
 // Callable errors arrive as 'functions/<code>'. Only failed-precondition messages (empty itinerary)
 // are written for guests and shown as-is; every other code gets copy written here.
