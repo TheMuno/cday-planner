@@ -186,8 +186,9 @@ const hotelMap = {
   'carlton': { redirect: '/carlton-arms/itinerary', tag: 'carlton-arms', referral: 'carlton-arms' },
   'compton': { redirect: '/compton/itinerary', tag: 'compton-bentonville', referral: 'compton' },
   'demo': { redirect: '/demo-hotel/itinerary', tag: 'demo', referral: 'demo' },
-  // No sheet of its own in FLOW_TRIAL_HOTELS yet, so its rows go to the demo sheet.
-  'kfi': { redirect: '/stay/itinerary', tag: 'king-frederik-inn', referral: 'king-frederik-inn' },
+  // No sheet of its own in FLOW_TRIAL_HOTELS yet, so its rows go to the demo sheet. `dashboard` is
+  // its hotel ID on the hotel dashboard (see saveToDashboard()).
+  'kfi': { redirect: '/stay/itinerary', tag: 'king-frederik-inn', referral: 'king-frederik-inn', dashboard: 'king-frederik-inn' },
 };
 
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
@@ -233,20 +234,69 @@ const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
   ['phone-number', 'Phone number'],
 ].map(([ak, label]) => $lookupForm && ($lookupForm.querySelector(`[data-ak="${ak}"]`) || findFieldByLabel(label)));
 
-function saveLookupSubmission() {
-  const value = $field => $field?.value.trim() || '';
-  // getNumber() throws until the number checker has loaded (and there's nothing to format when the
-  // optional phone is empty), so the typed value is sent as-is then.
-  let phone = value($phoneField);
+const value = $field => $field?.value.trim() || '';
+
+// With its country code, e.g. "+1 212-555-1234". getNumber() throws until the number checker has
+// loaded (and there's nothing to format when the optional phone is empty), so the typed value is
+// used as-is then.
+function phoneValue() {
+  const phone = value($phoneField);
   try {
-    if (phone && phoneIti) phone = phoneIti.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || phone;
+    if (phone && phoneIti) return phoneIti.getNumber(window.intlTelInput.NUMBER_FORMAT.INTERNATIONAL) || phone;
   } catch {}
+  return phone;
+}
+
+// Hotels with a `dashboard` ID in hotelMap send the guest to the hotel dashboard (the widget
+// server's POST /v1/capture, same as the widget), which saves them there and writes the sheet row
+// itself. The dashboard hotel must list this website under its allowed sites, and should have
+// reservation number and phone optional and the marketing checkbox hidden, like this form.
+// Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
+// server (a tunnel address that changes on restart) with, in its head code:
+//   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
+const dashboardCaptureUrl = () => `${(window.AK_DASHBOARD_URL || 'https://dashboard.askkhonsu.com').replace(/\/+$/, '')}/v1/capture`;
+
+// true once the dashboard has saved the guest; false (not sent, or failed) means the sheet row
+// still has to be written here. Awaited before the redirect, but given up on after 4s.
+async function saveToDashboard() {
+  const hotelId = resolveHotel().dashboard;
+  if (!hotelId) return false;
+  const [checkIn = '', checkOut = ''] = value($datesSource).split(/\s+to\s+/);
+  try {
+    const res = await fetch(dashboardCaptureUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hotel_id: hotelId,
+        check_in_date: checkIn.slice(0, 10),
+        check_out_date: checkOut.slice(0, 10),
+        guest_last_name: value($lastNameField),
+        phone: phoneValue(),
+        ota_reservation_id: value($reservationField),
+        source_url: window.location.href,
+      }),
+      signal: AbortSignal.timeout(4000),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(`capture responded ${res.status} ${data.error || ''}`);
+    // Same key the widget sets: firebase-auth.js sends it to /v1/claim at sign-in, which adds the
+    // guest's email on the dashboard.
+    localStorage.setItem('ak-stay-token', new URL(data.redirect_url).searchParams.get('token') || '');
+    return true;
+  } catch (err) {
+    console.error('Failed to save look-up submission to the dashboard; writing the sheet directly:', err);
+    localStorage.removeItem('ak-stay-token');
+    return false;
+  }
+}
+
+function saveLookupSubmission() {
   const fields = {
     hotel: hotelSelectShown() ? value($hotelField) : resolveHotel().referral,
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
-    'phone-number': phone,
+    'phone-number': phoneValue(),
     'reservation-num': value($reservationField),
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
@@ -266,10 +316,13 @@ const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 // For now, goes to the "Customize now" button's own href (set in Webflow), or /stay/itinerary when
 // it has none ("#") -- no sign-in check, so never /log-in. The by-hotel redirect is switched off
 // below; uncomment it to go back to that.
-function continueToHotel() {
-  if (!validateLookupForm()) return;
+let submitting = false;
+async function continueToHotel() {
+  // A second click while the dashboard request is out would send the guest twice.
+  if (submitting || !validateLookupForm()) return;
+  submitting = true;
   storeFlowTrialKeys();
-  saveLookupSubmission();
+  if (!(await saveToDashboard())) saveLookupSubmission();
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
   window.location.href = href && href !== '#' ? href : '/stay/itinerary';
