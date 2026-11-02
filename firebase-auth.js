@@ -64,7 +64,8 @@ const IS_FLOW_TRIAL_SIGN_IN = !!localStorage.getItem('ak-flow-trial-hotel');
 // The widget no longer asks for an email: signing in sends the token from the widget's
 // link (ak-stay-token) to this server, which puts the signed-in email on that guest's details.
 // Same address as the widget's <script src>; update both when the server moves.
-const WIDGET_CLAIM_URL = 'https://highway-perfectly-inspections-concept.trycloudflare.com/v1/claim';
+// Currently Railway; becomes dashboard.askkhonsu.com when the dashboard moves to Firebase.
+const WIDGET_CLAIM_URL = 'https://khonsu-widget-production.up.railway.app/v1/claim';
 
 // Tags the sheet write so the backend (functions/index.js's resolveHotelConfSpreadsheetId)
 // can route Compton-Bentonville rows to its own sheet instead of the shared default one.
