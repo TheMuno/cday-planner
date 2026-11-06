@@ -2264,6 +2264,9 @@ function restoreHotel() {
     map.setCenter(location);
     map.setZoom(16);
   }
+
+  // Its popup opens too, as a fixed hotel's does on load (see autoSetFixedHotel()).
+  openMapPopup(displayName, editorialSummary, saveObj, marker);
 }
 
 function restoreAirports() {
