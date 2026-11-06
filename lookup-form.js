@@ -318,14 +318,16 @@ async function setupDemoHotelSearch() {
   }
 }
 
-// The Demo Hotel on the dashboard can have a custom field labelled "Hotel" (or "Hotel name"); if it
-// does, the picked hotel's name goes in it, so it shows on the dashboard and in its sheet row.
+// The Demo Hotel on the dashboard can have a Short text custom field labelled "Guest's hotel" (or
+// "Guest hotel"); if it does, the picked hotel's name goes in it, so it shows on the dashboard and in
+// its sheet row. ("Hotel" itself can't be used: the dashboard keeps that sheet column for its own
+// hotel's name.)
 let demoHotelFieldId = null;
 async function findDemoHotelField() {
   try {
     const res = await fetch(dashboardUrl(`/v1/hotels/${hotelMap['demo-welcome'].dashboard}/form`));
     const data = await res.json();
-    demoHotelFieldId = (data.custom || []).find(f => /^hotel( name)?$/i.test((f.label || '').trim()) && f.type === 'text')?.id || null;
+    demoHotelFieldId = (data.custom || []).find(f => /^guest['’]?s? hotel$/i.test((f.label || '').trim()) && f.type === 'text')?.id || null;
   } catch {}
 }
 // Both are started at the end of this file, once dashboardUrl() below is defined.
