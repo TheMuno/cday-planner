@@ -189,7 +189,15 @@ const hotelMap = {
   // No sheet of its own in FLOW_TRIAL_HOTELS yet, so its rows go to the demo sheet. `dashboard` is
   // its hotel ID on the hotel dashboard (see saveToDashboard()).
   'kfi': { redirect: '/stay/itinerary', tag: 'king-frederik-inn', referral: 'king-frederik-inn', dashboard: 'king-frederik-inn' },
+  // /demo-welcome: the demo hotel (its sheet and "Demo Hotel" on the dashboard), with no hotel of
+  // its own -- the guest may name theirs (see setupDemoHotelSearch()). Kept apart from 'demo' above,
+  // which /welcome's dropdown still uses as before (sheet only).
+  'demo-welcome': { redirect: '/stay/itinerary', tag: 'demo', referral: 'demo', dashboard: 'demo' },
 };
+
+// /demo-welcome (and e.g. /demo-welcome-2): the hotel field is a Google hotel search instead of
+// the dropdown, and optional.
+const onDemoWelcome = /\/demo-welcome/i.test(window.location.pathname);
 
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
 const $reservationNum = $lookupForm && ($lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'));
@@ -202,6 +210,7 @@ function hotelSelectShown() {
 // The picked hotel, or -- when the select is hidden, on a hotel's own page -- the page's URL
 // (/kfi-welcome -> KFI).
 function resolveHotel() {
+  if (onDemoWelcome) return hotelMap['demo-welcome'];
   const val = (hotelSelectShown() ? $hotelSelect.value : window.location.pathname).trim().toLowerCase();
   if (val.includes('carlton')) return hotelMap['carlton'];
   if (val.includes('compton')) return hotelMap['compton'];
@@ -220,7 +229,106 @@ function storeFlowTrialKeys() {
   // Same for the reservation number: the key above is cleared on sign-in, this one isn't.
   // stay-itinerary.js matches the arrival & departure times to this row in the sheet by it.
   localStorage.setItem('ak-stay-reservation', $reservationNum?.value.trim() || '');
+  // The hotel picked on /demo-welcome, saved just as stay-itinerary.js saves one picked on its map
+  // ("Add hotel..."), so the itinerary opens with it set. ak-update-hotel makes it win over a hotel
+  // saved with the guest's trip on sign-in (see syncWithDB() there). Nothing picked: ak-hotel is
+  // left alone, as on the other pages.
+  if (demoPickedHotel) {
+    localStorage.setItem('ak-hotel', JSON.stringify(demoPickedHotel));
+    localStorage.setItem('ak-update-hotel', 'true');
+  }
 }
+
+// ---- /demo-welcome hotel search ----------------------------------------------------------------
+// The hotel dropdown's spot (shown, though Webflow hides it on the hotel pages) gets Google's hotel
+// search, same as "Add hotel..." on /stay/itinerary. Google Maps is loaded here when the page
+// doesn't already have it, with the itinerary page's key and loader. If it can't load, the field
+// goes back to hidden and the form works as on /kfi-welcome, just without a hotel.
+const MAPS_API_KEY = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
+const PLACE_FIELDS = ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'];
+let demoPickedHotel = null;
+
+function loadGoogleMaps() {
+  if (window.google?.maps?.importLibrary) return;
+  // Google's own loader (as in the itinerary page's embed): defines google.maps.importLibrary and
+  // adds the Maps script the first time it's called.
+  (g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({ key: MAPS_API_KEY, v: 'weekly' });
+}
+
+// Same as getCityFromAddress() in stay-itinerary.js: the hotel's city, or '' for New York City.
+function cityFromAddress(addressComponents = []) {
+  const find = type => addressComponents.find(c => c.types.includes(type))?.longText || '';
+  const city = find('locality') || find('postal_town');
+  const state = addressComponents.find(c => c.types.includes('administrative_area_level_1'))?.shortText;
+  const NYC_NAMES = ['New York', 'Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'The Bronx', 'Staten Island'];
+  if (state === 'NY' && (NYC_NAMES.includes(city) || (!city && NYC_NAMES.includes(find('sublocality_level_1'))))) return '';
+  return city;
+}
+
+async function setupDemoHotelSearch() {
+  const $hotelItem = $hotelSelect?.closest('.u-width-full');
+  if (!$hotelItem) return;
+  const wasHidden = $hotelItem.classList.contains('hide');
+  $hotelItem.classList.remove('hide');
+  // A hidden select isn't checked (see fieldOk()), so the hotel is optional. Its `required` goes too,
+  // or the browser would block Enter on a field the guest can't see.
+  $hotelSelect.style.display = 'none';
+  $hotelSelect.removeAttribute('required');
+  const $label = [...$hotelItem.querySelectorAll('p')].find($p => $p.textContent.trim().toLowerCase().startsWith('hotel'));
+  if ($label) $label.textContent = 'Hotel (optional)';
+  try {
+    loadGoogleMaps();
+    await google.maps.importLibrary('places');
+    const search = new google.maps.places.PlaceAutocompleteElement({
+      includedRegionCodes: ['us'],
+      includedPrimaryTypes: ['lodging', 'hotel'],
+    });
+    search.placeholder = 'Search for your hotel...';
+    search.setAttribute('data-ak', 'demo-hotel-search');
+    document.head.insertAdjacentHTML('beforeend', `<style>
+      gmp-place-autocomplete[data-ak="demo-hotel-search"] { display: block; width: 100%; color-scheme: light; }
+    </style>`);
+    $hotelSelect.insertAdjacentElement('afterend', search);
+    // Typing again drops the earlier pick until a new one is chosen.
+    search.addEventListener('input', () => { demoPickedHotel = null; });
+    search.addEventListener('gmp-select', async ({ placePrediction }) => {
+      try {
+        const place = placePrediction.toPlace();
+        await place.fetchFields({ fields: PLACE_FIELDS });
+        const p = place.toJSON();
+        // Same shape as the hotel stay-itinerary.js saves from its own hotel search.
+        demoPickedHotel = {
+          displayName: p.displayName, location: { lat: p.location.lat, lng: p.location.lng },
+          editorialSummary: p.editorialSummary, type: p.types, placeId: p.id,
+          address: p.formattedAddress || '', rating: p.rating ?? null, reviewCount: p.userRatingCount ?? null,
+          phone: p.nationalPhoneNumber || '', website: p.websiteURI || p.websiteUri || '',
+          openingHours: p.regularOpeningHours || null, businessStatus: p.businessStatus || null,
+          priceRange: p.priceRange || null, photoUrl: place.photos?.[0]?.getURI({ maxWidth: 800 }) || '',
+          city: cityFromAddress(p.addressComponents), guestPicked: true,
+        };
+      } catch (err) {
+        demoPickedHotel = null;
+        console.error('Failed to load the picked hotel:', err);
+      }
+    });
+  } catch (err) {
+    console.error('Hotel search unavailable; continuing without it:', err);
+    $hotelSelect.style.display = '';
+    if (wasHidden) $hotelItem.classList.add('hide');
+  }
+}
+
+// The Demo Hotel on the dashboard can have a custom field labelled "Hotel" (or "Hotel name"); if it
+// does, the picked hotel's name goes in it, so it shows on the dashboard and in its sheet row.
+let demoHotelFieldId = null;
+async function findDemoHotelField() {
+  try {
+    const res = await fetch(dashboardUrl(`/v1/hotels/${hotelMap['demo-welcome'].dashboard}/form`));
+    const data = await res.json();
+    demoHotelFieldId = (data.custom || []).find(f => /^hotel( name)?$/i.test((f.label || '').trim()) && f.type === 'text')?.id || null;
+  } catch {}
+}
+// Both are started at the end of this file, once dashboardUrl() below is defined.
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
 // Guests" tab. The server finds each value by its key (last+name, travel+date, phone, reservation),
@@ -284,6 +392,7 @@ async function saveToDashboard() {
         ota_reservation_id: value($reservationField),
         source_url: window.location.href,
         marketing_consent: marketingAccepted(),
+        ...(demoHotelFieldId && demoPickedHotel && { custom: { [demoHotelFieldId]: demoPickedHotel.displayName.slice(0, 200) } }),
       }),
       signal: AbortSignal.timeout(4000),
     });
@@ -302,7 +411,8 @@ async function saveToDashboard() {
 
 function saveLookupSubmission() {
   const fields = {
-    hotel: hotelSelectShown() ? value($hotelField) : resolveHotel().referral,
+    // /demo-welcome: the hotel the guest picked, if any.
+    hotel: demoPickedHotel?.displayName || (hotelSelectShown() ? value($hotelField) : resolveHotel().referral),
     'user-travel-dates': value($datesSource),
     'last-name': value($lastNameField),
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
@@ -431,3 +541,8 @@ $lookupForm?.addEventListener('submit', e => {
   e.stopImmediatePropagation();
   continueToHotel();
 }, true);
+
+if ($lookupForm && onDemoWelcome) {
+  setupDemoHotelSearch();
+  findDemoHotelField();
+}
