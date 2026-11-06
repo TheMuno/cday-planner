@@ -236,6 +236,13 @@ const [$hotelField, $reservationField, $lastNameField, $phoneField] = [
 
 const value = $field => $field?.value.trim() || '';
 
+// The "Accept marketing" checkbox. Webflow may put data-ak on the <input> itself or on its wrapper
+// label, so the checkbox inside is used in that case. Unchecked (or missing) = not accepted.
+const $marketingEl = $lookupForm?.querySelector('[data-ak="send-marketing"]');
+const $marketingBox = $marketingEl?.matches('input[type="checkbox"]') ? $marketingEl
+  : $marketingEl?.querySelector('input[type="checkbox"]') || null;
+const marketingAccepted = () => !!$marketingBox?.checked;
+
 // With its country code, e.g. "+1 212-555-1234". getNumber() throws until the number checker has
 // loaded (and there's nothing to format when the optional phone is empty), so the typed value is
 // used as-is then.
@@ -250,7 +257,8 @@ function phoneValue() {
 // Hotels with a `dashboard` ID in hotelMap send the guest to the hotel dashboard (the widget
 // server's POST /v1/capture, same as the widget), which saves them there and writes the sheet row
 // itself. The dashboard hotel must list this website under its allowed sites, and should have
-// reservation number and phone optional and the marketing checkbox hidden, like this form.
+// reservation number and phone optional, like this form, and the marketing checkbox "shown" (or
+// the dashboard drops the consent and shows "Not asked").
 // Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
 // server (a tunnel address that changes on restart) with, in its head code:
 //   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
@@ -274,6 +282,7 @@ async function saveToDashboard() {
         phone: phoneValue(),
         ota_reservation_id: value($reservationField),
         source_url: window.location.href,
+        marketing_consent: marketingAccepted(),
       }),
       signal: AbortSignal.timeout(4000),
     });
@@ -298,6 +307,8 @@ function saveLookupSubmission() {
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
     'phone-number': phoneValue(),
     'reservation-num': value($reservationField),
+    // Goes in the sheet's "Marketing Consent" column (the server adds it if missing).
+    'marketing-consent': marketingAccepted() ? 'Yes' : 'No',
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
   fetch(SAVE_FLOW_TRIAL_URL, {
