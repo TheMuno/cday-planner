@@ -262,7 +262,8 @@ function phoneValue() {
 // Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
 // server (a tunnel address that changes on restart) with, in its head code:
 //   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
-const dashboardCaptureUrl = () => `${(window.AK_DASHBOARD_URL || 'https://dashboard.askkhonsu.com').replace(/\/+$/, '')}/v1/capture`;
+const dashboardUrl = path => `${(window.AK_DASHBOARD_URL || 'https://dashboard.askkhonsu.com').replace(/\/+$/, '')}${path}`;
+const dashboardCaptureUrl = () => dashboardUrl('/v1/capture');
 
 // true once the dashboard has saved the guest; false (not sent, or failed) means the sheet row
 // still has to be written here. Awaited before the redirect, but given up on after 4s.
@@ -310,15 +311,90 @@ function saveLookupSubmission() {
     // Goes in the sheet's "Marketing Consent" column (the server adds it if missing).
     'marketing-consent': marketingAccepted() ? 'Yes' : 'No',
   };
-  // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it.
-  fetch(SAVE_FLOW_TRIAL_URL, {
+  // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it
+  // (except for signed-in guests, whose email is added to the row once it's written -- see
+  // addSignedInEmail). Resolves true once the row is saved.
+  return fetch(SAVE_FLOW_TRIAL_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ hotel: resolveHotel().tag, fields }),
     keepalive: true,
   }).then(res => {
     if (!res.ok) throw new Error(`saveFlowTrialSubmission responded ${res.status}`);
-  }).catch(err => console.error('Failed to save look-up submission:', err));
+    return true;
+  }).catch(err => {
+    console.error('Failed to save look-up submission:', err);
+    return false;
+  });
+}
+
+// Guests already signed in on the Khonsu site never pass through /log-in, where firebase-auth.js
+// adds the email to the guest's details, so the same is done here. Firebase starts loading as
+// the page opens (not blocking anything) so it's usually ready by the click; authStateReady()
+// waits for the saved sign-in to be restored. Same config as flow-trial.js / firebase-auth.js.
+const SAVE_FLOW_TRIAL_OPT_IN_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialOptIn';
+const authReady = !$lookupForm ? null : Promise.all([
+  import('https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js'),
+  import('https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js'),
+]).then(async ([{ initializeApp, getApps, getApp }, { getAuth }]) => {
+  const app = getApps().length ? getApp() : initializeApp({
+    apiKey: 'AIzaSyBQPqbtlfHPLpB-JYbyxDZiugu4NqwpSeM',
+    authDomain: 'auth.askkhonsu.com',
+    projectId: 'askkhonsu-map',
+    storageBucket: 'askkhonsu-map.appspot.com',
+    messagingSenderId: '266031876218',
+    appId: '1:266031876218:web:ec93411f1c13d9731e93c3',
+    measurementId: 'G-Z7F4NJ4PHW',
+  });
+  const auth = getAuth(app);
+  await auth.authStateReady();
+  return auth;
+});
+authReady?.catch(err => console.error('Failed to load Firebase sign-in:', err));
+
+// Gives up after `ms` (resolving `fallback`), so a slow request never holds up the redirect for long.
+const within = (promise, ms, fallback) =>
+  Promise.race([promise, new Promise(resolve => setTimeout(() => resolve(fallback), ms))]);
+
+// The signed-in user's Firebase ID token (proves the email to the servers), or null if signed out.
+async function signedInIdToken() {
+  try {
+    const auth = await within(authReady, 3000, null);
+    return (await auth?.currentUser?.getIdToken()) || null;
+  } catch (err) {
+    console.error('Failed to check sign-in state:', err);
+    return null;
+  }
+}
+
+// Same requests firebase-auth.js makes at sign-in. Dashboard hotels: the link token goes to
+// /v1/claim, which adds the email on the dashboard and then to the sheet row (by Guest ID, once
+// the dashboard's own row write is done). Other hotels: the email goes on the sheet row by
+// reservation number, so it waits for that row first (as for firebase-auth.js, a guest without
+// a reservation number can't be matched there). The token is used once and removed. The
+// ak-flow-trial-* keys stay, so a later real sign-in still runs its usual steps (it skips rows
+// that already have an email).
+async function addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved) {
+  if (savedOnDashboard) {
+    const token = localStorage.getItem('ak-stay-token');
+    if (!token) return;
+    localStorage.removeItem('ak-stay-token');
+    fetch(dashboardUrl('/v1/claim'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // no CORS preflight, so it goes out before the redirect
+      keepalive: true,
+      body: JSON.stringify({ token, id_token: idToken }),
+    }).catch(err => console.error('Failed to add email on the dashboard:', err));
+    return;
+  }
+  const reservationNum = value($reservationField);
+  if (!reservationNum || !(await within(sheetRowSaved, 4000, false))) return;
+  fetch(SAVE_FLOW_TRIAL_OPT_IN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    keepalive: true,
+    body: JSON.stringify({ hotel: resolveHotel().referral, reservationNum, idToken }),
+  }).catch(err => console.error('Failed to add email to the sheet:', err));
 }
 
 // Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
@@ -333,7 +409,11 @@ async function continueToHotel() {
   if (submitting || !validateLookupForm()) return;
   submitting = true;
   storeFlowTrialKeys();
-  if (!(await saveToDashboard())) saveLookupSubmission();
+  const idTokenReady = signedInIdToken(); // checked while the dashboard request is out
+  const savedOnDashboard = await saveToDashboard();
+  const sheetRowSaved = savedOnDashboard ? null : saveLookupSubmission();
+  const idToken = await idTokenReady;
+  if (idToken) await addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved);
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
   window.location.href = href && href !== '#' ? href : '/stay/itinerary';
