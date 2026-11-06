@@ -303,8 +303,22 @@ const ALL_CHIP_MARKER_CACHES = [chipMarkers, attractionChipMarkers];
 // Exposed for console debugging/A-B testing (module-scoped consts aren't visible on window otherwise).
 window.chipMarkers = chipMarkers;
 
-const mapCenter = fixedHotel?.center || { lat: 40.7580, lng: -73.9855 };
-const mapZoom = fixedHotel ? 16 : 13;
+// With no fixed hotel, a hotel the guest picked (on /demo-welcome's hotel search, or here with "Add
+// hotel...") and saved in this browser is the starting point instead, zoomed in the same as a fixed
+// hotel, so one outside NYC isn't off-screen. Anything else (nothing saved, or a leftover fixed
+// hotel from another visit -- see isLeftoverFixedHotel()) keeps the general NYC view. A hotel that
+// only arrives with the trip from the DB is panned to by restoreHotel() instead.
+const startHotelLocation = fixedHotel ? null : (() => {
+  try {
+    const hotel = JSON.parse(localStorage['ak-hotel'] || 'null');
+    const { lat, lng } = hotel?.location || {};
+    return Number.isFinite(lat) && Number.isFinite(lng) && !isLeftoverFixedHotel(hotel) ? { lat, lng } : null;
+  } catch (e) {
+    return null;
+  }
+})();
+const mapCenter = fixedHotel?.center || startHotelLocation || { lat: 40.7580, lng: -73.9855 };
+const mapZoom = fixedHotel || startHotelLocation ? 16 : 13;
 
 // "Welcome to [Hotel Name]" and "Hotel: [ Hotel Name ]". A fixed hotel's name is known up front, so
 // it goes in right away rather than waiting on the Places round-trip.
@@ -2242,6 +2256,14 @@ function restoreHotel() {
   setMapHotelName(displayName);
   showRemoveIcon($hotelNameEl);
   setHotelNameText(displayName);
+
+  // The map opened somewhere else (no hotel in this browser yet; it came with the trip from the DB,
+  // or replaced the one the map opened on): go to it, as mapCenter would have.
+  const opened = startHotelLocation;
+  if (!opened || Math.abs(opened.lat - location.lat) > 1e-6 || Math.abs(opened.lng - location.lng) > 1e-6) {
+    map.setCenter(location);
+    map.setZoom(16);
+  }
 }
 
 function restoreAirports() {
