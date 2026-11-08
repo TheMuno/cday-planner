@@ -5,6 +5,8 @@
 // red hint shown (travel dates: hint only, no outline), and the click is stopped. The hint stays until the guest fills that field in (the
 // outline also goes then, if it's still showing). All filled in -> on to the
 // "Customize now" button's href (never /log-in).
+// On a dashboard hotel's page (KFI, /demo-welcome) the fields instead follow the hotel's dashboard
+// settings, and its custom fields are added to the form (see applyDashboardForm()).
 
 // /welcome has two copies of the form under the same id (an older one sits in a hidden section), so
 // the one actually showing is used, else the first.
@@ -139,22 +141,31 @@ function setPhoneHintText(problem) {
 // Reservation number and phone number are optional: empty is fine, but a phone number that is
 // filled in still has to be a real one. Webflow's own `required` is taken off them too, or Enter
 // would stop at the browser's "Please fill out this field".
+// On a dashboard hotel's page these follow the hotel's dashboard settings instead (see
+// applyDashboardForm()): any field there can be required, optional or hidden.
 const $reservationInput = $lookupForm && ($lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'));
-const optionalFields = [$reservationInput, $phoneInput].filter(Boolean);
+const optionalFields = new Set([$reservationInput, $phoneInput].filter(Boolean));
 optionalFields.forEach($field => $field.removeAttribute('required'));
+// Fields the hotel's dashboard settings hide: never checked or sent.
+const hiddenFields = new Set();
+// Travel dates: 'required', or from the dashboard 'optional' / 'hidden'.
+let datesSetting = 'required';
+
+const isEmpty = $field => ($field.type === 'checkbox' ? !$field.checked : !$field.value.trim());
 
 function fieldOk($field) {
-  if (optionalFields.includes($field) && !$field.value.trim()) return true;
+  if (hiddenFields.has($field)) return true;
+  if (optionalFields.has($field) && isEmpty($field)) return true;
   // A hotel's own page (e.g. /kfi-welcome) hides the hotel select; the hotel then comes from the URL.
   if ($field === $hotelSelect && !hotelSelectShown()) return true;
-  return $field === $phoneInput ? !phoneProblem() : !!$field.value.trim();
+  return $field === $phoneInput ? !phoneProblem() : !isEmpty($field);
 }
 
 function validateLookupForm() {
   const badFields = lookupFields.filter($field => !fieldOk($field));
   if ($phoneInput) setPhoneHintText(phoneProblem());
   lookupFields.forEach($field => setFieldInvalid($field, badFields.includes($field)));
-  const datesEmpty = !!$datesSource && !$datesSource.value.trim();
+  const datesEmpty = datesSetting === 'required' && !!$datesSource && !$datesSource.value.trim();
   setDatesHint(datesEmpty);
   // Focusing the visible dates input opens its calendar.
   (datesEmpty ? getDatesField() : badFields[0])?.focus();
@@ -162,14 +173,15 @@ function validateLookupForm() {
 }
 
 // The phone's hint goes once the number is a real one (or the country picked makes it one).
-lookupFields.forEach($field => {
+function watchField($field) {
   const clearIfOk = () => {
     if (fieldOk($field)) setFieldInvalid($field, false);
   };
   $field.addEventListener('input', clearIfOk);
   $field.addEventListener('change', clearIfOk);
   if ($field === $phoneInput) $field.addEventListener('countrychange', clearIfOk);
-});
+}
+lookupFields.forEach(watchField);
 
 // The visible dates input is readonly and flatpickr fires change on the hidden one, so the dates
 // hint is cleared from there.
@@ -318,25 +330,176 @@ async function setupDemoHotelSearch() {
   }
 }
 
-// Custom fields on the hotel's dashboard form that this form fills in, found by label (Short text):
-// - "Reservation number" (or "Reservation"): this form's reservation number goes in it. The
-//   dashboard has no reservation number of its own any more; without this field it isn't saved
-//   there (the sheet row written here when the dashboard fails still has it).
-// - "Guest's hotel" (or "Guest hotel"), on the Demo Hotel: the hotel picked on /demo-welcome, so it
-//   shows on the dashboard and in its sheet row. ("Hotel" itself can't be used: the dashboard keeps
-//   that sheet column for its own hotel's name.)
+// ---- The hotel's dashboard form settings -------------------------------------------------------
+// On a dashboard hotel's page (KFI, /demo-welcome) the form follows what the hotel set on the
+// dashboard, as the widget does:
+// - Travel dates, guest last name and phone number are each required ("*" after the label, as the
+//   page marks them), optional or hidden, and the marketing checkbox shown or hidden. The dashboard
+//   wins over Webflow: a field hidden in Webflow (its `hide` class) is shown if the hotel asks for it.
+// - The hotel's custom fields are added after the phone number, in the dashboard's order, each
+//   copied from the Last name field (a checkbox from the marketing checkbox) so it looks the same.
+//   Two are filled in from fields this form already has, found by label (Short text), instead:
+//   - "Reservation number" (or "Reservation"): the form's own reservation number field, required
+//     or optional as set there. A hotel without this field doesn't ask for it, so the form's field
+//     is hidden.
+//   - "Guest's hotel" (or "Guest hotel"), on /demo-welcome only: the hotel picked in its hotel
+//     search, so it shows on the dashboard and in its sheet row. ("Hotel" itself can't be used:
+//     the dashboard keeps that sheet column for its own hotel's name.)
+// "Customize now" waits for the settings (up to 3s). If they can't be loaded the form stays as it is.
+// Other hotels (the /welcome dropdown) keep the form as it is.
 let demoHotelFieldId = null;
+let demoHotelLabel = null;
+let marketingHidden = false;
 let reservationFieldId = null;
-async function findDashboardFields() {
+const customInputs = []; // [{ field, $input }] for the custom fields added here
+const RESERVATION_LABEL = /^reservation( number)?$/i;
+const DEMO_HOTEL_LABEL = /^guest['’]?s? hotel$/i;
+const CUSTOM_HINTS = { text: 'Fill this in', textarea: 'Fill this in', select: 'Choose an option', checkbox: 'Tick this box to continue', date: 'Enter a valid date' };
+
+const blockOf = $field => $field?.closest('.u-width-full') || null;
+const labelOf = $block => $block?.querySelector(':scope > .w-richtext p') || null;
+const hideEl = $el => { if ($el) $el.style.display = 'none'; };
+// The dashboard decides, so a field Webflow hides (its `hide` class) is shown when the hotel asks for it.
+const showEl = $el => { if ($el) { $el.classList.remove('hide'); $el.style.display = ''; } };
+// The page's labels end in "*" for a required field, and have nothing extra for an optional one.
+const labelText = (text, required) => `${text.replace(/\s*(\*|\(optional\))\s*$/i, '')}${required ? '*' : ''}`;
+function markRequired($label, required) {
+  if ($label) $label.textContent = labelText($label.textContent, required);
+}
+
+// A built-in field set to 'required' / 'optional' / 'hidden'. Webflow's `required` comes off
+// optional and hidden ones, or Enter would stop at the browser's own message.
+function applySetting($field, setting, $label = labelOf(blockOf($field))) {
+  if (!$field) return;
+  optionalFields.delete($field);
+  hiddenFields.delete($field);
+  if (setting === 'hidden') {
+    hiddenFields.add($field);
+    hideEl(blockOf($field));
+  } else {
+    showEl(blockOf($field));
+    if (setting === 'optional') optionalFields.add($field);
+  }
+  if (setting !== 'required') $field.removeAttribute('required');
+  markRequired($label, setting === 'required');
+}
+
+// The custom field's block: a copy of the Last name block with its label, input and red hint.
+function buildCustomField(f) {
+  const $template = blockOf($lastNameField) || blockOf($phoneInput);
+  if (!$template) return null;
+  const $block = $template.cloneNode(true);
+  $block.querySelectorAll('.hint-text.hide').forEach($el => $el.remove());
+  const $hint = [...$block.querySelectorAll('[data-ak-hidden]')].find($el => $el.querySelector('.u-text-color-red')) || null;
+  const $hintText = $hint?.querySelector('.u-text-color-red p') || $hint?.querySelector('.u-text-color-red');
+  if ($hintText) $hintText.textContent = CUSTOM_HINTS[f.type] || 'Fill this in';
+  $hint?.setAttribute('data-ak-hidden', 'true');
+  const $label = labelOf($block);
+  const $copied = $block.querySelector('input, select, textarea');
+  const inputClass = $copied?.className || 'form_field_simple is-padding-bottom w-input';
+  let $input;
+  if (f.type === 'checkbox') {
+    // The marketing checkbox's look, if the page has one; else Webflow's own checkbox classes.
+    const $box = $marketingEl?.matches('label') ? $marketingEl.cloneNode(true)
+      : Object.assign(document.createElement('label'), { className: 'w-checkbox' });
+    $box.removeAttribute('data-ak');
+    $box.removeAttribute('style'); // the marketing checkbox may already be hidden by the hotel's settings
+    $box.classList.remove('hide');
+    $box.innerHTML = '<input type="checkbox" class="w-checkbox-input"><span class="w-form-label"></span>';
+    $box.querySelector('span').textContent = labelText(f.label, f.required);
+    $input = $box.querySelector('input');
+    $label?.closest('.w-richtext')?.replaceWith($box);
+    $copied?.remove();
+  } else {
+    if (f.type === 'select') {
+      $input = document.createElement('select');
+      $input.add(new Option('Select one...', ''));
+      (f.options || []).forEach(o => $input.add(new Option(String(o), String(o))));
+    } else if (f.type === 'textarea') {
+      $input = document.createElement('textarea');
+      $input.rows = 3;
+    } else {
+      $input = document.createElement('input');
+      $input.type = f.type === 'date' ? 'date' : 'text';
+    }
+    $input.className = inputClass;
+    if (f.maxLength) $input.maxLength = f.maxLength;
+    if ($label) $label.textContent = labelText(f.label, f.required);
+    if ($copied) $copied.replaceWith($input);
+    else $block.append($input);
+  }
+  $input.name = `c-${f.id}`;
+  $input.id = `ak-c-${f.id}`;
+  $input.setAttribute('data-ak-custom', f.id);
+  return { $block, $input, $hint };
+}
+
+async function applyDashboardForm() {
+  let data;
   try {
     const res = await fetch(dashboardUrl(`/v1/hotels/${resolveHotel().dashboard}/form`));
-    const data = await res.json();
-    const textField = re => (data.custom || []).find(f => re.test((f.label || '').trim()) && f.type === 'text')?.id || null;
-    demoHotelFieldId = textField(/^guest['’]?s? hotel$/i);
-    reservationFieldId = textField(/^reservation( number)?$/i);
-  } catch {}
+    data = await res.json();
+    if (!res.ok || !data.success) throw new Error(`form responded ${res.status} ${data.error || ''}`);
+  } catch (err) {
+    console.error("Couldn't load the hotel's form settings; the form stays as it is:", err);
+    return;
+  }
+  const settings = data.fields || {};
+  const custom = (Array.isArray(data.custom) ? data.custom : [])
+    .filter(f => f && typeof f.id === 'string' && typeof f.label === 'string' && CUSTOM_HINTS[f.type]);
+  const textField = re => custom.find(f => f.type === 'text' && re.test(f.label.trim())) || null;
+
+  // Travel dates
+  datesSetting = ['optional', 'hidden'].includes(settings.dates) ? settings.dates : 'required';
+  if (datesSetting !== 'required') $datesSource?.removeAttribute('required');
+  if (datesSetting === 'hidden') {
+    hideEl($datesItem);
+    hideEl($datesHint);
+    // The divider under the dates goes with them.
+    const $next = $datesHint?.nextElementSibling || $datesItem?.nextElementSibling;
+    if ($next?.classList.contains('u-line-divider')) hideEl($next);
+  }
+  markRequired($datesItem?.querySelector('label'), datesSetting === 'required');
+
+  applySetting($lastNameField, ['optional', 'hidden'].includes(settings.last_name) ? settings.last_name : 'required');
+  applySetting($phoneInput, ['required', 'hidden'].includes(settings.phone) ? settings.phone : 'optional');
+
+  // Marketing checkbox (with its fine print)
+  marketingHidden = settings.marketing === 'hidden';
+  if (marketingHidden && $marketingEl) {
+    hideEl($marketingEl);
+    const $fine = $marketingEl.nextElementSibling;
+    if ($fine?.className.includes('fine-print')) hideEl($fine);
+    if ($marketingBox) $marketingBox.checked = false;
+  }
+
+  // Reservation number: the form's own field, or hidden when the hotel doesn't ask for it.
+  const reservation = $reservationInput ? textField(RESERVATION_LABEL) : null;
+  reservationFieldId = reservation?.id || null;
+  if ($reservationInput) applySetting($reservationInput, reservation ? (reservation.required ? 'required' : 'optional') : 'hidden');
+
+  // Guest's hotel: from the hotel search on /demo-welcome.
+  const demoHotel = onDemoWelcome ? textField(DEMO_HOTEL_LABEL) : null;
+  demoHotelFieldId = demoHotel?.id || null;
+  demoHotelLabel = demoHotel?.label || null;
+
+  // The rest are added after the phone number (or the last name), in order.
+  let $after = blockOf($phoneInput) || blockOf($lastNameField);
+  for (const f of custom) {
+    if (f === reservation || f === demoHotel || !$after) continue;
+    const built = buildCustomField(f);
+    if (!built) continue;
+    $after.insertAdjacentElement('afterend', built.$block);
+    $after = built.$block;
+    if (!f.required) optionalFields.add(built.$input);
+    lookupFields.push(built.$input);
+    errorHints.set(built.$input, built.$hint);
+    watchField(built.$input);
+    customInputs.push({ field: f, $input: built.$input });
+  }
 }
-// Both are started at the end of this file, once dashboardUrl() below is defined.
+// Started at the end of this file, once dashboardUrl() below is defined.
+let dashboardFormReady = Promise.resolve();
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
 // Guests" tab. The server finds each value by its key (last+name, travel+date, phone, reservation),
@@ -372,9 +535,8 @@ function phoneValue() {
 
 // Hotels with a `dashboard` ID in hotelMap send the guest to the hotel dashboard (the widget
 // server's POST /v1/capture, same as the widget), which saves them there and writes the sheet row
-// itself. The dashboard hotel must list this website under its allowed sites, and should have
-// phone (and any "Reservation number" custom field) optional, like this form, and the marketing
-// checkbox "shown" (or the dashboard drops the consent and shows "Not asked").
+// itself. The dashboard hotel must list this website under its allowed sites. Which fields this
+// form asks for comes from the same hotel's dashboard settings (see applyDashboardForm()).
 // Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
 // server (a tunnel address that changes on restart) with, in its head code:
 //   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
@@ -396,6 +558,11 @@ async function saveToDashboard() {
     ...(reservationFieldId && value($reservationField) && { [reservationFieldId]: value($reservationField).slice(0, 200) }),
     ...(demoHotelFieldId && demoPickedHotel && { [demoHotelFieldId]: demoPickedHotel.displayName.slice(0, 200) }),
   };
+  // The hotel's other custom fields (see applyDashboardForm()). Blank ones are sent too, as the
+  // widget does; the dashboard keeps an earlier answer for a blank one.
+  customInputs.forEach(({ field, $input }) => {
+    custom[field.id] = $input.type === 'checkbox' ? $input.checked : $input.value.trim().slice(0, field.maxLength || 1000);
+  });
   try {
     const res = await fetch(dashboardCaptureUrl(), {
       method: 'POST',
@@ -410,6 +577,7 @@ async function saveToDashboard() {
         marketing_consent: marketingAccepted(),
         ...(Object.keys(custom).length && { custom }),
         edit_key: localStorage.getItem(editKeyName(hotelId)) || undefined,
+        website: honeypotValue(), // the spam guard (see $honeypot)
       }),
       signal: AbortSignal.timeout(4000),
     });
@@ -427,6 +595,20 @@ async function saveToDashboard() {
   }
 }
 
+// The hotel's custom answers for the sheet row written here when the dashboard save fails, as the
+// dashboard sends them (sheet.js in the widget server): [{ label, value }] in the hotel's order,
+// a checkbox as "Yes"/"No". saveFlowTrialSubmission puts each under a column named after its
+// label (added the first time it has a value). The reservation number isn't one of them: it has
+// the sheet's own column. Nothing for hotels without custom fields (or not on the dashboard).
+function sheetCustomAnswers() {
+  const custom = customInputs.map(({ field, $input }) => ({
+    label: field.label,
+    value: $input.type === 'checkbox' ? ($input.checked ? 'Yes' : 'No') : $input.value.trim().slice(0, field.maxLength || 1000),
+  }));
+  if (demoHotelLabel) custom.push({ label: demoHotelLabel, value: demoPickedHotel?.displayName.slice(0, 200) || '' });
+  return custom.length ? { custom, customColumns: custom.map(a => a.label) } : {};
+}
+
 function saveLookupSubmission() {
   const fields = {
     // /demo-welcome: the hotel the guest picked, if any.
@@ -436,8 +618,9 @@ function saveLookupSubmission() {
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
     'phone-number': phoneValue(),
     'reservation-num': value($reservationField),
-    // Goes in the sheet's "Marketing Consent" column (the server adds it if missing).
-    'marketing-consent': marketingAccepted() ? 'Yes' : 'No',
+    // Goes in the sheet's "Marketing Consent" column (the server adds it if missing). Blank when the
+    // hotel's dashboard hides the checkbox, as the dashboard writes it: "not asked" isn't "No".
+    'marketing-consent': marketingHidden ? '' : marketingAccepted() ? 'Yes' : 'No',
   };
   // keepalive lets the request finish after the page moves on, so the redirect doesn't wait on it
   // (except for signed-in guests, whose email is added to the row once it's written -- see
@@ -445,7 +628,7 @@ function saveLookupSubmission() {
   return fetch(SAVE_FLOW_TRIAL_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hotel: resolveHotel().tag, fields }),
+    body: JSON.stringify({ hotel: resolveHotel().tag, fields, ...sheetCustomAnswers() }),
     keepalive: true,
   }).then(res => {
     if (!res.ok) throw new Error(`saveFlowTrialSubmission responded ${res.status}`);
@@ -525,6 +708,21 @@ async function addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved) {
   }).catch(err => console.error('Failed to add email to the sheet:', err));
 }
 
+// Spam guard, as in the hotel widget: a field people never see or fill in ("website", off-screen,
+// skipped by Tab, no autofill), so only bots fill it. It's sent to the dashboard, which answers a
+// filled one with a pretend success and saves nothing; the sheet fallback and the sign-in email are
+// skipped for it too. The bot is still sent on as usual, so it can't tell.
+const $honeypot = (() => {
+  if (!$lookupForm) return null;
+  const $wrap = document.createElement('div');
+  $wrap.setAttribute('aria-hidden', 'true');
+  $wrap.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+  $wrap.innerHTML = '<input type="text" name="website" tabindex="-1" autocomplete="off">';
+  $lookupForm.append($wrap);
+  return $wrap.querySelector('input');
+})();
+const honeypotValue = () => $honeypot?.value || '';
+
 // Only "Customize now" is wired up -- "Can't find your reservation" keeps its own href.
 const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 
@@ -534,14 +732,22 @@ const $customizeBtn = $lookupForm?.querySelector('[data-ak="customize-now"]');
 let submitting = false;
 async function continueToHotel() {
   // A second click while the dashboard request is out would send the guest twice.
-  if (submitting || !validateLookupForm()) return;
+  if (submitting) return;
   submitting = true;
+  // A click before the hotel's form settings are in waits for them (see applyDashboardForm()).
+  await within(dashboardFormReady, 3000, null);
+  if (!validateLookupForm()) {
+    submitting = false;
+    return;
+  }
   storeFlowTrialKeys();
   const idTokenReady = signedInIdToken(); // checked while the dashboard request is out
   const savedOnDashboard = await saveToDashboard();
-  const sheetRowSaved = savedOnDashboard ? null : saveLookupSubmission();
+  // A bot that filled in the hidden field gets no sheet row and no email added (see $honeypot).
+  const isBot = !!honeypotValue();
+  const sheetRowSaved = savedOnDashboard || isBot ? null : saveLookupSubmission();
   const idToken = await idTokenReady;
-  if (idToken) await addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved);
+  if (idToken && !isBot) await addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved);
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
   window.location.href = href && href !== '#' ? href : '/stay/itinerary';
@@ -561,4 +767,4 @@ $lookupForm?.addEventListener('submit', e => {
 }, true);
 
 if ($lookupForm && onDemoWelcome) setupDemoHotelSearch();
-if ($lookupForm && resolveHotel().dashboard) findDashboardFields();
+if ($lookupForm && resolveHotel().dashboard) dashboardFormReady = applyDashboardForm();

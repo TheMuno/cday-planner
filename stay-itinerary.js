@@ -72,7 +72,33 @@ function getContinueBtn() {
 // a bad connection, and none of them are actually needed to know which button to show — gating
 // the reveal on them left the buttons invisible long enough that users would think there was
 // nothing there.
+// Guests who come from the hotel widget on a hotel's own website, already signed in here. The
+// widget's link token (ak-stay-token, saved from the link by the itinerary-handoff snippet in this
+// page's <head>) normally goes to the widget server when the guest signs in (firebase-auth.js),
+// which adds their email to their details on the hotel's dashboard. A guest already signed in never
+// signs in again, so it's sent here instead -- the widget can't do it itself, as a hotel's site
+// can't see a sign-in on this one. The token is used once and removed first, as in firebase-auth.js.
+// Same address as WIDGET_CLAIM_URL there; update both when the server moves.
+const WIDGET_CLAIM_URL = 'https://khonsu-widget-production.up.railway.app/v1/claim';
+async function claimWidgetStay(user) {
+  const token = localStorage.getItem('ak-stay-token');
+  if (!token) return;
+  localStorage.removeItem('ak-stay-token');
+  try {
+    const idToken = await user.getIdToken();
+    await fetch(WIDGET_CLAIM_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // no CORS preflight
+      keepalive: true,
+      body: JSON.stringify({ token, id_token: idToken }),
+    });
+  } catch (err) {
+    console.error('Failed to add email to widget stay:', err);
+  }
+}
+
 onAuthStateChanged(auth, user => {
+  if (user) claimWidgetStay(user);
   const $continueBtn = getContinueBtn();
   // Every copy, not just the first -- a page can end up with more than one (e.g. a duplicated nav).
   const $signInBtns = document.querySelectorAll('[data-ak="sign-in-to-save"]');
