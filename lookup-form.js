@@ -318,16 +318,22 @@ async function setupDemoHotelSearch() {
   }
 }
 
-// The Demo Hotel on the dashboard can have a Short text custom field labelled "Guest's hotel" (or
-// "Guest hotel"); if it does, the picked hotel's name goes in it, so it shows on the dashboard and in
-// its sheet row. ("Hotel" itself can't be used: the dashboard keeps that sheet column for its own
-// hotel's name.)
+// Custom fields on the hotel's dashboard form that this form fills in, found by label (Short text):
+// - "Reservation number" (or "Reservation"): this form's reservation number goes in it. The
+//   dashboard has no reservation number of its own any more; without this field it isn't saved
+//   there (the sheet row written here when the dashboard fails still has it).
+// - "Guest's hotel" (or "Guest hotel"), on the Demo Hotel: the hotel picked on /demo-welcome, so it
+//   shows on the dashboard and in its sheet row. ("Hotel" itself can't be used: the dashboard keeps
+//   that sheet column for its own hotel's name.)
 let demoHotelFieldId = null;
-async function findDemoHotelField() {
+let reservationFieldId = null;
+async function findDashboardFields() {
   try {
-    const res = await fetch(dashboardUrl(`/v1/hotels/${hotelMap['demo-welcome'].dashboard}/form`));
+    const res = await fetch(dashboardUrl(`/v1/hotels/${resolveHotel().dashboard}/form`));
     const data = await res.json();
-    demoHotelFieldId = (data.custom || []).find(f => /^guest['’]?s? hotel$/i.test((f.label || '').trim()) && f.type === 'text')?.id || null;
+    const textField = re => (data.custom || []).find(f => re.test((f.label || '').trim()) && f.type === 'text')?.id || null;
+    demoHotelFieldId = textField(/^guest['’]?s? hotel$/i);
+    reservationFieldId = textField(/^reservation( number)?$/i);
   } catch {}
 }
 // Both are started at the end of this file, once dashboardUrl() below is defined.
@@ -367,8 +373,8 @@ function phoneValue() {
 // Hotels with a `dashboard` ID in hotelMap send the guest to the hotel dashboard (the widget
 // server's POST /v1/capture, same as the widget), which saves them there and writes the sheet row
 // itself. The dashboard hotel must list this website under its allowed sites, and should have
-// reservation number and phone optional, like this form, and the marketing checkbox "shown" (or
-// the dashboard drops the consent and shows "Not asked").
+// phone (and any "Reservation number" custom field) optional, like this form, and the marketing
+// checkbox "shown" (or the dashboard drops the consent and shows "Not asked").
 // Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
 // server (a tunnel address that changes on restart) with, in its head code:
 //   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
@@ -377,10 +383,19 @@ const dashboardCaptureUrl = () => dashboardUrl('/v1/capture');
 
 // true once the dashboard has saved the guest; false (not sent, or failed) means the sheet row
 // still has to be written here. Awaited before the redirect, but given up on after 4s.
+// The dashboard returns an edit key with each submission. It's kept here (never in a link) and sent
+// with the next one, so a guest who submits again from this browser updates their details there
+// instead of being saved twice.
+const editKeyName = hotelId => `ak-dashboard-edit-key:${hotelId}`;
+
 async function saveToDashboard() {
   const hotelId = resolveHotel().dashboard;
   if (!hotelId) return false;
   const [checkIn = '', checkOut = ''] = value($datesSource).split(/\s+to\s+/);
+  const custom = {
+    ...(reservationFieldId && value($reservationField) && { [reservationFieldId]: value($reservationField).slice(0, 200) }),
+    ...(demoHotelFieldId && demoPickedHotel && { [demoHotelFieldId]: demoPickedHotel.displayName.slice(0, 200) }),
+  };
   try {
     const res = await fetch(dashboardCaptureUrl(), {
       method: 'POST',
@@ -391,15 +406,16 @@ async function saveToDashboard() {
         check_out_date: checkOut.slice(0, 10),
         guest_last_name: value($lastNameField),
         phone: phoneValue(),
-        ota_reservation_id: value($reservationField),
         source_url: window.location.href,
         marketing_consent: marketingAccepted(),
-        ...(demoHotelFieldId && demoPickedHotel && { custom: { [demoHotelFieldId]: demoPickedHotel.displayName.slice(0, 200) } }),
+        ...(Object.keys(custom).length && { custom }),
+        edit_key: localStorage.getItem(editKeyName(hotelId)) || undefined,
       }),
       signal: AbortSignal.timeout(4000),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) throw new Error(`capture responded ${res.status} ${data.error || ''}`);
+    if (data.edit_key) localStorage.setItem(editKeyName(hotelId), data.edit_key);
     // Same key the widget sets: firebase-auth.js sends it to /v1/claim at sign-in, which adds the
     // guest's email on the dashboard.
     localStorage.setItem('ak-stay-token', new URL(data.redirect_url).searchParams.get('token') || '');
@@ -544,7 +560,5 @@ $lookupForm?.addEventListener('submit', e => {
   continueToHotel();
 }, true);
 
-if ($lookupForm && onDemoWelcome) {
-  setupDemoHotelSearch();
-  findDemoHotelField();
-}
+if ($lookupForm && onDemoWelcome) setupDemoHotelSearch();
+if ($lookupForm && resolveHotel().dashboard) findDashboardFields();
