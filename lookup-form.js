@@ -79,15 +79,18 @@ function setDatesHint(show) {
 
 // The red outline only shows for 2s (a repeat click restarts the 2s rather than stacking timers);
 // the hint stays shown until the field is filled in.
+// A field shown through another element (the /demo-welcome hotel search stands in for the hidden
+// hotel select) is outlined and focused there instead, via $field.akShownAs.
 function setFieldInvalid($field, invalid) {
   const $hint = errorHints.get($field);
+  const $outlined = $field.akShownAs || $field;
   clearTimeout($field.akInvalidTimer);
   if (invalid) {
-    $field.setAttribute('data-ak-invalid', 'true');
-    $field.akInvalidTimer = setTimeout(() => $field.removeAttribute('data-ak-invalid'), 2000);
+    $outlined.setAttribute('data-ak-invalid', 'true');
+    $field.akInvalidTimer = setTimeout(() => $outlined.removeAttribute('data-ak-invalid'), 2000);
     $hint?.removeAttribute('data-ak-hidden');
   } else {
-    $field.removeAttribute('data-ak-invalid');
+    $outlined.removeAttribute('data-ak-invalid');
     $hint?.setAttribute('data-ak-hidden', 'true');
   }
 }
@@ -156,6 +159,9 @@ const isEmpty = $field => ($field.type === 'checkbox' ? !$field.checked : !$fiel
 function fieldOk($field) {
   if (hiddenFields.has($field)) return true;
   if (optionalFields.has($field) && isEmpty($field)) return true;
+  // /demo-welcome: a hotel must be picked in the hotel search. If the search couldn't load, the
+  // dropdown is back in its place and checked as usual below.
+  if ($field === $hotelSelect && demoHotelSearch) return !!demoPickedHotel;
   // A hotel's own page (e.g. /kfi-welcome) hides the hotel select; the hotel then comes from the URL.
   if ($field === $hotelSelect && !hotelSelectShown()) return true;
   return $field === $phoneInput ? !phoneProblem() : !isEmpty($field);
@@ -168,7 +174,7 @@ function validateLookupForm() {
   const datesEmpty = datesSetting === 'required' && !!$datesSource && !$datesSource.value.trim();
   setDatesHint(datesEmpty);
   // Focusing the visible dates input opens its calendar.
-  (datesEmpty ? getDatesField() : badFields[0])?.focus();
+  (datesEmpty ? getDatesField() : badFields[0]?.akShownAs || badFields[0])?.focus();
   return !datesEmpty && badFields.length === 0;
 }
 
@@ -208,8 +214,9 @@ const hotelMap = {
 };
 
 // /demo-welcome (and e.g. /demo-welcome-2): the hotel field is a Google hotel search instead of
-// the dropdown, and optional.
+// the dropdown, and required. The last name field is just "Name" there.
 const onDemoWelcome = /\/demo-welcome/i.test(window.location.pathname);
+let demoHotelSearch = null; // the hotel search element, once it has loaded
 
 const $hotelSelect = $lookupForm && ($lookupForm.querySelector('[data-ak="hotel-name"]') || findFieldByLabel('Hotel'));
 const $reservationNum = $lookupForm && ($lookupForm.querySelector('[data-ak="reservation-num"]') || findFieldByLabel('Reservation number'));
@@ -282,12 +289,12 @@ async function setupDemoHotelSearch() {
   if (!$hotelItem) return;
   const wasHidden = $hotelItem.classList.contains('hide');
   $hotelItem.classList.remove('hide');
-  // A hidden select isn't checked (see fieldOk()), so the hotel is optional. Its `required` goes too,
-  // or the browser would block Enter on a field the guest can't see.
+  // The select is hidden; fieldOk() checks a hotel was picked in the search instead. Its `required`
+  // goes, or the browser would block Enter on a field the guest can't see.
   $hotelSelect.style.display = 'none';
   $hotelSelect.removeAttribute('required');
   const $label = [...$hotelItem.querySelectorAll('p')].find($p => $p.textContent.trim().toLowerCase().startsWith('hotel'));
-  if ($label) $label.textContent = 'Hotel (optional)';
+  if ($label) $label.textContent = 'Hotel*';
   try {
     loadGoogleMaps();
     await google.maps.importLibrary('places');
@@ -301,6 +308,8 @@ async function setupDemoHotelSearch() {
       gmp-place-autocomplete[data-ak="demo-hotel-search"] { display: block; width: 100%; color-scheme: light; }
     </style>`);
     $hotelSelect.insertAdjacentElement('afterend', search);
+    demoHotelSearch = search;
+    $hotelSelect.akShownAs = search;
     // Typing again drops the earlier pick until a new one is chosen.
     search.addEventListener('input', () => { demoPickedHotel = null; });
     search.addEventListener('gmp-select', async ({ placePrediction }) => {
@@ -318,6 +327,7 @@ async function setupDemoHotelSearch() {
           priceRange: p.priceRange || null, photoUrl: place.photos?.[0]?.getURI({ maxWidth: 800 }) || '',
           city: cityFromAddress(p.addressComponents), guestPicked: true,
         };
+        setFieldInvalid($hotelSelect, false); // the "Select the hotel" hint goes once one is picked
       } catch (err) {
         demoPickedHotel = null;
         console.error('Failed to load the picked hotel:', err);
@@ -325,9 +335,22 @@ async function setupDemoHotelSearch() {
     });
   } catch (err) {
     console.error('Hotel search unavailable; continuing without it:', err);
+    demoHotelSearch = null;
+    delete $hotelSelect.akShownAs;
     $hotelSelect.style.display = '';
     if (wasHidden) $hotelItem.classList.add('hide');
   }
+}
+
+// /demo-welcome: "Guest last name" becomes "Name" (still sent as the last name), keeping its "*".
+function relabelDemoName() {
+  const $block = blockOf($lastNameField);
+  const $label = labelOf($block);
+  if ($label) $label.textContent = labelText('Name', /\*\s*$/.test($label.textContent));
+  const $hintText = [...$block?.querySelectorAll('.u-text-color-red p') || []][0];
+  if ($hintText) $hintText.textContent = 'Enter your name';
+  $lastNameField.setAttribute('autocomplete', 'name');
+  $lastNameField.placeholder = 'Jane Smith';
 }
 
 // ---- The hotel's dashboard form settings -------------------------------------------------------
@@ -483,14 +506,26 @@ async function applyDashboardForm() {
   demoHotelFieldId = demoHotel?.id || null;
   demoHotelLabel = demoHotel?.label || null;
 
-  // The rest are added after the phone number (or the last name), in order.
+  // The rest are added after the phone number (or the last name), in order. On /demo-welcome an
+  // email field ("Work Email") goes right after Name instead, ahead of the phone number.
   let $after = blockOf($phoneInput) || blockOf($lastNameField);
+  let $afterName = onDemoWelcome && settings.last_name !== 'hidden' ? blockOf($lastNameField) : null;
   for (const f of custom) {
     if (f === reservation || f === demoHotel || !$after) continue;
     const built = buildCustomField(f);
     if (!built) continue;
-    $after.insertAdjacentElement('afterend', built.$block);
-    $after = built.$block;
+    const isEmail = f.type === 'text' && /e-?mail/i.test(f.label);
+    if (isEmail) {
+      built.$input.setAttribute('autocomplete', 'email');
+      built.$input.setAttribute('inputmode', 'email');
+    }
+    if (isEmail && $afterName) {
+      $afterName.insertAdjacentElement('afterend', built.$block);
+      $afterName = built.$block;
+    } else {
+      $after.insertAdjacentElement('afterend', built.$block);
+      $after = built.$block;
+    }
     if (!f.required) optionalFields.add(built.$input);
     lookupFields.push(built.$input);
     errorHints.set(built.$input, built.$hint);
@@ -766,5 +801,8 @@ $lookupForm?.addEventListener('submit', e => {
   continueToHotel();
 }, true);
 
-if ($lookupForm && onDemoWelcome) setupDemoHotelSearch();
+if ($lookupForm && onDemoWelcome) {
+  if ($lastNameField) relabelDemoName();
+  setupDemoHotelSearch();
+}
 if ($lookupForm && resolveHotel().dashboard) dashboardFormReady = applyDashboardForm();
