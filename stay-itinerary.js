@@ -334,6 +334,23 @@ window.chipMarkers = chipMarkers;
 // hotel, so one outside NYC isn't off-screen. Anything else (nothing saved, or a leftover fixed
 // hotel from another visit -- see isLeftoverFixedHotel()) keeps the general NYC view. A hotel that
 // only arrives with the trip from the DB is panned to by restoreHotel() instead.
+// The hotel widget's demo (data-hotel-id="demo") asks for the lead's own hotel and sends it with
+// the link: ?place=<Google place id>, or ?place_name=<typed name> when Google's search couldn't
+// load there. Taken out of the address bar here, and set once the map is ready (setLinkHotel()).
+// Ignored for a fixed hotel, which has its own.
+const linkHotel = (() => {
+  const q = new URLSearchParams(location.search);
+  const id = q.get('place') || '';
+  const name = (q.get('place_name') || '').trim().slice(0, 200);
+  if (!q.has('place') && !q.has('place_name')) return null;
+  q.delete('place');
+  q.delete('place_name');
+  history.replaceState(null, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash);
+  if (fixedHotel) return null;
+  if (/^[A-Za-z0-9_-]{10,300}$/.test(id)) return { id };
+  return name ? { name } : null;
+})();
+
 const startHotelLocation = fixedHotel ? null : (() => {
   try {
     const hotel = JSON.parse(localStorage['ak-hotel'] || 'null');
@@ -626,6 +643,7 @@ async function initMap(center, zoom) {
 // name show up late on mobile. Kick it off as soon as the map itself is ready instead, in parallel
 // with all of that.
 if (fixedHotel) mapReady.then(() => autoSetFixedHotel());
+if (linkHotel) mapReady.then(() => setLinkHotel(linkHotel));
 
 // Only needs a plain fetch — no reason to wait on 'load' (every image, font, the Maps script).
 loadInsiderTips();
@@ -1218,15 +1236,25 @@ async function setupHotelAutocomplete() {
   placeAutocomplete.addEventListener('gmp-select', async res => {
     const { placePrediction } = res;
     const place = placePrediction.toPlace();
-    await place.fetchFields({ fields: ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'] });
+    await place.fetchFields({ fields: HOTEL_PLACE_FIELDS });
+    placeAutocomplete.value = '';
+    useGuestHotel(place);
+  });
 
+  wireOverflowEscapeOnFocus(placeAutocomplete);
+  moveWhenVisible($wrap, placeAutocomplete);
+}
+
+const HOTEL_PLACE_FIELDS = ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'];
+
+// A hotel the guest picked ("Add hotel..." above, or one the link brought -- see linkHotel): its
+// marker and name, saved as the trip's hotel.
+function useGuestHotel(place) {
     map.panTo(place.viewport || place.location);
 
     const placeObj = place.toJSON();
     const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
-
-    placeAutocomplete.value = '';
 
     const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), guestPicked: true };
 
@@ -1243,10 +1271,27 @@ async function setupHotelAutocomplete() {
     localStorage['ak-update-hotel'] = true;
     setUnsavedChangesFlag();
     restoreTripHeadingName();
-  });
+}
 
-  wireOverflowEscapeOnFocus(placeAutocomplete);
-  moveWhenVisible($wrap, placeAutocomplete);
+// The hotel the link brought (the widget demo's hotel field), looked up by its Google place id, or
+// by name when the lead typed it in. Set as if picked here, zoomed in like a fixed hotel.
+async function setLinkHotel({ id, name }) {
+  let place = null;
+  try {
+    await google.maps.importLibrary('places');
+    if (id) {
+      place = new google.maps.places.Place({ id });
+      await place.fetchFields({ fields: HOTEL_PLACE_FIELDS });
+    } else {
+      ({ places: [place = null] = [] } = await google.maps.places.Place.searchByText({ textQuery: name, includedType: 'lodging', fields: HOTEL_PLACE_FIELDS, maxResultCount: 1 }));
+    }
+  } catch (e) {
+    console.error("Couldn't load the hotel from the link:", e);
+    return;
+  }
+  if (!place?.location) return;
+  useGuestHotel(place);
+  map.setZoom(16);
 }
 
 // Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
