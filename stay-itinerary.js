@@ -3184,7 +3184,9 @@ function refreshViewportAwareChips($wrap, configMap, markerCache, pinUrl) {
     const slug = $chip.getAttribute('data-ak-chip');
     const config = configMap[slug];
     if (!config?.viewportAware) return;
-    if (config._curatedResolved) return; // already resolved from the sheet — not viewport-bound, nothing to refresh
+    // Already resolved from the sheet: not viewport-bound while the map stays over NYC. Once it
+    // leaves NYC the chip searches Google for the new view instead (getCuratedByTag returns none).
+    if (config._curatedResolved && mapOverNyc()) return;
 
     const seq = (chipRequestSeq[slug] = (chipRequestSeq[slug] || 0) + 1);
     const signal = nextAbortSignal(slug);
@@ -3335,10 +3337,19 @@ async function enrichPlaceDetails(saveObj) {
   }
 }
 
+// The sheet's places are all in NYC, so they're only used while the map is over NYC (a box around
+// the five boroughs). Anywhere else -- a guest's own hotel in another city, or the map panned away --
+// every chip goes straight to its Google search of the visible map.
+function mapOverNyc() {
+  const c = map?.getCenter?.();
+  if (!c) return false;
+  return c.lat() > 40.45 && c.lat() < 40.95 && c.lng() > -74.30 && c.lng() < -73.65;
+}
+
 // No curated places (so every chip goes straight to its Google search) for a hotel marked
-// googleOnlyChips, e.g. KFI: the sheet's places are NYC's.
+// googleOnlyChips, e.g. KFI, or when the map isn't over NYC (see mapOverNyc()).
 function getCuratedByTag(tagLabel, expectedType) {
-  if (!insiderTipsData || fixedHotel?.googleOnlyChips) return [];
+  if (!insiderTipsData || fixedHotel?.googleOnlyChips || !mapOverNyc()) return [];
   const wanted = tagLabel.toLowerCase();
   return Object.entries(insiderTipsData)
     .filter(([, entry]) => entry.tags?.some(t => t.toLowerCase() === wanted))
