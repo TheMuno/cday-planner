@@ -287,9 +287,9 @@ function emailSmartGuideOnLanding(user) {
 
 // --- Smart Guide templates: Mobile / Print ---
 // data-ak="download-smart-guide-mobile" / "download-smart-guide-print" (two of each on the page). The
-// getSmartGuideTemplate Cloud Function returns a link to the PDF (the same fixed file for everyone for
-// now; per trip later, with no change here). Its Storage file is marked as a download, so going to the
-// link saves it and the guest stays on this page. Webflow hides the buttons with data-ak-hidden.
+// getSmartGuideTemplate Cloud Function builds the guest's guide from their saved trip and returns a
+// link to it. Its Storage file is marked as a download, so going to the link saves it and the guest
+// stays on this page. Webflow hides the buttons with data-ak-hidden.
 // Registered before wireDownloadButtonLock() below, in the capture phase, so it sees whether another
 // download has these buttons locked before the lock marks the clicked one too.
 const TEMPLATE_GUIDE_FORMATS = {
@@ -313,19 +313,22 @@ function injectTemplateSpinnerStyle() {
   document.head.appendChild(style);
 }
 
-// Same wording as stripe-purchase.js's showDownloadError.
+// Same wording as stripe-purchase.js's showDownloadError. failed-precondition messages (no saved or
+// an empty itinerary) are written for guests and shown as they come.
 function showTemplateGuideError(err) {
   const SUPPORT = 'If this keeps happening, email hello@askkhonsu.com.';
   const code = (err?.code || '').replace(/^functions\//, '');
   let message;
   if (!navigator.onLine) {
     message = "You're offline — please check your internet connection and try again.";
+  } else if (code === 'failed-precondition' && err.message) {
+    message = err.message;
   } else if (code === 'unauthenticated' || code === 'permission-denied') {
     message = 'Your session has expired. Please log in again to download your guide.';
   } else if (code === 'deadline-exceeded' || code === 'unavailable') {
-    message = 'Your guide took too long to load. Please try again in a moment.';
+    message = 'Your guide took too long to build. Please try again in a moment.';
   } else {
-    message = `Something went wrong getting your guide. Please try again. ${SUPPORT}`;
+    message = `Something went wrong creating your guide. Please try again. ${SUPPORT}`;
   }
   if (window.alertify?.alert) window.alertify.alert(message);
   else alert(message);
@@ -351,12 +354,12 @@ function wireTemplateGuideButtons() {
     injectTemplateSpinnerStyle();
     const original = $btn.innerHTML;
     $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
-    $btn.innerHTML = '<span class="ak-template-loading"><span class="ak-template-spinner"></span>Getting Guide...</span>';
+    $btn.innerHTML = '<span class="ak-template-loading"><span class="ak-template-spinner"></span>Creating Guide...</span>';
     try {
       await new Promise(resolve => setTimeout(resolve, 0));
       $btn.disabled = true;
       const { functions, httpsCallable } = await getFunctionsMod();
-      const getSmartGuideTemplate = httpsCallable(functions, 'getSmartGuideTemplate', { timeout: 60000 });
+      const getSmartGuideTemplate = httpsCallable(functions, 'getSmartGuideTemplate', { timeout: 130000 });
       const { data } = await getSmartGuideTemplate({
         userId: `user-${user.email}`,
         hotel: getGuideHotel(),
