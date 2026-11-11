@@ -7,6 +7,7 @@
  *   data-ak="trip-heading"        — trip heading line, guest's name (and city) filled in
  *   data-ak="trip-heading-date"   — travel date range, filled in
  *   The Smart Guide is also emailed to the guest once on landing (same as the hotel download-guide pages).
+ *   data-ak="download-smart-guide-mobile" / "download-smart-guide-print" — Mobile / Print guides (getSmartGuideTemplate)
  *
  * NOT handled here (wiring them again would double-fire on click):
  *   data-ak-download-guide / data-ak="download-flagship-smart-guide" — stripe-purchase.js reveals and
@@ -284,13 +285,109 @@ function emailSmartGuideOnLanding(user) {
   }
 }
 
+// --- Smart Guide templates: Mobile / Print ---
+// data-ak="download-smart-guide-mobile" / "download-smart-guide-print" (two of each on the page). The
+// getSmartGuideTemplate Cloud Function returns a link to the PDF (the same fixed file for everyone for
+// now; per trip later, with no change here). Its Storage file is marked as a download, so going to the
+// link saves it and the guest stays on this page. Webflow hides the buttons with data-ak-hidden.
+// Registered before wireDownloadButtonLock() below, in the capture phase, so it sees whether another
+// download has these buttons locked before the lock marks the clicked one too.
+const TEMPLATE_GUIDE_FORMATS = {
+  'download-smart-guide-mobile': 'mobile',
+  'download-smart-guide-print': 'print',
+};
+const TEMPLATE_GUIDE_SELECTOR = Object.keys(TEMPLATE_GUIDE_FORMATS).map(k => `[data-ak="${k}"]`).join(', ');
+
+function injectTemplateSpinnerStyle() {
+  if (document.getElementById('ak-template-spinner-style')) return;
+  const style = document.createElement('style');
+  style.id = 'ak-template-spinner-style';
+  style.textContent = `
+    @keyframes ak-template-spin { to { transform: rotate(360deg); } }
+    .ak-template-loading { display: inline-flex; align-items: center; gap: 8px; }
+    .ak-template-spinner {
+      display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid currentColor; border-top-color: transparent;
+      animation: ak-template-spin 0.7s linear infinite; opacity: 0.8;
+    }`;
+  document.head.appendChild(style);
+}
+
+// Same wording as stripe-purchase.js's showDownloadError.
+function showTemplateGuideError(err) {
+  const SUPPORT = 'If this keeps happening, email hello@askkhonsu.com.';
+  const code = (err?.code || '').replace(/^functions\//, '');
+  let message;
+  if (!navigator.onLine) {
+    message = "You're offline — please check your internet connection and try again.";
+  } else if (code === 'unauthenticated' || code === 'permission-denied') {
+    message = 'Your session has expired. Please log in again to download your guide.';
+  } else if (code === 'deadline-exceeded' || code === 'unavailable') {
+    message = 'Your guide took too long to load. Please try again in a moment.';
+  } else {
+    message = `Something went wrong getting your guide. Please try again. ${SUPPORT}`;
+  }
+  if (window.alertify?.alert) window.alertify.alert(message);
+  else alert(message);
+}
+
+function wireTemplateGuideButtons() {
+  document.querySelectorAll(TEMPLATE_GUIDE_SELECTOR).forEach($btn => $btn.removeAttribute('data-ak-hidden'));
+
+  document.addEventListener('click', async e => {
+    const $btn = e.target.closest(TEMPLATE_GUIDE_SELECTOR);
+    if (!$btn) return;
+    e.preventDefault();
+    // Locked by another download in progress (this one, the Smart Guide or the Google Maps export).
+    if ($btn.disabled || $btn.hasAttribute('disabled')) return;
+
+    const user = auth.currentUser;
+    if (!user) return showTemplateGuideError({ code: 'unauthenticated' });
+
+    // Not marked disabled yet: wireDownloadButtonLock's listener runs after this one on the same click,
+    // and it only locks the other buttons if this one isn't disabled; it then marks this one disabled
+    // itself, which also blocks a double click. The setTimeout lets it run first -- an await alone
+    // isn't enough, as the browser runs this function's continuation before the next listener.
+    injectTemplateSpinnerStyle();
+    const original = $btn.innerHTML;
+    $btn.style.minWidth = `${$btn.getBoundingClientRect().width}px`;
+    $btn.innerHTML = '<span class="ak-template-loading"><span class="ak-template-spinner"></span>Getting Guide...</span>';
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      $btn.disabled = true;
+      const { functions, httpsCallable } = await getFunctionsMod();
+      const getSmartGuideTemplate = httpsCallable(functions, 'getSmartGuideTemplate', { timeout: 60000 });
+      const { data } = await getSmartGuideTemplate({
+        userId: `user-${user.email}`,
+        hotel: getGuideHotel(),
+        format: TEMPLATE_GUIDE_FORMATS[$btn.dataset.ak],
+      });
+      if (!data?.url) throw new Error('No guide link returned');
+      window.location.href = data.url;
+    } catch (err) {
+      console.error('Template guide download error:', err);
+      showTemplateGuideError(err);
+    } finally {
+      $btn.innerHTML = original;
+      $btn.style.minWidth = '';
+      // The lock watches the `disabled` attribute and releases the other buttons once this button's
+      // `.disabled` reads false, so toggle the attribute to wake it.
+      $btn.disabled = false;
+      $btn.setAttribute('disabled', '');
+      $btn.removeAttribute('disabled');
+    }
+  }, true);
+}
+wireTemplateGuideButtons();
+
 // --- Cross-button click lock: Smart Guide downloads + Google Maps export share this ---
 // stripe-purchase.js and KMLExport/scripts.js each disable the buttons in their own group while a
 // download runs, and set `.disabled` back to false when done. This extends that lock across all the
 // groups, using the clicked button's own `disabled` as the signal that its flow has finished.
-// (Same as the hotel download-guide pages, plus the flagship guide button.)
+// (Same as the hotel download-guide pages, plus the flagship guide and Mobile / Print template buttons.)
 function wireDownloadButtonLock() {
-  const selector = '[data-ak-download-guide="true"], [data-ak="download-flagship-smart-guide"], [data-ak="download-google-maps-btn"]';
+  const selector = '[data-ak-download-guide="true"], [data-ak="download-flagship-smart-guide"], [data-ak="download-google-maps-btn"], ' +
+    TEMPLATE_GUIDE_SELECTOR;
 
   document.addEventListener('click', e => {
     const $clicked = e.target.closest(selector);
@@ -317,6 +414,7 @@ function wireDownloadButtonLock() {
   }, true);
 }
 wireDownloadButtonLock();
+
 
 // --- Redirect when signed out ---
 function siblingPagePath(targetSlug) {
