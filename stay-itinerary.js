@@ -266,6 +266,25 @@ const FIXED_HOTELS = {
 // wraps have a 'kid-friendly' chip.
 const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-trial-hotel'] || localStorage['ak-hotel-referral'];
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
+// Hotels set up on the Khonsu dashboard (the hotel widget sends their guests here with ?hotel=<its ID>,
+// saved as ak-stay-hotel) that aren't in FIXED_HOTELS: the dashboard's public form settings give the
+// page their name, brand colour, hero image and nav logo, each optional. Asked for once, straight away.
+// dashboardLook resolves to those settings, or null (a fixed hotel, the demo, a hotel the dashboard
+// doesn't know, or no answer within 5s), and the page then looks as it did before.
+const DASHBOARD_HOTEL_URL = 'https://khonsu-widget-production.up.railway.app/v1/hotels/';
+const isDashboardHotelKey = key => !!key && !FIXED_HOTELS[key] && key !== 'demo' && /^[a-z0-9-]{1,64}$/.test(key);
+const dashboardHotelKey = isDashboardHotelKey(fixedHotelKey) ? fixedHotelKey : '';
+const dashboardLook = (() => {
+  if (!dashboardHotelKey) return Promise.resolve(null);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  return fetch(`${DASHBOARD_HOTEL_URL}${dashboardHotelKey}/form`, { signal: controller.signal })
+    .then(res => (res.ok ? res.json() : null))
+    .then(data => (data?.success ? data : null))
+    .catch(() => null)
+    .finally(() => clearTimeout(timer));
+})();
+const isHttpsUrl = value => typeof value === 'string' && /^https:\/\/[^\s"'<>]+$/.test(value);
 // Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
 // is-compton / is-kfi) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
 // hotel gets none of them, so the page keeps .page_main.is-hotel's default colours.
@@ -276,10 +295,15 @@ Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classL
 // data-ak-theme-ready is set here, so neither Webflow's authored mode nor the default one flashes
 // before the hotel's. With no hotel in this browser yet that waits for hotelKnown (see the hero
 // below), as the trip may have one and the page then reloads into it. Shown after 10s regardless.
+// A dashboard hotel's brand colour goes straight on .page_main (it has no mode of its own), and the
+// colour is only shown once its settings have arrived (or failed), so the default never flashes first.
+dashboardLook.then(look => {
+  if (/^#[0-9a-f]{6}$/i.test(look?.accent || '')) $hotelThemed?.style.setProperty('--_hotel---brand', look.accent);
+});
 function revealHotelTheme() {
-  $hotelThemed?.setAttribute('data-ak-theme-ready', 'true');
+  dashboardLook.then(() => $hotelThemed?.setAttribute('data-ak-theme-ready', 'true'));
 }
-if (FIXED_HOTELS[fixedHotelKey]) revealHotelTheme();
+if (FIXED_HOTELS[fixedHotelKey] || dashboardHotelKey) revealHotelTheme();
 else setTimeout(revealHotelTheme, 10000);
 // Same for the look-up form's reservation number: ak-flow-trial-reservation is cleared on sign-in too,
 // so it's kept in ak-stay-reservation (also set by lookup-form.js), and saved with the trip as
@@ -412,9 +436,16 @@ function showWelcomeIfReady() {
   if (welcomeTextReady && heroImageReady) $welcomeMsg?.removeAttribute('data-ak-skeleton-pulse');
 }
 if (fixedHotel) setHotelNameText(fixedHotel.name);
+// A dashboard hotel's name, unless the guest's own hotel is already on the page. It's also put back
+// if the guest removes their hotel (clearMapPopupField()), as they're still that hotel's guest.
+let dashboardHotelName = '';
+dashboardLook.then(look => {
+  dashboardHotelName = typeof look?.name === 'string' ? look.name.trim().slice(0, 200) : '';
+  if (dashboardHotelName && !welcomeHasHotel) setHotelNameText(dashboardHotelName);
+});
 
-// The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage swaps it in; every other
-// hotel keeps Webflow's image. loader.css keeps the image hidden behind a full-size shimmer until
+// The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage, or a dashboard hotel with a
+// hero image set there, swaps it in; every other hotel keeps Webflow's image. loader.css keeps the image hidden behind a full-size shimmer until
 // data-ak-hero-ready is set here, so Webflow's image never flashes up before the swap. The new image
 // is preloaded first; srcset/sizes are cleared, or the browser keeps picking Webflow's responsive
 // versions of the old one. If it fails to load, Webflow's image is shown instead. After 10s the
@@ -435,48 +466,58 @@ function whenImageLoaded($img, callback) {
   $img.addEventListener('load', callback, { once: true });
   $img.addEventListener('error', callback, { once: true });
 }
+function swapHeroImage(heroUrl) {
+  const preload = new Image();
+  preload.onload = () => {
+    $heroImg.removeAttribute('srcset');
+    $heroImg.removeAttribute('sizes');
+    $heroImg.src = heroUrl;
+    whenImageLoaded($heroImg, revealHeroImage);
+  };
+  preload.onerror = () => whenImageLoaded($heroImg, revealHeroImage);
+  preload.src = heroUrl;
+}
 if ($heroImg) {
   const heroUrl = fixedHotel?.heroImage;
   if (heroUrl) {
-    const preload = new Image();
-    preload.onload = () => {
-      $heroImg.removeAttribute('srcset');
-      $heroImg.removeAttribute('sizes');
-      $heroImg.src = heroUrl;
-      whenImageLoaded($heroImg, revealHeroImage);
-    };
-    preload.onerror = () => whenImageLoaded($heroImg, revealHeroImage);
-    preload.src = heroUrl;
+    swapHeroImage(heroUrl);
   } else if (fixedHotel) {
     whenImageLoaded($heroImg, revealHeroImage);
+  } else if (dashboardHotelKey) {
+    dashboardLook.then(look => (isHttpsUrl(look?.hero) ? swapHeroImage(look.hero) : whenImageLoaded($heroImg, revealHeroImage)));
   } else {
     hotelKnown.then(() => whenImageLoaded($heroImg, revealHeroImage));
   }
   setTimeout(revealHeroImage, 10000);
 }
 
-// The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
-// swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
+// The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo, or a
+// dashboard hotel with a logo set there, swaps the SVG for an <img> of it; every other hotel keeps the SVG. loader.css keeps the logo
 // hidden until data-ak-logo-ready is set here, so the Khonsu logo never flashes up first. If the
 // hotel's logo fails to load, the SVG is shown instead.
 const $navLogo = document.querySelector('[data-ak="nav-logo"]');
 function revealNavLogo() {
   $navLogo?.setAttribute('data-ak-logo-ready', 'true');
 }
+function swapNavLogo(logoUrl, hotelName) {
+  const $logoImg = new Image();
+  $logoImg.onload = () => {
+    $logoImg.alt = hotelName;
+    $logoImg.className = 'ak-nav-logo-img';
+    $navLogo.replaceChildren($logoImg);
+    revealNavLogo();
+  };
+  $logoImg.onerror = revealNavLogo;
+  $logoImg.src = logoUrl;
+}
 if ($navLogo) {
   const logoUrl = fixedHotel?.logo;
   if (logoUrl) {
-    const $logoImg = new Image();
-    $logoImg.onload = () => {
-      $logoImg.alt = fixedHotel.name;
-      $logoImg.className = 'ak-nav-logo-img';
-      $navLogo.replaceChildren($logoImg);
-      revealNavLogo();
-    };
-    $logoImg.onerror = revealNavLogo;
-    $logoImg.src = logoUrl;
+    swapNavLogo(logoUrl, fixedHotel.name);
   } else if (fixedHotel) {
     revealNavLogo();
+  } else if (dashboardHotelKey) {
+    dashboardLook.then(look => (isHttpsUrl(look?.logo) ? swapNavLogo(look.logo, look.name || '') : revealNavLogo()));
   } else {
     hotelKnown.then(revealNavLogo);
   }
@@ -1644,7 +1685,9 @@ function clearMapPopupField(field) {
   if (field.storageKey === 'ak-hotel') {
     setMapHotelName('');
     restoreTripHeadingName();
-    if (!fixedHotel) setWelcomeHasHotel(false);
+    if (fixedHotel) return;
+    if (dashboardHotelName) setHotelNameText(dashboardHotelName);
+    else setWelcomeHasHotel(false);
   }
 }
 
@@ -2908,15 +2951,15 @@ async function syncWithDB() {
 
   // This browser doesn't know the trip's hotel (another device, cleared storage): take it from the
   // trip -- stayHotel, or for trips saved before that, the key autoSetFixedHotel() put on the saved
-  // hotel. fixedHotel is read once at the top and drives the map, logo, hero and hotel, so the page
-  // reloads to pick it up; every DB value is in localStorage by now, and it only happens once.
+  // hotel. fixedHotel (or a dashboard hotel's look) is read once at the top and drives the map, logo,
+  // hero and hotel, so the page reloads to pick it up; every DB value is in localStorage by now, and it only happens once.
   if (!localStorage['ak-stay-hotel']) {
     let savedHotel = null;
     try { savedHotel = JSON.parse(dbData.hotel || 'null'); } catch (e) {}
     const tripHotelKey = dbData.stayHotel || (FIXED_HOTELS[savedHotel?.fixedHotel] ? savedHotel.fixedHotel : '');
     if (tripHotelKey) {
       localStorage['ak-stay-hotel'] = tripHotelKey;
-      if (FIXED_HOTELS[tripHotelKey] && localStorage['ak-stay-hotel'] === tripHotelKey) {
+      if ((FIXED_HOTELS[tripHotelKey] || isDashboardHotelKey(tripHotelKey)) && localStorage['ak-stay-hotel'] === tripHotelKey) {
         window.location.reload();
         return new Promise(() => {}); // nothing else should run before the reload
       }
