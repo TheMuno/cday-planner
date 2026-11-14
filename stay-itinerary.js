@@ -284,6 +284,17 @@ const dashboardLook = (() => {
     .catch(() => null)
     .finally(() => clearTimeout(timer));
 })();
+let dashboardDisplayCity = ''; // set once dashboardLook arrives (see below)
+// A dashboard hotel's guests are that hotel's guests: the page sets it (setDashboardHotel()), and
+// they can't pick another or remove it. The "Add hotel..." search and the hotel's remove (✕) are
+// taken out of the page entirely, not hidden, so no style can bring them back; the map popup's
+// Remove button does nothing for it (see openMapPopup()), and handleRemoveLocation() ignores it.
+if (dashboardHotelKey) {
+  document.querySelectorAll('[data-ak="hotel-autocomplete"]').forEach($el => $el.remove());
+  const $hotelName = document.querySelector('[data-ak="map-hotel-name"]');
+  ($hotelName?.closest('.itinerary_logistics_form_item') || $hotelName?.closest('.flex-row'))
+    ?.querySelectorAll('[data-ak="remove-location"]').forEach($el => $el.remove());
+}
 const isHttpsUrl = value => typeof value === 'string' && /^https:\/\/[^\s"'<>]+$/.test(value);
 // Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
 // is-compton / is-kfi) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
@@ -442,6 +453,15 @@ let dashboardHotelName = '';
 dashboardLook.then(look => {
   dashboardHotelName = typeof look?.name === 'string' ? look.name.trim().slice(0, 200) : '';
   if (dashboardHotelName && !welcomeHasHotel) setHotelNameText(dashboardHotelName);
+});
+// A dashboard hotel's "My Trip to …" wording, when the dashboard sets one (e.g. "Manchester, VT");
+// otherwise it's the town and state/country of the hotel's Google place (see getTripCity()).
+// dashboardDisplayCity is declared with dashboardLook, as the heading is first filled in before here.
+dashboardLook.then(look => {
+  const city = typeof look?.display_city === 'string' ? look.display_city.trim().slice(0, 60) : '';
+  if (!city || /[<>]/.test(city)) return;
+  dashboardDisplayCity = city;
+  restoreTripHeadingName();
 });
 
 // The hero <img data-ak="hero-img">: a fixed hotel with its own heroImage, or a dashboard hotel with a
@@ -685,6 +705,7 @@ async function initMap(center, zoom) {
 // with all of that.
 if (fixedHotel) mapReady.then(() => autoSetFixedHotel());
 if (linkHotel) mapReady.then(() => setLinkHotel(linkHotel));
+else if (dashboardHotelKey) Promise.all([dashboardLook, mapReady]).then(([look]) => setDashboardHotel(look));
 
 // Only needs a plain fetch — no reason to wait on 'load' (every image, font, the Maps script).
 loadInsiderTips();
@@ -1258,6 +1279,7 @@ function findHiddenAncestor($el) {
 }
 
 async function setupHotelAutocomplete() {
+  if (dashboardHotelKey) return; // its guests don't pick a hotel (the search is removed above)
   await google.maps.importLibrary('places');
 
   const $wrap = document.querySelector('[data-ak="hotel-autocomplete"]');
@@ -1290,14 +1312,18 @@ const HOTEL_PLACE_FIELDS = ['id', 'displayName', 'location', 'editorialSummary',
 
 // A hotel the guest picked ("Add hotel..." above, or one the link brought -- see linkHotel): its
 // marker and name, saved as the trip's hotel.
-function useGuestHotel(place) {
+// On a dashboard hotel's page it's marked as that hotel's guest's (stayHotel), and `guessed` when
+// it was found by searching Google for the hotel's name (setDashboardHotel()).
+function useGuestHotel(place, { guessed = false } = {}) {
     map.panTo(place.viewport || place.location);
 
     const placeObj = place.toJSON();
     const { displayName, location: { lat, lng }, editorialSummary, types: type } = placeObj;
     const photoUrl = place.photos?.[0]?.getURI({ maxWidth: 800 }) || '';
 
-    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), guestPicked: true };
+    const saveObj = { displayName, location: { lat, lng }, editorialSummary, type, placeId: placeObj.id, address: placeObj.formattedAddress || '', rating: placeObj.rating ?? null, reviewCount: placeObj.userRatingCount ?? null, phone: placeObj.nationalPhoneNumber || '', website: placeObj.websiteURI || placeObj.websiteUri || '', openingHours: placeObj.regularOpeningHours || null, businessStatus: placeObj.businessStatus || null, priceRange: placeObj.priceRange || null, photoUrl, city: getCityFromAddress(placeObj.addressComponents), region: getRegionFromAddress(placeObj.addressComponents), guestPicked: true };
+    if (dashboardHotelKey) saveObj.stayHotel = dashboardHotelKey;
+    if (guessed) saveObj.guessed = true;
 
     const marker = createMarker(displayName, { lat, lng }, editorialSummary, type, hotelMarkerPinUrl, saveObj);
     if (markerObj['hotel']) markerObj['hotel'].setMap(null);
@@ -1316,7 +1342,7 @@ function useGuestHotel(place) {
 
 // The hotel the link brought (the widget demo's hotel field), looked up by its Google place id, or
 // by name when the lead typed it in. Set as if picked here, zoomed in like a fixed hotel.
-async function setLinkHotel({ id, name }) {
+async function setLinkHotel({ id, name }, { guessed = false } = {}) {
   let place = null;
   try {
     await google.maps.importLibrary('places');
@@ -1331,8 +1357,26 @@ async function setLinkHotel({ id, name }) {
     return;
   }
   if (!place?.location) return;
-  useGuestHotel(place);
+  useGuestHotel(place, { guessed });
   map.setZoom(16);
+}
+
+// A dashboard hotel's guest who came without ?place= (the hotel's Google listing isn't set on the
+// dashboard, a link from before it was, or a return visit): its hotel is set here once, from the
+// listing when there is one, or else by searching Google for "<name>, <city>" (a guess, marked so a
+// listing set later replaces it). The hotel already set for this dashboard hotel is kept when it's
+// still the listing's (or, with no listing, the guess), so Google isn't asked again on every visit;
+// anything else (another visit's hotel, an old guess, a listing changed since) is replaced.
+function setDashboardHotel(look) {
+  if (!look) return;
+  let saved = null;
+  try { saved = JSON.parse(localStorage['ak-hotel'] || 'null'); } catch (e) {}
+  const placeId = /^[A-Za-z0-9_-]{10,300}$/.test(look.place_id || '') ? look.place_id : '';
+  if (saved?.location && saved.stayHotel === dashboardHotelKey && (!placeId || saved.placeId === placeId)) return;
+  if (placeId) return setLinkHotel({ id: placeId });
+  const name = typeof look.name === 'string' ? look.name.trim() : '';
+  const city = typeof look.city === 'string' ? look.city.trim() : '';
+  if (name) setLinkHotel({ name: [name, city].filter(Boolean).join(', ').slice(0, 200) }, { guessed: true });
 }
 
 // Mirrors the gmp-select handler in setupHotelAutocomplete() above, but resolves the Place via
@@ -1597,8 +1641,14 @@ function openMapPopup(title, editorialSummary, saveObj, marker = null) {
   if ($popupActionBtn) {
     const $existingMatch = findItineraryMatch(saveObj);
     const $actionLabel = $popupActionBtn.querySelector('[data-ak="popup-action-label"]');
+    // A dashboard hotel's own hotel can't be removed: no Remove button in its popup.
+    const lockedHotel = !!dashboardHotelKey && !$existingMatch && findMapPopupField(marker)?.storageKey === 'ak-hotel';
+    if (lockedHotel) $popupActionBtn.setAttribute('data-ak-hidden', 'true');
+    else $popupActionBtn.removeAttribute('data-ak-hidden');
 
-    if (!$existingMatch && saveObj?._isSearchResult) {
+    if (lockedHotel) {
+      $popupActionBtn.onclick = null;
+    } else if (!$existingMatch && saveObj?._isSearchResult) {
       if ($actionLabel) $actionLabel.textContent = 'Add Activity';
       $popupActionBtn.onclick = () => {
         const added = addSearchResultToItinerary(saveObj, marker) === 'added';
@@ -2111,6 +2161,7 @@ function handleRemoveLocation(e) {
   const triggerName = $fieldTrigger?.getAttribute('data-ak');
   const field = triggerName && MAP_POPUP_FIELDS.find(({ nameSelector }) => nameSelector.startsWith(`[data-ak="${triggerName}"]`));
   if (!field) return;
+  if (dashboardHotelKey && field.storageKey === 'ak-hotel') return; // locked: see the top of the file
 
   const name = document.querySelector(field.nameSelector)?.textContent?.trim() || 'this location';
 
@@ -2722,13 +2773,16 @@ function restoreTripDaySlides(onSettled) {
 // A fixed hotel's typed-in city wins (it's there on first paint). Otherwise it's the city Google gave
 // for the saved hotel (ak-hotel's city, set when the hotel is picked/looked up) -- for a fixed hotel,
 // only once ak-hotel is actually that hotel, so a previous trip's hotel doesn't flash in first.
+// A dashboard hotel's display city (set on the dashboard) comes before the saved hotel's. The town
+// gets its state (US, Canada) or country, so e.g. Manchester, VT isn't taken for Manchester, UK.
 function getTripCity() {
   if (fixedHotel?.city) return fixedHotel.city;
+  if (dashboardHotelKey && dashboardDisplayCity) return dashboardDisplayCity;
   let hotel;
   try { hotel = JSON.parse(localStorage['ak-hotel'] || 'null'); } catch (e) { hotel = null; }
   if (!hotel?.city) return '';
   if (fixedHotel ? !isNearFixedHotel(hotel.location) : isLeftoverFixedHotel(hotel)) return '';
-  return hotel.city;
+  return hotel.region ? `${hotel.city}, ${hotel.region}` : hotel.city;
 }
 
 function isNearFixedHotel(location, hotel = fixedHotel) {
@@ -2741,8 +2795,12 @@ function isNearFixedHotel(location, hotel = fixedHotel) {
 // (autoSetFixedHotel() marks it `fixedHotel`) belongs to that hotel, not this trip, so it isn't
 // restored or used for the heading. Hotels saved before that mark existed are recognized by being at
 // a fixed hotel's coords -- unless the guest picked it themselves (`guestPicked`).
+// The same goes for dashboard hotels: on one's page only a hotel set for it counts (useGuestHotel()
+// marks it stayHotel); anywhere else, a hotel set for a dashboard hotel is left over from that visit.
 function isLeftoverFixedHotel(hotel) {
   if (!hotel) return false;
+  if (dashboardHotelKey) return hotel.stayHotel !== dashboardHotelKey;
+  if (hotel.stayHotel) return true;
   if (hotel.fixedHotel) return true;
   if (hotel.guestPicked) return false;
   return Object.values(FIXED_HOTELS).some(entry => isNearFixedHotel(hotel.location, entry));
@@ -2757,6 +2815,17 @@ function getCityFromAddress(addressComponents = []) {
   const NYC_NAMES = ['New York', 'Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'The Bronx', 'Staten Island'];
   if (state === 'NY' && (NYC_NAMES.includes(city) || (!city && NYC_NAMES.includes(find('sublocality_level_1'))))) return '';
   return city;
+}
+
+// What follows the town in the heading: the state for the US and Canada (Manchester, VT), "UK" for
+// the United Kingdom, otherwise the country (Paris, France). '' when Google gives neither.
+function getRegionFromAddress(addressComponents = []) {
+  const find = type => addressComponents.find(c => c.types.includes(type));
+  const country = find('country');
+  const state = find('administrative_area_level_1');
+  if (['US', 'CA'].includes(country?.shortText) && state?.shortText) return state.shortText;
+  if (country?.shortText === 'GB') return 'UK';
+  return country?.longText || '';
 }
 
 function restoreTripHeadingName() {
