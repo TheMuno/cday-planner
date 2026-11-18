@@ -347,6 +347,27 @@ function showTemplateGuideError(err) {
   else alert(message);
 }
 
+// The hotel's brand colour as this page shows it (Webflow's --_hotel---brand on .page_main), sent so the
+// guide PDFs use it. Only when .page_main has one of the hotel classes: with none, nothing is sent and the
+// guides keep their default orange. A probe element resolves the variable whatever its format (hex, hsl,
+// another variable) to a plain colour, sent as #rrggbb; a see-through value (loader.css's hold) is skipped.
+function getGuideAccent() {
+  if (!$hotelThemed || !Object.values(HOTEL_THEME_CLASSES).some(c => $hotelThemed.classList.contains(c))) return undefined;
+  if (!getComputedStyle($hotelThemed).getPropertyValue('--_hotel---brand').trim()) return undefined;
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;color:var(--_hotel---brand);';
+  $hotelThemed.appendChild(probe);
+  const color = getComputedStyle(probe).color;
+  probe.remove();
+  let rgb, alpha = 1;
+  const m = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/);
+  const s = color.match(/^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)$/);
+  if (m) { rgb = [m[1], m[2], m[3]].map(Number); if (m[4] !== undefined) alpha = +m[4]; }
+  else if (s) { rgb = [s[1], s[2], s[3]].map(v => +v * 255); if (s[4] !== undefined) alpha = +s[4]; }
+  if (!rgb || alpha < 1) return undefined;
+  return `#${rgb.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')}`;
+}
+
 function wireTemplateGuideButtons() {
   document.querySelectorAll(TEMPLATE_GUIDE_SELECTOR).forEach($btn => $btn.removeAttribute('data-ak-hidden'));
 
@@ -377,6 +398,7 @@ function wireTemplateGuideButtons() {
         userId: `user-${user.email}`,
         hotel: getGuideHotel(),
         format: TEMPLATE_GUIDE_FORMATS[$btn.dataset.ak],
+        accent: getGuideAccent(),
       });
       if (!data?.url) throw new Error('No guide link returned');
       window.location.href = data.url;
