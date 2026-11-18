@@ -298,8 +298,9 @@ if (dashboardHotelKey) {
 const isHttpsUrl = value => typeof value === 'string' && /^https:\/\/[^\s"'<>]+$/.test(value);
 // Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
 // is-compton / is-kfi) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
-// hotel gets none of them, so the page keeps .page_main.is-hotel's default colours.
-const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi' };
+// hotel gets none of them, so the page keeps .page_main.is-hotel's default colours. The Reluctant Panther
+// (a dashboard hotel, no mode of its own) gets is-reluctant, for page styles set on that combo class.
+const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi', 'reluctant-panther': 'is-reluctant' };
 const $hotelThemed = document.querySelector('.page_main');
 Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
 // The modes only differ in --_hotel---brand, and loader.css keeps it transparent until
@@ -1311,7 +1312,7 @@ async function setupHotelAutocomplete() {
 const HOTEL_PLACE_FIELDS = ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'];
 
 // A hotel the guest picked ("Add hotel..." above, or one the link brought -- see linkHotel): its
-// marker and name, saved as the trip's hotel.
+// marker and name, saved as the trip's hotel. Returns what its popup needs (see setLinkHotel()).
 // On a dashboard hotel's page it's marked as that hotel's guest's (stayHotel), and `guessed` when
 // it was found by searching Google for the hotel's name (setDashboardHotel()).
 function useGuestHotel(place, { guessed = false } = {}) {
@@ -1338,6 +1339,7 @@ function useGuestHotel(place, { guessed = false } = {}) {
     localStorage['ak-update-hotel'] = true;
     setUnsavedChangesFlag();
     restoreTripHeadingName();
+    return { displayName, editorialSummary, saveObj, marker };
 }
 
 // The hotel the link brought (the widget demo's hotel field), looked up by its Google place id, or
@@ -1357,8 +1359,11 @@ async function setLinkHotel({ id, name }, { guessed = false } = {}) {
     return;
   }
   if (!place?.location) return;
-  useGuestHotel(place, { guessed });
+  const { displayName, editorialSummary, saveObj, marker } = useGuestHotel(place, { guessed });
   map.setZoom(16);
+  // Its popup opens on arrival, as a fixed hotel's does (autoSetFixedHotel()) and as it will on
+  // the guest's next visit (restoreHotel()). No scrollToMapPopupTop(): scrolling on load is jarring.
+  openMapPopup(displayName, editorialSummary, saveObj, marker);
 }
 
 // A dashboard hotel's guest who came without ?place= (the hotel's Google listing isn't set on the

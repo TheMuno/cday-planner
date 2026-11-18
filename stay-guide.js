@@ -77,10 +77,15 @@ const fixedHotelKey = localStorage['ak-stay-hotel'] || localStorage['ak-flow-tri
 if (fixedHotelKey && !localStorage['ak-stay-hotel']) localStorage['ak-stay-hotel'] = fixedHotelKey;
 // Colours: Carlton Arms, Compton and KFI each have a combo class on .page_main.is-hotel (is-carlton /
 // is-compton / is-kfi) that carries their Webflow variable mode (Hotel: isCarlton / isCompton). Any other
-// hotel gets none of them, so the page keeps .page_main.is-hotel's default colours.
-const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi' };
+// hotel gets none of them, so the page keeps .page_main.is-hotel's default colours. The Reluctant Panther
+// (a dashboard hotel, no mode of its own) gets is-reluctant, for page styles set on that combo class.
+const HOTEL_THEME_CLASSES = { 'carlton-arms': 'is-carlton', compton: 'is-compton', 'king-frederik-inn': 'is-kfi', 'reluctant-panther': 'is-reluctant' };
 const $hotelThemed = document.querySelector('.page_main');
-Object.entries(HOTEL_THEME_CLASSES).forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === fixedHotelKey));
+// Adds the hotel's class and removes every other one in the list. Run again by syncWithDB() when the
+// hotel only comes from the trip, as this page doesn't reload for it (stay-itinerary.js does).
+const applyHotelThemeClass = hotelKey => Object.entries(HOTEL_THEME_CLASSES)
+  .forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === hotelKey));
+applyHotelThemeClass(fixedHotelKey);
 let fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 
 // The `hotel` sent to the PDF Cloud Function, which skips its purchase check for these (FREE_GUIDE_HOTELS
@@ -247,6 +252,7 @@ async function syncWithDB() {
     const tripHotelKey = dbData.stayHotel || (FIXED_HOTELS[savedHotel?.fixedHotel] ? savedHotel.fixedHotel : '');
     if (tripHotelKey) {
       localStorage['ak-stay-hotel'] = tripHotelKey;
+      applyHotelThemeClass(tripHotelKey);
       if (FIXED_HOTELS[tripHotelKey] && !fixedHotel) {
         fixedHotel = FIXED_HOTELS[tripHotelKey];
         showHotelLogo();
