@@ -57,6 +57,13 @@ const $hotelThemed = document.querySelector('.page_main');
 const applyHotelThemeClass = hotelKey => Object.entries(HOTEL_THEME_CLASSES)
   .forEach(([key, cls]) => $hotelThemed?.classList.toggle(cls, key === hotelKey));
 applyHotelThemeClass(fixedHotelKey);
+// loader.css keeps the brand colour transparent until data-ak-theme-ready is set, so Webflow's default
+// colour never flashes up before the hotel's class (as on stay-itinerary.js). Set straight away when
+// this browser knows the hotel, else once syncWithDB() has had the chance to find it on the trip, and
+// after 10s regardless.
+const revealHotelTheme = () => $hotelThemed?.setAttribute('data-ak-theme-ready', 'true');
+if (fixedHotelKey) revealHotelTheme();
+else setTimeout(revealHotelTheme, 10000);
 let fixedHotel = FIXED_HOTELS[fixedHotelKey] || null;
 
 // The nav logo (data-ak="nav-logo", Webflow's inline Khonsu SVG): a fixed hotel with its own logo
@@ -430,6 +437,8 @@ populateVerifyContent();
   } catch (err) {
     console.error('Could not load the saved trip', err);
     return;
+  } finally {
+    revealHotelTheme();
   }
   // Re-run in case travelDates/tripName/savedAttractions only existed in the DB.
   restoreTripHeadingName();
