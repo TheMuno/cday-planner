@@ -415,7 +415,7 @@ async function setupDemoHotelSearch() {
   }
 }
 
-// /demo-welcome: "Guest last name" becomes "Name" (still sent as the last name), keeping its "*".
+// /demo-welcome: "Guest last name" becomes "Name", keeping its "*". Either way it's sent as the guest's name.
 function relabelDemoName() {
   const $block = blockOf($lastNameField);
   const $label = labelOf($block);
@@ -557,7 +557,7 @@ async function applyDashboardForm() {
   }
   markRequired($datesItem?.querySelector('label'), datesSetting === 'required');
 
-  applySetting($lastNameField, ['optional', 'hidden'].includes(settings.last_name) ? settings.last_name : 'required');
+  applySetting($lastNameField, ['optional', 'hidden'].includes(settings.name) ? settings.name : 'required');
   applySetting($phoneInput, ['required', 'hidden'].includes(settings.phone) ? settings.phone : 'optional');
 
   // Marketing checkbox (with its fine print)
@@ -582,7 +582,7 @@ async function applyDashboardForm() {
   // The rest are added after the phone number (or the last name), in order. On /demo-welcome an
   // email field ("Work Email") goes right after Name instead, ahead of the phone number.
   let $after = blockOf($phoneInput) || blockOf($lastNameField);
-  let $afterName = onDemoWelcome && settings.last_name !== 'hidden' ? blockOf($lastNameField) : null;
+  let $afterName = onDemoWelcome && settings.name !== 'hidden' ? blockOf($lastNameField) : null;
   for (const f of custom) {
     if (f === reservation || f === demoHotel || !$after) continue;
     const built = buildCustomField(f);
@@ -610,7 +610,7 @@ async function applyDashboardForm() {
 let dashboardFormReady = Promise.resolve();
 
 // Same endpoint and payload as saveUserData() in flow-trial.js: a row on the hotel's "Upcoming
-// Guests" tab. The server finds each value by its key (last+name, travel+date, phone, reservation),
+// Guests" tab. The server finds each value by its key (name, travel+date, phone, reservation),
 // so the keys below are those fields' data-ak names. Travel dates are sent from the hidden
 // flatpickr input ("2026-10-06 to 2026-10-08"), which the server reformats.
 const SAVE_FLOW_TRIAL_URL = 'https://us-central1-askkhonsu-map.cloudfunctions.net/saveFlowTrialSubmission';
@@ -679,7 +679,7 @@ async function saveToDashboard() {
         hotel_id: hotelId,
         check_in_date: checkIn.slice(0, 10),
         check_out_date: checkOut.slice(0, 10),
-        guest_last_name: value($lastNameField),
+        guest_name: value($lastNameField),
         phone: phoneValue(),
         source_url: window.location.href,
         marketing_consent: marketingAccepted(),
@@ -722,7 +722,8 @@ function saveLookupSubmission() {
     // /demo-welcome: the hotel the guest picked, if any.
     hotel: demoPickedHotel?.displayName || (hotelSelectShown() ? value($hotelField) : resolveHotel().referral),
     'user-travel-dates': value($datesSource),
-    'last-name': value($lastNameField),
+    // The guest's name (the sheet's "Last Name" or "Name" column).
+    name: value($lastNameField),
     // With its country code, e.g. "+1 212-555-1234" (the server keeps it as text).
     'phone-number': phoneValue(),
     'reservation-num': value($reservationField),
