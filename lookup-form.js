@@ -645,10 +645,11 @@ function phoneValue() {
 // server's POST /v1/capture, same as the widget), which saves them there and writes the sheet row
 // itself. The dashboard hotel must list this website under its allowed sites. Which fields this
 // form asks for comes from the same hotel's dashboard settings (see applyDashboardForm()).
-// Until the dashboard is live at dashboard.askkhonsu.com, the page points this at the temporary
-// server (a tunnel address that changes on restart) with, in its head code:
+// The dashboard runs on Railway, the same address stay-itinerary.js uses. A page can point this at
+// another server (e.g. a test one) with, in its head code:
 //   <script>window.AK_DASHBOARD_URL = 'https://random-words.trycloudflare.com';</script>
-const dashboardUrl = path => `${(window.AK_DASHBOARD_URL || 'https://dashboard.askkhonsu.com').replace(/\/+$/, '')}${path}`;
+// (Once dashboard.askkhonsu.com points at Railway, either address works.)
+const dashboardUrl = path => `${(window.AK_DASHBOARD_URL || 'https://khonsu-widget-production.up.railway.app').replace(/\/+$/, '')}${path}`;
 const dashboardCaptureUrl = () => dashboardUrl('/v1/capture');
 
 // true once the dashboard has saved the guest; false (not sent, or failed) means the sheet row
