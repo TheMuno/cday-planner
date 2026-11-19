@@ -161,7 +161,7 @@ function fieldOk($field) {
   if (optionalFields.has($field) && isEmpty($field)) return true;
   // /demo-welcome: a hotel must be picked in the hotel search. If the search couldn't load, the
   // dropdown is back in its place and checked as usual below.
-  if ($field === $hotelSelect && demoHotelSearch) return !!demoPickedHotel;
+  if ($field === $hotelSelect && demoHotelSearch) return !!syncDemoPick();
   // A hotel's own page (e.g. /kfi-welcome) hides the hotel select; the hotel then comes from the URL.
   if ($field === $hotelSelect && !hotelSelectShown()) return true;
   return $field === $phoneInput ? !phoneProblem() : !isEmpty($field);
@@ -266,6 +266,12 @@ function storeFlowTrialKeys() {
 const MAPS_API_KEY = 'AIzaSyAQT67FwFjy3518JB607xsTHBq9AsWIzdA';
 const PLACE_FIELDS = ['id', 'displayName', 'location', 'editorialSummary', 'types', 'formattedAddress', 'addressComponents', 'rating', 'userRatingCount', 'nationalPhoneNumber', 'regularOpeningHours', 'businessStatus', 'photos', 'websiteURI', 'priceRange'];
 let demoPickedHotel = null;
+// The search's clear button (ⓧ) empties the box without any event, so the pick is dropped whenever
+// the box is found empty. Typing fires `input`, which drops it straight away (setupDemoHotelSearch()).
+function syncDemoPick() {
+  if (demoHotelSearch && !String(demoHotelSearch.value || '').trim()) demoPickedHotel = null;
+  return demoPickedHotel;
+}
 
 function loadGoogleMaps() {
   if (window.google?.maps?.importLibrary) return;
@@ -378,6 +384,7 @@ async function setupDemoHotelSearch() {
     $hotelSelect.insertAdjacentElement('afterend', search);
     demoHotelSearch = search;
     $hotelSelect.akShownAs = search;
+    restoreDraftHotel();
     // Typing again drops the earlier pick until a new one is chosen.
     search.addEventListener('input', () => { demoPickedHotel = null; });
     // A search request Google answered with an error: the popup, but the search stays, as the
@@ -403,6 +410,7 @@ async function setupDemoHotelSearch() {
           priceRange: p.priceRange || null, photoUrl: place.photos?.[0]?.getURI({ maxWidth: 800 }) || '',
           city: cityFromAddress(p.addressComponents), guestPicked: true,
         };
+        saveFormDraft();
         setFieldInvalid($hotelSelect, false); // the "Select the hotel" hint goes once one is picked
       } catch (err) {
         demoPickedHotel = null;
@@ -847,6 +855,7 @@ async function continueToHotel() {
   // A click before the hotel's form settings are in waits for them (see applyDashboardForm()).
   await within(dashboardFormReady, 3000, null);
   if (!validateLookupForm()) {
+    saveFormDraft(); // e.g. a hotel cleared with the search's ⓧ, which no event reports
     submitting = false;
     return;
   }
@@ -858,6 +867,10 @@ async function continueToHotel() {
   const sheetRowSaved = savedOnDashboard || isBot ? null : saveLookupSubmission();
   const idToken = await idTokenReady;
   if (idToken && !isBot) await addSignedInEmail(idToken, savedOnDashboard, sheetRowSaved);
+  // The itinerary's "Go back" button is a fixed Webflow link (/welcome). itinerary-handoff.js points
+  // it at ak-back-url for the rest of this tab's visit, so save this page there (e.g. /demo-welcome).
+  try { sessionStorage.setItem('ak-back-url', location.origin + location.pathname + location.search); } catch (e) {}
+  saveFormDraft();
   // window.location.href = resolveHotel().redirect;
   const href = $customizeBtn?.getAttribute('href');
   window.location.href = href && href !== '#' ? href : '/stay/itinerary';
@@ -876,8 +889,114 @@ $lookupForm?.addEventListener('submit', e => {
   continueToHotel();
 }, true);
 
+// ---- Keeping what the guest filled in ---------------------------------------------------------
+// A guest who goes back from the itinerary (its "Go back" button, or the browser's) finds the form
+// as they left it. Their answers are saved for this page (ak-lookup-draft:<path>) as they type and
+// when they continue, and filled back in when the page opens again. They're kept in sessionStorage,
+// so only for this browser tab's visit: closing the tab forgets them, and the next person on a
+// shared computer starts with an empty form. Saved: name, reservation number, phone (with its country), the /welcome hotel dropdown, the
+// marketing checkbox, the hotel's custom fields (by field ID, once they're added) and the hotel
+// picked in the /demo-welcome search. Travel dates aren't: the page's own date code already brings
+// those back (ak-travel-days). The hidden spam field never is. Nothing is filled into a field the
+// guest has already typed in. Sending again updates the same guest on the dashboard (edit key).
+const DRAFT_KEY = `ak-lookup-draft:${location.pathname.replace(/\/+$/, '') || '/'}`;
+const draftFields = () => ({ name: $lastNameField, reservation: $reservationField, phone: $phoneField, hotel: $hotelField });
+
+function saveFormDraft() {
+  if (!$lookupForm) return;
+  syncDemoPick();
+  const fields = {};
+  Object.entries(draftFields()).forEach(([k, $f]) => {
+    if (!$f) return;
+    fields[k] = k === 'phone' ? phoneValue() : $f.value;
+  });
+  const custom = {};
+  customInputs.forEach(({ field, $input }) => {
+    custom[field.id] = $input.type === 'checkbox' ? $input.checked : $input.value;
+  });
+  try {
+    // Custom answers from an earlier visit are kept until their fields have loaded this time.
+    const prev = readFormDraft();
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+      savedAt: Date.now(),
+      fields,
+      marketing: $marketingBox ? $marketingBox.checked : undefined,
+      custom: customInputs.length ? custom : prev?.custom || {},
+      hotel: demoPickedHotel || (demoHotelSearch ? null : prev?.hotel || null),
+    }));
+  } catch (e) {}
+}
+
+function readFormDraft() {
+  try {
+    return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null');
+  } catch (e) {
+    return null;
+  }
+}
+
+const fillIfEmpty = ($f, v) => {
+  if (!$f || v == null || v === '' || $f.value.trim()) return;
+  if ($f.tagName === 'SELECT' && ![...$f.options].some(o => o.value === v)) return;
+  $f.value = v;
+};
+
+function restoreFormDraft() {
+  const d = readFormDraft();
+  if (!d) return;
+  const f = d.fields || {};
+  fillIfEmpty($lastNameField, f.name);
+  fillIfEmpty($reservationField, f.reservation);
+  if (!onDemoWelcome) fillIfEmpty($hotelField, f.hotel);
+  // In international form ("+44 20 …"): the phone box picks the country from it when it loads, or
+  // takes it straight away if it already has.
+  if ($phoneField && f.phone && !$phoneField.value.trim()) {
+    if (phoneIti) phoneIti.setNumber(f.phone);
+    else $phoneField.value = f.phone;
+  }
+  if ($marketingBox && typeof d.marketing === 'boolean' && !marketingHidden) $marketingBox.checked = d.marketing;
+}
+
+function restoreCustomDraft() {
+  const custom = readFormDraft()?.custom || {};
+  customInputs.forEach(({ field, $input }) => {
+    if (!(field.id in custom)) return;
+    if ($input.type === 'checkbox') $input.checked = !!custom[field.id];
+    else fillIfEmpty($input, String(custom[field.id]));
+  });
+}
+
+// The hotel picked last time goes back in as the pick (the full place details saved then, so the
+// itinerary, dashboard and sheet get the same hotel), and its name into the search box. Setting the
+// box's `value` shows the name as if just picked and fires no input event (checked in Chrome on
+// 2026-11-19), so it doesn't count as the guest typing. Typing again drops it as usual.
+function restoreDraftHotel() {
+  const hotel = readFormDraft()?.hotel;
+  if (demoPickedHotel || !demoHotelSearch || !hotel?.displayName || !hotel.location) return;
+  demoPickedHotel = hotel;
+  try { demoHotelSearch.value = hotel.displayName; } catch (e) {}
+}
+
+if ($lookupForm) {
+  restoreFormDraft();
+  // Saved as the guest types (and on the phone's country change), so a guest who leaves without
+  // pressing "Customize now" gets their answers back too.
+  let draftTimer = null;
+  const saveSoon = e => {
+    if (e?.target === $honeypot) return;
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(saveFormDraft, 300);
+  };
+  ['input', 'change'].forEach(t => $lookupForm.addEventListener(t, saveSoon));
+  $phoneField?.addEventListener('countrychange', saveSoon);
+  // Coming back with the browser's back button can show the page from the browser's memory
+  // (scripts don't run again); its fields are then already as the guest left them.
+}
+
 if ($lookupForm && onDemoWelcome) {
   if ($lastNameField) relabelDemoName();
   setupDemoHotelSearch();
 }
-if ($lookupForm && resolveHotel().dashboard) dashboardFormReady = applyDashboardForm();
+if ($lookupForm && resolveHotel().dashboard) {
+  dashboardFormReady = applyDashboardForm().then(restoreCustomDraft);
+}
