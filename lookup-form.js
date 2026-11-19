@@ -284,10 +284,78 @@ function cityFromAddress(addressComponents = []) {
   return city;
 }
 
+// When the hotel search fails, for any reason, an alertify popup says so and closes itself after 3s.
+// Shown once per page visit. The site's head code normally loads alertify (and titles it
+// "AskKhonsu"); if this page doesn't have it, it's loaded here from the same CDN version.
+const HOTEL_SEARCH_FAILED_MSG = 'Contact Khonsu to Add Hotel';
+let hotelSearchFailShown = false;
+
+function loadAlertify() {
+  if (window.alertify?.alert) return Promise.resolve(window.alertify);
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/AlertifyJS/1.14.0';
+  ['alertify.min.css', 'themes/default.min.css'].forEach(file => {
+    const $link = document.createElement('link');
+    $link.rel = 'stylesheet';
+    $link.href = `${base}/css/${file}`;
+    document.head.append($link);
+  });
+  return new Promise((resolve, reject) => {
+    const $script = document.createElement('script');
+    $script.src = `${base}/alertify.min.js`;
+    $script.onload = () => {
+      window.alertify.defaults.glossary.title = 'AskKhonsu';
+      resolve(window.alertify);
+    };
+    $script.onerror = () => reject(new Error('alertify could not load'));
+    document.head.append($script);
+  });
+}
+
+// A picked hotel whose details didn't load gets its own shorter popup (1.5s), shown each time, as
+// the guest is likely to try again. (The message is set as HTML by alertify, hence the <br>.)
+const HOTEL_PICK_FAILED_MSG = 'Something went wrong.<br>Please select your hotel again.';
+
+async function showTimedPopup(message, ms) {
+  try {
+    const alertify = await loadAlertify();
+    const dialog = alertify.alert(message);
+    setTimeout(() => dialog.close(), ms);
+  } catch (err) {
+    console.error('Failed to show the hotel search popup:', err);
+  }
+}
+
+function showHotelSearchFailed() {
+  if (hotelSearchFailShown) return;
+  hotelSearchFailShown = true;
+  showTimedPopup(HOTEL_SEARCH_FAILED_MSG, 3000);
+}
+
+const showHotelPickFailed = () => showTimedPopup(HOTEL_PICK_FAILED_MSG, 1500);
+
 async function setupDemoHotelSearch() {
   const $hotelItem = $hotelSelect?.closest('.u-width-full');
   if (!$hotelItem) return;
   const wasHidden = $hotelItem.classList.contains('hide');
+  // Back to the form without a hotel (as on /kfi-welcome), with the popup.
+  const giveUpOnSearch = err => {
+    console.error('Hotel search unavailable; continuing without it:', err);
+    demoHotelSearch?.remove();
+    demoHotelSearch = null;
+    demoPickedHotel = null;
+    delete $hotelSelect.akShownAs;
+    $hotelSelect.style.display = '';
+    if (wasHidden) $hotelItem.classList.add('hide');
+    showHotelSearchFailed();
+  };
+  // Google calls this when it refuses the key (e.g. this site isn't one the key allows). The search
+  // may already be showing then, but would never find anything, leaving the guest stuck on a
+  // required field -- so it's dropped as if it hadn't loaded.
+  const prevAuthFailure = window.gm_authFailure;
+  window.gm_authFailure = () => {
+    if (typeof prevAuthFailure === 'function') prevAuthFailure();
+    giveUpOnSearch(new Error('Google refused the Maps key'));
+  };
   $hotelItem.classList.remove('hide');
   // The select is hidden; fieldOk() checks a hotel was picked in the search instead. Its `required`
   // goes, or the browser would block Enter on a field the guest can't see.
@@ -312,6 +380,14 @@ async function setupDemoHotelSearch() {
     $hotelSelect.akShownAs = search;
     // Typing again drops the earlier pick until a new one is chosen.
     search.addEventListener('input', () => { demoPickedHotel = null; });
+    // A search request Google answered with an error: the popup, but the search stays, as the
+    // next try may work.
+    const onSearchError = e => {
+      console.error('Hotel search request failed:', e);
+      showHotelSearchFailed();
+    };
+    search.addEventListener('gmp-error', onSearchError);
+    search.addEventListener('gmp-requesterror', onSearchError); // older name for the same event
     search.addEventListener('gmp-select', async ({ placePrediction }) => {
       try {
         const place = placePrediction.toPlace();
@@ -331,14 +407,11 @@ async function setupDemoHotelSearch() {
       } catch (err) {
         demoPickedHotel = null;
         console.error('Failed to load the picked hotel:', err);
+        showHotelPickFailed();
       }
     });
   } catch (err) {
-    console.error('Hotel search unavailable; continuing without it:', err);
-    demoHotelSearch = null;
-    delete $hotelSelect.akShownAs;
-    $hotelSelect.style.display = '';
-    if (wasHidden) $hotelItem.classList.add('hide');
+    giveUpOnSearch(err);
   }
 }
 
